@@ -1,12 +1,12 @@
 package main
-
-import "vendor:stb"
 import "vendor:glfw"
+import "vendor:OpenGL"
 import "core:testing"
 import "core:encoding/json"
 import "core:os"
 import "core:sys/info"
 import "core:fmt"
+
 
 main :: proc() {
     empty_buff :: []byte{}
@@ -32,11 +32,48 @@ main :: proc() {
     versions := renderer_setting_obj["version"].(json.Array)
     color_bits := renderer_setting_obj["color_bit"].(json.Array)
 
+    red := f32(color_bits[0].(json.Float))
+    green := f32(color_bits[1].(json.Float))
+    blue := f32(color_bits[2].(json.Float))
     
+    defer delete(color_bits)
 
-    fmt.println(color_bits)
+    create_window("", i32(window_width), i32(window_height), [3]f32{red, green, blue})
+
 }
 
+create_window :: proc(title : cstring, width : i32= 1920, height : i32 = 1080, color : [3]f32){
+    if !bool(glfw.Init()){
+        return
+    }
+
+    window_handle := glfw.CreateWindow(width, height, title, nil, nil)
+
+    defer glfw.Terminate()
+    defer glfw.DestroyWindow(window_handle)
+
+    if window_handle == nil{
+        return
+    }
+
+    glfw.MakeContextCurrent(window_handle);
+
+    OpenGL.load_up_to(4, 5, glfw.gl_set_proc_address)
+
+
+    for !glfw.WindowShouldClose(window_handle){
+
+        glfw.PollEvents()
+
+        OpenGL.ClearColor(color[0], color[1], color[2], 1.0)
+        OpenGL.Clear(OpenGL.COLOR_BUFFER_BIT)
+
+        glfw.SwapBuffers(window_handle)
+
+
+    }
+
+}
 
 @(test)
 main_test :: proc(v: ^testing.T){
