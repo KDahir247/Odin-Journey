@@ -9,7 +9,6 @@ import "core:log"
 
 import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
-
 // Solution till i incorperate ecs 
 
 
@@ -61,11 +60,10 @@ handle_event ::proc() -> bool{
 			running = false;
 		}
 
-		keyboard_snapshot := sdl2.GetKeyboardState(nil)
 
 	}
+	keyboard_snapshot := sdl2.GetKeyboardState(nil)
 
-	
 	return running;
 }
 
@@ -76,32 +74,29 @@ on_fixed_update :: proc(){
 on_update :: proc(){
 	ctx := cast(^Context) context.user_ptr
 
+	//It will be valid for the whole lifetime of the application and should not be freed by the caller.
 	keyboard_snapshot := sdl2.GetKeyboardState(nil)
 	
 	entites := ecs.get_entities_with_components(&ctx.world, {container.Position})
 
 	for entity in entites{
-
-		//todo : khal no event handling here and solution look like a hacky way [-.-`]
-
 		// We don't need to check since we are querying above
 		current_translation, _ := ecs.get_component(&ctx.world, entity, container.Position)
 
-		// remap negative input. rather then 0 or 1 we remap it to 0 or -1
-		left := cast(f32)keyboard_snapshot[sdl2.Scancode.A] * -1;
-		down := cast(f32)keyboard_snapshot[sdl2.Scancode.S];
-	
-		right := cast(f32)keyboard_snapshot[sdl2.Scancode.D]
-		up := cast(f32)keyboard_snapshot[sdl2.Scancode.W] * -1
+		#no_bounds_check{
+			
+			//todo khal : movement for player will be retrieve from a config file.
+			left := cast(f32)(keyboard_snapshot[sdl2.Scancode.A] | keyboard_snapshot[sdl2.Scancode.LEFT]) * -1;
+			down := cast(f32)(keyboard_snapshot[sdl2.Scancode.S] | keyboard_snapshot[sdl2.Scancode.DOWN]);
+			right := cast(f32)(keyboard_snapshot[sdl2.Scancode.D] | keyboard_snapshot[sdl2.Scancode.RIGHT])
+			up := cast(f32)(keyboard_snapshot[sdl2.Scancode.W] | keyboard_snapshot[sdl2.Scancode.UP]) * -1
 		
-		target_vertical := up + down
-		target_horizontal := left + right
-		//keystate[SDLK_RETURN]
+			target_vertical := up + down
+			target_horizontal := left + right
 
-		desired_translation := container.Position{math.Vec2{current_translation.value.x + target_horizontal, current_translation.value.y + target_vertical}}
-		ecs.set_component(&ctx.world, entity, desired_translation)
-
-
+			desired_translation := container.Position{math.Vec2{current_translation.value.x + target_horizontal, current_translation.value.y + target_vertical}}
+			ecs.set_component(&ctx.world, entity, desired_translation)
+		}
 	}
 
 	// Logic

@@ -1,0 +1,23 @@
+{
+    "__comment__" : "-1 for x and y will be the window position center",
+
+
+    "game_flags" : [0, 4, 5, 14, 20],
+
+    "image_flags" : [1],
+
+    "window_config":{
+        "Title" : "Game",
+        "x" : -1,
+        "y" : -1,
+        "width" : 800,
+        "height" : 500,
+        "flags" : [2,5]
+    },
+
+    "render_config" : {
+        "clear_color" : [255, 255, 255, 255],
+        "flag" : [1, 2, 3]
+    }
+    
+}
