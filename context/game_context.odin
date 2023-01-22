@@ -102,6 +102,12 @@ on_update :: proc(){
 	// Logic
 }
 
+on_late_update :: proc(){
+
+
+	// Camera 
+}
+
 on_render :: proc(){
 	ctx := cast(^Context) context.user_ptr
 	
@@ -116,12 +122,18 @@ on_render :: proc(){
 		texture_component, _ := ecs.get_component(&ctx.world, entity, container.TextureAsset)
 
 		position := ecs.get_component(&ctx.world, entity, container.Position) or_else nil
-		rotation := ecs.get_component(&ctx.world,entity, container.Rotation) or_else nil;
+		rotation := ecs.get_component(&ctx.world,entity, container.Rotation) or_else nil
+		scale := ecs.get_component(&ctx.world, entity, container.Scale) or_else nil
+
+
 
 		x : f32= 0
 		y : f32= 0
 
 		angle : f64 = 0
+
+		scale_x : f32= 1
+		scale_y : f32= 1
 
 		if position != nil{
 			x = position.value.x
@@ -133,18 +145,19 @@ on_render :: proc(){
 			angle = rotation.value 
 		}
 
+		if scale != nil{
+			scale_x = scale.value.x
+			scale_y = scale.value.y
+		}
 
+		target_dimension_x := texture_component.dimension.x * scale_x
+		target_dimension_y := texture_component.dimension.y * scale_y
 
-		dst_rec := sdl2.FRect{x, y, texture_component.dimension.x, texture_component.dimension.y}
+		dst_rec := sdl2.FRect{x, y, target_dimension_x, target_dimension_y}
 
 		sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,nil, &dst_rec,angle,nil, sdl2.RendererFlip.NONE)
 	}
 
-	for tex in texture_assets{
-		
-	}
-
-	
 	sdl2.RenderPresent(ctx.renderer)
 }
 

@@ -27,7 +27,7 @@ main :: proc() {
 	utility.load_texture("resource/Arkanos_0.png")
 
 	// dynamic entity. Used for player. Doesn't support animation yet or Collider
-	utility.create_game_entity("resource/lidia.png", {400,300}, 0, {1,1})
+	utility.create_game_entity("resource/lidia.png", {400,300}, 0, {0.8,0.8})
 
 	{
 		for running{
@@ -36,6 +36,7 @@ main :: proc() {
 			running = game.handle_event()
 			game.on_fixed_update()
 			game.on_update()
+			game.on_late_update()
 			game.on_render()
 
 			utility.cap_frame_rate(elapsed, 60)
