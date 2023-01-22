@@ -1,12 +1,20 @@
 package game_context
+
+import  "../ecs"
+
+import "core:fmt"
 import "core:log"
+
 import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
+
+// Solution till i incorperate ecs 
+
 
 Context :: struct{
 	window : ^sdl2.Window,
 	renderer : ^sdl2.Renderer,
-	textures : [dynamic]^sdl2.Texture,
+	world : ecs.Context,
 	pixel_format : ^sdl2.PixelFormat,
 }
 
@@ -23,11 +31,14 @@ init :: proc() -> Maybe(Context){
 	img_res := sdl2_img.InitFlags(sdl2_img.Init(img_init_flag))
 
 	if img_init_flag != img_res{
-		log.errorf("sdl image init reuturn %v", img_res)
+		log.errorf("sdl image init return %v", img_res)
 	}
 
 	// should I make it full screen by default? add  .FULLSCREEN to Flag
 	ctx.window = sdl2.CreateWindow("game", sdl2.WINDOWPOS_CENTERED, sdl2.WINDOWPOS_CENTERED, 800, 500, sdl2.WindowFlags{ .SHOWN}) 
+	
+	// limit framerate to whatever the video card since we are using PRESENTVSYNC flag.
+	// fps cap is only necessary if you want a unformaity fps regardless of video card Hz 
 	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, sdl2.RendererFlags{.ACCELERATED, .PRESENTVSYNC})
 	
 	ctx.pixel_format = sdl2.GetWindowSurface(ctx.window).format
@@ -49,6 +60,7 @@ handle_event ::proc() -> bool{
 			running = false;
 		}
 	}
+
 	
 	return running;
 }
@@ -67,8 +79,16 @@ on_render :: proc(){
 	sdl2.RenderClear(ctx.renderer)
 
 	// Render Function goes here.
-	for texture in ctx.textures {
-		sdl2.RenderCopy(ctx.renderer, texture, nil, nil)
+
+	for entity  in ctx.world.component_map[TextureAsset].entity_indices{
+
+		texture_components :=  cast(^[dynamic]TextureAsset)ctx.world.component_map[TextureAsset].data;
+
+		texture_asset := texture_components[entity]
+
+		dst_rec := sdl2.Rect{0, 0, texture_asset.dimension.x, texture_asset.dimension.y}
+
+		sdl2.RenderCopy(ctx.renderer, texture_asset.texture, nil, &dst_rec)
 	}
 
 	sdl2.RenderPresent(ctx.renderer)
@@ -80,8 +100,9 @@ cleanup :: proc(){
 
 	sdl2.DestroyRenderer(ctx.renderer)
 	sdl2.DestroyWindow(ctx.window)
-	delete(ctx.textures)
 	sdl2.Quit()
+
+	ecs.deinit_ecs(&ctx.world)
 
 }
 

@@ -1,26 +1,37 @@
 package utility
 
-import "vendor:sdl2"
-import "core:strings"
-import sdl2_img "vendor:sdl2/image"
+import "../ecs"
+import "../math"
 import game "../context"
 
+import "core:strings"
+
+import "vendor:sdl2"
+import sdl2_img "vendor:sdl2/image"
+
+
+
 // load a single sprite
-load_texture :: proc(path : string){
+load_texture :: proc(path : string) -> ecs.Entity{
 
 	ctx := cast(^game.Context) context.user_ptr
 
     path := strings.clone_to_cstring(path, context.temp_allocator)
+    
     surface := sdl2_img.Load(path)
-
     optimal_surface := sdl2.ConvertSurface(surface, ctx.pixel_format, 0)
 
     texture := sdl2.CreateTextureFromSurface(ctx.renderer, optimal_surface )
 
-    //store it some where
-    append(&ctx.textures, texture)
+    dimension := math.Vec2i{ optimal_surface.w, optimal_surface.h}
 
+    texture_entity := ecs.create_entity(&ctx.world)
+
+    ecs.add_component(&ctx.world, texture_entity, game.TextureAsset{texture, dimension})
+    
     sdl2.FreeSurface(surface)
+
+    return texture_entity;
 }
 
 // load a sprite sheet
