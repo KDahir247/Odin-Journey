@@ -2,6 +2,7 @@ package game_context
 
 import  "../ecs"
 import "../container"
+import "../math"
 
 import "core:fmt"
 import "core:log"
@@ -56,10 +57,12 @@ handle_event ::proc() -> bool{
 	running := true;
 	// todo khal add the required event handling.
 	for sdl2.PollEvent(&sdl_event){
-		#partial switch sdl_event.type{
-		case .QUIT:
+		if sdl_event.type == sdl2.EventType.QUIT{
 			running = false;
 		}
+
+		keyboard_snapshot := sdl2.GetKeyboardState(nil)
+
 	}
 
 	
@@ -71,6 +74,36 @@ on_fixed_update :: proc(){
 }
 
 on_update :: proc(){
+	ctx := cast(^Context) context.user_ptr
+
+	keyboard_snapshot := sdl2.GetKeyboardState(nil)
+	
+	entites := ecs.get_entities_with_components(&ctx.world, {container.Position})
+
+	for entity in entites{
+
+		//todo : khal no event handling here and solution look like a hacky way [-.-`]
+
+		// We don't need to check since we are querying above
+		current_translation, _ := ecs.get_component(&ctx.world, entity, container.Position)
+
+		// remap negative input. rather then 0 or 1 we remap it to 0 or -1
+		left := cast(f32)keyboard_snapshot[sdl2.Scancode.A] * -1;
+		down := cast(f32)keyboard_snapshot[sdl2.Scancode.S];
+	
+		right := cast(f32)keyboard_snapshot[sdl2.Scancode.D]
+		up := cast(f32)keyboard_snapshot[sdl2.Scancode.W] * -1
+		
+		target_vertical := up + down
+		target_horizontal := left + right
+		//keystate[SDLK_RETURN]
+
+		desired_translation := container.Position{math.Vec2{current_translation.value.x + target_horizontal, current_translation.value.y + target_vertical}}
+		ecs.set_component(&ctx.world, entity, desired_translation)
+
+
+	}
+
 	// Logic
 }
 

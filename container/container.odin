@@ -3,6 +3,12 @@ package game_container
 import "../math"
 import "vendor:sdl2"
 
+
+MovementController :: struct{
+    vertical : i8,
+    horizontal : i8,
+}
+
 Position :: struct{
     value : math.Vec2,
 }
