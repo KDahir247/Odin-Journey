@@ -8,9 +8,9 @@ import "ecs"
 import game "context"
 import  "utility"
 
+
 main :: proc() {
 	core := new(game.Context)
-
 	core^ = game.init().?
 	cxt := ecs.init_ecs();
 
@@ -20,11 +20,14 @@ main :: proc() {
 	defer free(core)
 	defer ecs.deinit_ecs(&cxt)
 
-
 	running := true;
 
-	//load 
-	utility.load_texture("resource/spritesheet.png")
+	//load
+	// static texture entity. Used for background.  
+	utility.load_texture("resource/Arkanos_0.png")
+
+	// dynamic entity. Used for player. Doesn't support animation yet or Collider
+	utility.create_game_entity("resource/lidia.png", {400,300}, 0, {1,1})
 
 	{
 		for running{

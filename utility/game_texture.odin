@@ -3,6 +3,7 @@ package utility
 import "../ecs"
 import "../math"
 import game "../context"
+import "../container"
 
 import "core:strings"
 
@@ -21,13 +22,16 @@ load_texture :: proc(path : string) -> ecs.Entity{
     surface := sdl2_img.Load(path)
     optimal_surface := sdl2.ConvertSurface(surface, ctx.pixel_format, 0)
 
+    key := sdl2.MapRGB(optimal_surface.format, 0,0,0)
+    sdl2.SetColorKey(optimal_surface, 1, key)
+
     texture := sdl2.CreateTextureFromSurface(ctx.renderer, optimal_surface )
 
-    dimension := math.Vec2i{ optimal_surface.w, optimal_surface.h}
-
+    dimension := math.Vec2{ cast(f32)optimal_surface.w, cast(f32)optimal_surface.h}
+    
     texture_entity := ecs.create_entity(&ctx.world)
 
-    ecs.add_component(&ctx.world, texture_entity, game.TextureAsset{texture, dimension})
+    ecs.add_component(&ctx.world, texture_entity, container.TextureAsset{texture, dimension})
     
     sdl2.FreeSurface(surface)
 

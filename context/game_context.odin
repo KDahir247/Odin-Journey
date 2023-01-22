@@ -1,6 +1,7 @@
 package game_context
 
 import  "../ecs"
+import "../container"
 
 import "core:fmt"
 import "core:log"
@@ -39,8 +40,8 @@ init :: proc() -> Maybe(Context){
 	
 	// limit framerate to whatever the video card since we are using PRESENTVSYNC flag.
 	// fps cap is only necessary if you want a unformaity fps regardless of video card Hz 
-	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, sdl2.RendererFlags{.ACCELERATED, .PRESENTVSYNC})
-	
+	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, sdl2.RendererFlags{.ACCELERATED, .PRESENTVSYNC, .TARGETTEXTURE})
+
 	ctx.pixel_format = sdl2.GetWindowSurface(ctx.window).format
 	
 	sdl2.SetRenderDrawColor(ctx.renderer, 255, 255, 255, 255)
@@ -79,18 +80,43 @@ on_render :: proc(){
 	sdl2.RenderClear(ctx.renderer)
 
 	// Render Function goes here.
+	texture_assets,e := ecs.get_component_list(&ctx.world, container.TextureAsset)
 
-	for entity  in ctx.world.component_map[TextureAsset].entity_indices{
+	tex_entities:= ecs.get_entities_with_components(&ctx.world, {container.TextureAsset})
 
-		texture_components :=  cast(^[dynamic]TextureAsset)ctx.world.component_map[TextureAsset].data;
+	for entity in tex_entities{
+		texture_component, _ := ecs.get_component(&ctx.world, entity, container.TextureAsset)
 
-		texture_asset := texture_components[entity]
+		position := ecs.get_component(&ctx.world, entity, container.Position) or_else nil
+		rotation := ecs.get_component(&ctx.world,entity, container.Rotation) or_else nil;
 
-		dst_rec := sdl2.Rect{0, 0, texture_asset.dimension.x, texture_asset.dimension.y}
+		x : f32= 0
+		y : f32= 0
 
-		sdl2.RenderCopy(ctx.renderer, texture_asset.texture, nil, &dst_rec)
+		angle : f64 = 0
+
+		if position != nil{
+			x = position.value.x
+			y = position.value.y
+		}
+
+
+		if rotation != nil{
+			angle = rotation.value 
+		}
+
+
+
+		dst_rec := sdl2.FRect{x, y, texture_component.dimension.x, texture_component.dimension.y}
+
+		sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,nil, &dst_rec,angle,nil, sdl2.RendererFlip.NONE)
 	}
 
+	for tex in texture_assets{
+		
+	}
+
+	
 	sdl2.RenderPresent(ctx.renderer)
 }
 
