@@ -3,10 +3,18 @@ package game_container
 import "../math"
 import "vendor:sdl2"
 
+DynamicResource :: struct{
+    // camera
 
-MovementController :: struct{
-    vertical : i8,
-    horizontal : i8,
+    // time
+    elapsed_time : u32,
+    delta_time : f32,
+    elapsed_physic_time : u32,
+}
+
+Animation :: struct{
+    value : math.Vec4,
+    //will have a [dynamic]math.Vec2i for the animation indices
 }
 
 Position :: struct{
@@ -14,7 +22,6 @@ Position :: struct{
 }
 
 Rotation :: struct{
-    // We will only have a rotation for the z axis
     value : f64,
 }
 
