@@ -1,4 +1,4 @@
-package math
+package mathematics
 
 Vec2 :: distinct [2]f32
 Vec3 :: distinct [3]f32

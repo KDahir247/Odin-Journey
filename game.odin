@@ -12,12 +12,15 @@ import "vendor:sdl2"
 
 FPS_CAP :: 60
 
+
+// Clean up tomorrow
 main :: proc() {
 	core := new(game.Context)
-	core^ = game.init().?
-	cxt := ecs.init_ecs()
+	core^ = game.init()
 	context.user_ptr = core
-	
+
+	cxt := ecs.init_ecs()
+
 	dynamic_index := game.initialize_dynamic_resource()
 	context.user_index = cast(int)dynamic_index
 
@@ -40,7 +43,6 @@ main :: proc() {
 
 			running = game.handle_event()
 
-			
 			game.on_fixed_update()
 			game.on_update()
 			// todo calculate animation time...

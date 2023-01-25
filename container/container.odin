@@ -1,6 +1,6 @@
 package game_container
 
-import "../math"
+import "../mathematics"
 import "vendor:sdl2"
 
 DynamicResource :: struct{
@@ -9,16 +9,19 @@ DynamicResource :: struct{
     // time
     elapsed_time : u32,
     delta_time : f32,
-    elapsed_physic_time : u32,
+    elapsed_physic_time : f32,
+    animation_time : f32,
+
 }
 
 Animation :: struct{
-    value : math.Vec4,
+    value : mathematics.Vec4,
+    previous_frame : u32,
     //will have a [dynamic]math.Vec2i for the animation indices
 }
 
 Position :: struct{
-    value : math.Vec2,
+    value : mathematics.Vec2,
 }
 
 Rotation :: struct{
@@ -26,10 +29,10 @@ Rotation :: struct{
 }
 
 Scale :: struct {
-    value : math.Vec2,
+    value : mathematics.Vec2,
 }
 
 TextureAsset :: struct{
 	texture : ^sdl2.Texture,
-	dimension : math.Vec2,
+	dimension : mathematics.Vec2,
 }

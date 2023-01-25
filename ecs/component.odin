@@ -44,6 +44,22 @@ add_component :: proc(ctx: ^Context, entity: Entity, component: $T) -> (^T, ECS_
   return &array[comp_map.entity_indices[entity]], .NO_ERROR
 }
 
+add_component_unchecked :: proc(ctx: ^Context, entity: Entity, component: $T) -> ^T{
+  register_component(ctx, T)
+
+  #no_bounds_check{
+    array := cast(^[dynamic]T)ctx.component_map[T].data
+    comp_map := &ctx.component_map[T]
+  
+    // Add a new component to the component array.
+    append_elem(array, component) 
+    // Map the entity to the new index, so we can lookup the component index later,
+    comp_map.entity_indices[entity] = len(array) - 1
+
+    return &array[comp_map.entity_indices[entity]]
+  }
+}
+
 has_component :: proc(ctx: ^Context, entity: Entity, T: typeid) -> bool {
   return entity in (&ctx.component_map[T]).entity_indices
 }
@@ -102,6 +118,14 @@ get_component :: proc(ctx: ^Context, entity: Entity, $T: typeid) -> (component: 
   return &array[index], .NO_ERROR
 }
 
+get_component_unchecked :: proc(ctx: ^Context, entity: Entity, $T: typeid) -> ^T{
+  #no_bounds_check{
+        array := cast(^[dynamic]T)ctx.component_map[T].data
+        index, is_entity_a_key := ctx.component_map[T].entity_indices[entity]
+        return &array[index]
+  }
+}
+
 get_component_list :: proc(ctx: ^Context, $T: typeid) -> ([]T, ECS_Error) {
   array := cast(^[dynamic]T)ctx.component_map[T].data
 
@@ -118,6 +142,14 @@ set_component :: proc(ctx: ^Context, entity: Entity, component: $T) -> ECS_Error
     return .ENTITY_DOES_NOT_MAP_TO_ANY_INDEX
   }
   array := cast(^[dynamic]T)ctx.component_map[T].data
-  array[index] = component;
+  array[index] = component
   return .NO_ERROR
+}
+
+set_component_unchecked :: proc(ctx: ^Context, entity: Entity, component: $T){
+  #no_bounds_check{
+    index, is_entity_a_key := ctx.component_map[T].entity_indices[entity]
+    array := cast(^[dynamic]T)ctx.component_map[T].data
+    array[index] = component
+  }
 }

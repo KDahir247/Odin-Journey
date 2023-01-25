@@ -1,7 +1,7 @@
 package utility
 
 import "../ecs"
-import "../math"
+import "../mathematics"
 import game "../context"
 import "../container"
 
@@ -27,7 +27,7 @@ load_texture :: proc(path : string) -> ecs.Entity{
 
     texture := sdl2.CreateTextureFromSurface(ctx.renderer, optimal_surface )
 
-    dimension := math.Vec2{ cast(f32)optimal_surface.w, cast(f32)optimal_surface.h}
+    dimension := mathematics.Vec2{ cast(f32)optimal_surface.w, cast(f32)optimal_surface.h}
     
     texture_entity := ecs.create_entity(&ctx.world)
 

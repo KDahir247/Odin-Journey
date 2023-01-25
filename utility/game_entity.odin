@@ -1,7 +1,7 @@
 package utility
 
 import "../ecs"
-import "../math"
+import "../mathematics"
 import "../container"
 import game "../context"
 
@@ -33,11 +33,11 @@ create_game_entity ::proc(path : string,translation : [2]f32, rotation:f64, scal
     game_entity := load_texture(path)
 
     #no_bounds_check{    
-        ecs.add_component(&ctx.world, game_entity, container.Position{ math.Vec2{translation[0], translation[1]}})
+        ecs.add_component(&ctx.world, game_entity, container.Position{ mathematics.Vec2{translation[0], translation[1]}})
         ecs.add_component(&ctx.world,game_entity, container.Rotation{rotation})
-        ecs.add_component(&ctx.world, game_entity, container.Scale{math.Vec2{scale[0], scale[1]}})
+        ecs.add_component(&ctx.world, game_entity, container.Scale{mathematics.Vec2{scale[0], scale[1]}})
         
-        ecs.add_component(&ctx.world, game_entity, container.Animation{math.Vec4{animation[0], animation[1], animation[2], animation[3]}})
+        ecs.add_component(&ctx.world, game_entity, container.Animation{mathematics.Vec4{animation[0], animation[1], animation[2], animation[3]}, 0})
 
     }
 

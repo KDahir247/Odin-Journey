@@ -2,15 +2,14 @@ package game_context
 
 import  "../ecs"
 import "../container"
-import "../math"
+import "../mathematics"
 
+import  "core:math"
 import "core:fmt"
 import "core:log"
 
 import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
-// Solution till i incorperate ecs 
-
 
 Context :: struct{
 	window : ^sdl2.Window,
@@ -20,41 +19,40 @@ Context :: struct{
 }
 
 @(cold)
-initialize_dynamic_resource :: proc() -> ecs.Entity  {
+initialize_dynamic_resource :: proc() -> ecs.Entity 
+{
 	resource_entity := ecs.Entity{}
 
-	if context.user_ptr == nil{
-		log.error("Context hasn't been initialized and set to the user pointer call init and assign user pointer")
-	}else{
+	if context.user_ptr != nil{
 		ctx := cast(^Context) context.user_ptr
 		resource_entity = ecs.create_entity(&ctx.world)
 
-		ecs.add_component(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,0})
+		ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,0,0})
 	}
 	
 	return resource_entity
 }
 
 @(cold)
-init :: proc() -> Maybe(Context){
+init :: proc() -> Context{
 	ctx := Context{}
 
 	if err := sdl2.Init(sdl2.InitFlags{ .VIDEO}); err != 0{
 		log.error(sdl2.GetError())
 	}
 
-	img_init_flag := sdl2_img.INIT_PNG;
-	img_res := sdl2_img.InitFlags(sdl2_img.Init(img_init_flag))
+	img_res := sdl2_img.Init(sdl2_img.INIT_PNG)
 
-	if img_init_flag != img_res{
+	if img_res != sdl2_img.INIT_PNG{
 		log.errorf("sdl image init return %v", img_res)
 	}
 
 	sdl2.ClearError()
 
 	ctx.window = sdl2.CreateWindow("game", sdl2.WINDOWPOS_CENTERED, sdl2.WINDOWPOS_CENTERED, 800, 500, sdl2.WindowFlags{ .SHOWN}) 
-	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, sdl2.RendererFlags{.ACCELERATED, .PRESENTVSYNC, .TARGETTEXTURE})
 	ctx.pixel_format = sdl2.GetWindowSurface(ctx.window).format
+	
+	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, sdl2.RendererFlags{.ACCELERATED, .PRESENTVSYNC, .TARGETTEXTURE})
 	
 	if err := sdl2.SetRenderDrawColor(ctx.renderer, 255, 255, 255, 255); err != 0 {
 		log.error(sdl2.GetError())
@@ -67,52 +65,51 @@ handle_event ::proc() -> bool{
 	sdl_event : sdl2.Event;
 
 	running := true;
+
 	for sdl2.PollEvent(&sdl_event){
-		if sdl_event.type == sdl2.EventType.QUIT{
-			running = false;
-		}
+		running = sdl_event.type != sdl2.EventType.QUIT;
 	}
 
 	return running;
 }
 
 on_fixed_update :: proc(){
-	ctx := cast(^Context) context.user_ptr
-	resource_entity := cast(ecs.Entity)context.user_index
-	resource, _:= ecs.get_component(&ctx.world, resource_entity, container.DynamicResource)
+	ctx := cast(^Context)context.user_ptr
 	
-	current_time := sdl2.GetTicks()
+	resource_entity := ecs.Entity(context.user_index)
+	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
+	
+	current_time := f32(sdl2.GetTicks())
 
-	delta_time := cast(f32)(current_time - resource.elapsed_physic_time) * 0.001
+	delta_time := current_time - resource.elapsed_physic_time * 0.001
 
 	//Physics Loop
 
-	ecs.set_component(&ctx.world, resource_entity,container.DynamicResource{resource.elapsed_time, delta_time, current_time} )
+	ecs.set_component_unchecked(&ctx.world, resource_entity,container.DynamicResource{resource.elapsed_time, delta_time, current_time,resource.animation_time } )
 }
 
 on_update :: proc(){
-	ctx := cast(^Context) context.user_ptr
+	ctx := cast(^Context)context.user_ptr
 
 	keyboard_snapshot := sdl2.GetKeyboardState(nil)
 	
 	entites := ecs.get_entities_with_components(&ctx.world, {container.Position})
 
 	for entity in entites{
-		current_translation, _ := ecs.get_component(&ctx.world, entity, container.Position)
+		current_translation := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
 
 		#no_bounds_check{
-			
-			//todo khal : movement for player will be retrieve from a config file.
-			left := cast(f32)(keyboard_snapshot[sdl2.Scancode.A] | keyboard_snapshot[sdl2.Scancode.LEFT]) * -1;
-			down := cast(f32)(keyboard_snapshot[sdl2.Scancode.S] | keyboard_snapshot[sdl2.Scancode.DOWN]);
-			right := cast(f32)(keyboard_snapshot[sdl2.Scancode.D] | keyboard_snapshot[sdl2.Scancode.RIGHT])
-			up := cast(f32)(keyboard_snapshot[sdl2.Scancode.W] | keyboard_snapshot[sdl2.Scancode.UP]) * -1
+			//TODO: khal : movement for player will be retrieve from a config file. don't like this solution
+			left := f32(keyboard_snapshot[sdl2.Scancode.A] | keyboard_snapshot[sdl2.Scancode.LEFT]) * -1;
+			down := f32(keyboard_snapshot[sdl2.Scancode.S] | keyboard_snapshot[sdl2.Scancode.DOWN]);
+			right := f32(keyboard_snapshot[sdl2.Scancode.D] | keyboard_snapshot[sdl2.Scancode.RIGHT])
+			up := f32(keyboard_snapshot[sdl2.Scancode.W] | keyboard_snapshot[sdl2.Scancode.UP]) * -1
 		
-			target_vertical := up + down
-			target_horizontal := left + right
+			target_vertical := up + down + current_translation.value.y
+			target_horizontal := left + right + current_translation.value.x
 
-			desired_translation := container.Position{math.Vec2{current_translation.value.x + target_horizontal, current_translation.value.y + target_vertical}}
-			ecs.set_component(&ctx.world, entity, desired_translation)
+			desired_translation := container.Position{mathematics.Vec2{target_horizontal, target_vertical}}
+			ecs.set_component_unchecked(&ctx.world, entity, desired_translation)
 		}
 	}
 
@@ -120,6 +117,31 @@ on_update :: proc(){
 }
 
 update_animation :: proc(){
+	ctx := cast(^Context) context.user_ptr
+	resource_entity := ecs.Entity(context.user_index)
+	dynamic_resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
+
+	animation_entities := ecs.get_entities_with_components(&ctx.world, {container.Animation})
+
+	for entity in animation_entities{
+		
+		animation := ecs.get_component_unchecked(&ctx.world, entity, container.Animation)
+
+		current_time := f32(sdl2.GetTicks())
+		
+		delta_time := (current_time - dynamic_resource.animation_time) * 0.001
+
+		//TODO: khal the 60 is a magic number remove magic number
+		frame_to_update := math.floor(delta_time / (1 / 60))
+		
+		if(frame_to_update > 0){
+			animation.previous_frame += cast(u32)frame_to_update
+			//TODO: khal animation sprite size is hardcoded.
+			animation.previous_frame %= 5
+			dynamic_resource.animation_time = current_time
+		}
+}
+
 	// Animation
 }
 
@@ -130,18 +152,15 @@ on_late_update :: proc(){
 }
 
 
-
 on_render :: proc(){
 	ctx := cast(^Context) context.user_ptr
 	
 	sdl2.RenderClear(ctx.renderer)
 
-	texture_assets,e := ecs.get_component_list(&ctx.world, container.TextureAsset)
-
 	tex_entities:= ecs.get_entities_with_components(&ctx.world, {container.TextureAsset})
 
 	for entity in tex_entities{
-		texture_component, _ := ecs.get_component(&ctx.world, entity, container.TextureAsset)
+		texture_component := ecs.get_component_unchecked(&ctx.world, entity, container.TextureAsset)
 
 		position := ecs.get_component(&ctx.world, entity, container.Position) or_else nil
 		rotation := ecs.get_component(&ctx.world,entity, container.Rotation) or_else nil
