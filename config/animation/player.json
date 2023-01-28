@@ -1,13 +1,17 @@
 {
-    "Idle" : [],
-    "Left Walk" : [],
-    "Right Walk" : [],
-    "Up Walk" : [],
-    "Down Walk" : [],
-    "Light Attack" : [],
-    "Heavy Attack" : [],
-    "Shield" : [],
-    "Skill1" : [],
-    "Skill2" : [],
-    "Skill3" : [] 
+    "path" : "resource/padawan/padawan_with_fx.png",
+ 
+    "Idle" : {
+        "index" : 0,
+        "num_slice" : 7,
+        "width" : 39.0,
+        "height" : 43.0
+    },
+
+    "Walk" : {
+        "index" : 1,
+        "num_slice" : 2,
+        "width" : 36.0,
+        "height" : 43.0
+    }
 }

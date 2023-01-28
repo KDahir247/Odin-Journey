@@ -10,7 +10,7 @@ elapsed_frame ::proc() -> u32 {
     return sdl2.GetTicks()
 }
 
-cap_frame_rate_precise :: proc(elapsed_time_precise  : u64, target_fps : u64){
+cap_frame_rate_precise :: proc(elapsed_time_precise  : u64, $target_fps : u64){
     current_time := sdl2.GetPerformanceCounter()
 
     target_ms :u64= 1000 / target_fps
@@ -22,7 +22,7 @@ cap_frame_rate_precise :: proc(elapsed_time_precise  : u64, target_fps : u64){
     sdl2.Delay(cast(u32)delay_factor)
 }
 
-cap_frame_rate :: proc(elapsed_time : u32, target_fps : u32){
+cap_frame_rate :: proc($elapsed_time : u32, $target_fps : u32){
     current_time := sdl2.GetTicks()
 
     target_ms := 1000 / target_fps

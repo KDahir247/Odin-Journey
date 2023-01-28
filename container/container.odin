@@ -3,6 +3,13 @@ package game_container
 import "../mathematics"
 import "vendor:sdl2"
 
+AnimationConfig :: struct{
+    index : i64,
+    slices : i64,
+    width : f64,
+    height : f64,
+}
+
 DynamicResource :: struct{
     // camera
 
@@ -11,13 +18,19 @@ DynamicResource :: struct{
     delta_time : f32,
     elapsed_physic_time : f32,
     animation_time : f32,
+    
+    animation_index : int,
 
 }
 
+Animation_Tree :: struct{
+    previous_frame : int,
+    animation_fps : f32,
+    animations : [dynamic]Animation,
+}
+
 Animation :: struct{
-    value : mathematics.Vec4,
-    previous_frame : u32,
-    //will have a [dynamic]math.Vec2i for the animation indices
+    value : [dynamic]sdl2.Rect,
 }
 
 Position :: struct{
@@ -31,6 +44,7 @@ Rotation :: struct{
 Scale :: struct {
     value : mathematics.Vec2,
 }
+
 
 TextureAsset :: struct{
 	texture : ^sdl2.Texture,

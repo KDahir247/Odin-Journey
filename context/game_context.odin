@@ -27,7 +27,7 @@ initialize_dynamic_resource :: proc() -> ecs.Entity
 		ctx := cast(^Context) context.user_ptr
 		resource_entity = ecs.create_entity(&ctx.world)
 
-		ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,0,0})
+		ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,0,0, 0})
 	}
 	
 	return resource_entity
@@ -54,7 +54,7 @@ init :: proc() -> Context{
 	
 	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, sdl2.RendererFlags{.ACCELERATED, .PRESENTVSYNC, .TARGETTEXTURE})
 	
-	if err := sdl2.SetRenderDrawColor(ctx.renderer, 255, 255, 255, 255); err != 0 {
+	if err := sdl2.SetRenderDrawColor(ctx.renderer, 45, 45, 45, 45); err != 0 {
 		log.error(sdl2.GetError())
 	}
 
@@ -83,9 +83,9 @@ on_fixed_update :: proc(){
 
 	delta_time := current_time - resource.elapsed_physic_time * 0.001
 
-	//Physics Loop
+	//Physics Loop Here
 
-	ecs.set_component_unchecked(&ctx.world, resource_entity,container.DynamicResource{resource.elapsed_time, delta_time, current_time,resource.animation_time } )
+	ecs.set_component_unchecked(&ctx.world, resource_entity,container.DynamicResource{resource.elapsed_time, delta_time, current_time,resource.animation_time, resource.animation_index } )
 }
 
 on_update :: proc(){
@@ -101,14 +101,13 @@ on_update :: proc(){
 		#no_bounds_check{
 			//TODO: khal : movement for player will be retrieve from a config file. don't like this solution
 			left := f32(keyboard_snapshot[sdl2.Scancode.A] | keyboard_snapshot[sdl2.Scancode.LEFT]) * -1;
-			down := f32(keyboard_snapshot[sdl2.Scancode.S] | keyboard_snapshot[sdl2.Scancode.DOWN]);
+			//down := f32(keyboard_snapshot[sdl2.Scancode.S] | keyboard_snapshot[sdl2.Scancode.DOWN]);
 			right := f32(keyboard_snapshot[sdl2.Scancode.D] | keyboard_snapshot[sdl2.Scancode.RIGHT])
-			up := f32(keyboard_snapshot[sdl2.Scancode.W] | keyboard_snapshot[sdl2.Scancode.UP]) * -1
 		
-			target_vertical := up + down + current_translation.value.y
+			// target_vertical := up + down + current_translation.value.y
 			target_horizontal := left + right + current_translation.value.x
 
-			desired_translation := container.Position{mathematics.Vec2{target_horizontal, target_vertical}}
+			desired_translation := container.Position{mathematics.Vec2{target_horizontal, current_translation.value.y}}
 			ecs.set_component_unchecked(&ctx.world, entity, desired_translation)
 		}
 	}
@@ -119,28 +118,23 @@ on_update :: proc(){
 update_animation :: proc(){
 	ctx := cast(^Context) context.user_ptr
 	resource_entity := ecs.Entity(context.user_index)
-	dynamic_resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
+	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
 
-	animation_entities := ecs.get_entities_with_components(&ctx.world, {container.Animation})
+	animation_tree_entites := ecs.get_entities_with_components(&ctx.world, {container.Animation_Tree})
 
-	for entity in animation_entities{
-		
-		animation := ecs.get_component_unchecked(&ctx.world, entity, container.Animation)
-
+	for tree_entity in animation_tree_entites{
+		animation_tree := ecs.get_component_unchecked(&ctx.world, tree_entity, container.Animation_Tree)
 		current_time := f32(sdl2.GetTicks())
 		
-		delta_time := (current_time - dynamic_resource.animation_time) * 0.001
-
-		//TODO: khal the 60 is a magic number remove magic number
-		frame_to_update := math.floor(delta_time / (1 / 60))
-		
+		delta_time := (current_time - resource.animation_time) * 0.001
+		frame_to_update := math.floor(delta_time * animation_tree.animation_fps)
+	
 		if(frame_to_update > 0){
-			animation.previous_frame += cast(u32)frame_to_update
-			//TODO: khal animation sprite size is hardcoded.
-			animation.previous_frame %= 5
-			dynamic_resource.animation_time = current_time
+			animation_tree.previous_frame += int(frame_to_update)
+			animation_tree.previous_frame %= len(animation_tree.animations[resource.animation_index].value) // this is correct
+			resource.animation_time = current_time
 		}
-}
+	}
 
 	// Animation
 }
@@ -153,21 +147,24 @@ on_late_update :: proc(){
 
 
 on_render :: proc(){
-	ctx := cast(^Context) context.user_ptr
-	
+	ctx := cast(^Context)context.user_ptr
+	resource_entity := ecs.Entity(context.user_index)
+	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
+
 	sdl2.RenderClear(ctx.renderer)
 
-	tex_entities:= ecs.get_entities_with_components(&ctx.world, {container.TextureAsset})
+	texture_entities:= ecs.get_entities_with_components(&ctx.world, {container.TextureAsset})
 
-	for entity in tex_entities{
-		texture_component := ecs.get_component_unchecked(&ctx.world, entity, container.TextureAsset)
+	for texture_entity in texture_entities{
+		texture_component := ecs.get_component_unchecked(&ctx.world, texture_entity, container.TextureAsset)
 
-		position := ecs.get_component(&ctx.world, entity, container.Position) or_else nil
-		rotation := ecs.get_component(&ctx.world,entity, container.Rotation) or_else nil
-		scale := ecs.get_component(&ctx.world, entity, container.Scale) or_else nil
+		animation_tree := ecs.get_component(&ctx.world, texture_entity, container.Animation_Tree) or_else nil
+		position := ecs.get_component(&ctx.world, texture_entity, container.Position) or_else nil
+		rotation := ecs.get_component(&ctx.world,texture_entity, container.Rotation) or_else nil
+		scale := ecs.get_component(&ctx.world, texture_entity, container.Scale) or_else nil
 
-		x : f32= 0
-		y : f32= 0
+		position_x : f32= 0
+		position_y : f32= 0
 
 		angle : f64 = 0
 
@@ -175,8 +172,8 @@ on_render :: proc(){
 		scale_y : f32= 1
 
 		if position != nil{
-			x = position.value.x
-			y = position.value.y
+			position_x = position.value.x
+			position_y = position.value.y
 		}
 
 
@@ -189,12 +186,20 @@ on_render :: proc(){
 			scale_y = scale.value.y
 		}
 
-		target_dimension_x := texture_component.dimension.x * scale_x
-		target_dimension_y := texture_component.dimension.y * scale_y
+		desired_scale_x := texture_component.dimension.x * scale_x
+		desired_scale_y := texture_component.dimension.y * scale_y
 
-		dst_rec := sdl2.FRect{x, y, target_dimension_x, target_dimension_y}
+		dst_rec := sdl2.FRect{position_x, position_y, desired_scale_x, desired_scale_y}
+		
+		src_res := new(sdl2.Rect)
 
-		sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,nil, &dst_rec,angle,nil, sdl2.RendererFlip.NONE)
+		if animation_tree != nil{
+			src_res^ = animation_tree.animations[resource.animation_index].value[animation_tree.previous_frame]
+		}else{
+			src_res = nil
+		}
+
+		sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec,angle,nil, sdl2.RendererFlip.NONE)
 	}
 
 	sdl2.RenderPresent(ctx.renderer)

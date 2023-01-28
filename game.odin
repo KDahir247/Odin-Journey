@@ -22,20 +22,18 @@ main :: proc() {
 	cxt := ecs.init_ecs()
 
 	dynamic_index := game.initialize_dynamic_resource()
-	context.user_index = cast(int)dynamic_index
+	context.user_index = int(dynamic_index)
 
 	defer game.cleanup()
 	defer free(core)
 	defer ecs.deinit_ecs(&cxt)
 
 	running := true;
-
-	utility.create_game_entity("resource/lidia.png", {400,300}, 0, {0.8,0.8}, {0,0,0,0})
-	utility.load_texture("resource/Arkanos_0.png")
-
-
-	// Load Title Screen (maybe a cool splash) first add menu and for loop till the press the play button
-	// to prevent the logic code below from happening
+	
+	tex_path, configs := utility.parse_animation("config/animation/player.json",{"Idle", "Walk"})
+	defer delete(configs)
+	
+	utility.create_game_entity(tex_path,configs, {400,300}, 0, {0.4	,0.4})
 
 	{
 		for running{
