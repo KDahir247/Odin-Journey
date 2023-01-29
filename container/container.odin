@@ -3,6 +3,29 @@ package game_container
 import "../mathematics"
 import "vendor:sdl2"
 
+Action :: enum{
+    Idle,
+    Walking,
+    Falling,
+    Jumping,
+    Attacking,
+    Dead,
+}
+
+
+// Component to distingush playe
+Player :: struct{
+    a : int,
+}
+
+GameEntity :: struct{
+    animation_index : int,
+    animation_time : f32,
+    animation_timer : u32,
+    direction : sdl2.RendererFlip,
+    actions : bit_set[Action],
+}
+
 AnimationConfig :: struct{
     index : i64,
     slices : i64,
@@ -17,9 +40,6 @@ DynamicResource :: struct{
     elapsed_time : u32,
     delta_time : f32,
     elapsed_physic_time : f32,
-    animation_time : f32,
-    
-    animation_index : int,
 
 }
 

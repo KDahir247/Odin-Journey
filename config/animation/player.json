@@ -1,5 +1,5 @@
 {
-    "path" : "resource/padawan/padawan_with_fx.png",
+    "path" : "resource/padawan/pad.png",
  
     "Idle" : {
         "index" : 0,
@@ -10,8 +10,8 @@
 
     "Walk" : {
         "index" : 1,
-        "num_slice" : 2,
-        "width" : 36.0,
-        "height" : 43.0
+        "num_slice" : 8,
+        "width" : 39.0,
+        "height" : 41.0
     }
 }

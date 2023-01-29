@@ -126,11 +126,14 @@ get_component_unchecked :: proc(ctx: ^Context, entity: Entity, $T: typeid) -> ^T
   }
 }
 
+
 get_component_list :: proc(ctx: ^Context, $T: typeid) -> ([]T, ECS_Error) {
   array := cast(^[dynamic]T)ctx.component_map[T].data
 
   return array[:], .NO_ERROR
 }
+
+
 
 set_component :: proc(ctx: ^Context, entity: Entity, component: $T) -> ECS_Error {
   if !has_component(ctx, entity, T) {
