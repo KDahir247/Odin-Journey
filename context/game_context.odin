@@ -27,7 +27,7 @@ initialize_dynamic_resource :: proc() -> ecs.Entity
 		ctx := cast(^Context) context.user_ptr
 		resource_entity = ecs.create_entity(&ctx.world)
 
-		ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,0})
+		ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,f32(sdl2.GetTicks())})
 	}
 	
 	return resource_entity
@@ -95,16 +95,19 @@ handle_event ::proc() -> bool{
 		}
 	}
 
-	if container.Action.Attacking not_in game_param.actions{
+	jumping := keyboard_snapshot[sdl2.Scancode.SPACE]
+
+	if jumping == 1 && container.Action.Idle in game_param.actions{
+		
+		game_param.actions = {container.Action.Jumping}
+	}else if container.Action.Attacking not_in game_param.actions{
 		left := keyboard_snapshot[sdl2.Scancode.A] | keyboard_snapshot[sdl2.Scancode.LEFT]
 		right := keyboard_snapshot[sdl2.Scancode.D] | keyboard_snapshot[sdl2.Scancode.RIGHT]
+		game_param.animation_index = int(left | right)
 		
 		if left | right != 0{
 			game_param.actions = {container.Action.Walking}
 			game_param.direction = sdl2.RendererFlip(left > right)
-			game_param.animation_index = 1
-		}else{
-			game_param.animation_index = 0
 		}
 	}
 
@@ -117,36 +120,60 @@ on_fixed_update :: proc(){
 	resource_entity := ecs.Entity(context.user_index)
 	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
 	
-	current_physic_time := f32(sdl2.GetTicks())
+	previous_physics_time := resource.current_physics_time
+	resource.current_physics_time = f32(sdl2.GetTicks())
 
-	delta_time := (current_physic_time - resource.elapsed_physic_time) * 0.001
+	delta_time := (resource.current_physics_time - previous_physics_time) * 0.001
+	resource.delta_time = delta_time
+
+	physics_entities := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Physics})
+
+	for entity in physics_entities{
+		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
+		game_component := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
+
+		physics_component.velocity = mathematics.Vec2{0,0}
+		
+		direction_map := f32(game_component.direction) * -1.0
+		direction_map += 0.5
+
+		direction := direction_map * 2.0
+		physics_component.velocity.x += direction * physics_component.acceleration.x 
+
+		//TODO : Khal working progress on jump
+		if container.Action.Jumping in game_component.actions{
+			physics_component.velocity.y -= physics_component.acceleration.y 
+		}
+
+		physics_component.velocity.y += physics_component.gravity 
+		
+	}
 
 	//Physics Loop Here
-
-	resource.delta_time = delta_time
-	resource.elapsed_physic_time = current_physic_time
 }
 
 on_update :: proc(){
 	ctx := cast(^Context)context.user_ptr
-
-	game_entities := ecs.get_entities_with_components(&ctx.world, {container.Position, container.GameEntity})
+	resource_entity := ecs.Entity(context.user_index)
+	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
+	
+	game_entities := ecs.get_entities_with_components(&ctx.world, {container.Position, container.GameEntity, container.Physics})
 	
 	for entity in game_entities{
 		current_translation := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
 		game_entity := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
-
-		direction_map := f32(game_entity.direction) * -1.0
-		direction_map += 0.5
-
-		direction := direction_map * 2.0
+		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		
 		if game_entity.actions == {container.Action.Walking}{
-			target_horizontal := direction + current_translation.value.x
-
-			desired_translation := container.Position{mathematics.Vec2{target_horizontal, current_translation.value.y}}
-			current_translation^ = desired_translation
+			current_translation.value.x += physics_component.velocity.x * resource.delta_time
 		}
+
+		// handle collision this is a temporary solution... 
+		// if tounch ground disable velocity on the y.
+		if current_translation.value.y < 430 || physics_component.velocity.y < 0{
+			current_translation.value.y += physics_component.velocity.y  * resource.delta_time
+		}
+
 	}
 }
 
@@ -209,7 +236,7 @@ on_render :: proc(){
 		dst_rec := sdl2.FRect{position_x, position_y, desired_scale_x, desired_scale_y}
 		
 		src_res := new(sdl2.Rect)
-		
+
 		if animation_tree != nil && game_entity != nil{
 			max_frame_len := len(animation_tree.animations[game_entity.animation_index].value) - 1
 			capped_frame := linalg.clamp(animation_tree.previous_frame, 0, max_frame_len)
@@ -219,7 +246,7 @@ on_render :: proc(){
 			src_res = nil
 		}
 
-		sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec,0,nil, game_entity.direction)
+		sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.direction)
 	}
 
 	sdl2.RenderPresent(ctx.renderer)

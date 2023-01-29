@@ -13,5 +13,20 @@
         "num_slice" : 8,
         "width" : 39.0,
         "height" : 41.0
+    },
+
+    "Jump" : {
+        "index" : 2,
+        "num_slice" : 1,
+        "width" : 39.0,
+        "height" : 41.0
+    },
+
+    "Fall" : {
+        "index" : 3,
+        "num_slice" : 1,
+        "width" : 39.0,
+        "height" : 41.0
     }
+
 }

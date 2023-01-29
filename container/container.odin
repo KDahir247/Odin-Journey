@@ -12,10 +12,15 @@ Action :: enum{
     Dead,
 }
 
+Physics :: struct{
+    velocity : mathematics.Vec2,
+    acceleration : mathematics.Vec2,
+    gravity : f32,
+}
 
 // Component to distingush playe
 Player :: struct{
-    a : int,
+    _unused : u8,
 }
 
 GameEntity :: struct{
@@ -39,7 +44,7 @@ DynamicResource :: struct{
     // time
     elapsed_time : u32,
     delta_time : f32,
-    elapsed_physic_time : f32,
+    current_physics_time : f32,
 
 }
 
