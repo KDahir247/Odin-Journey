@@ -8,4 +8,4 @@ Small game I am working on with sdl and Odin lang.
 Thank you Penusbmic
 
 
-![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/animation.gif)
+![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/multi_animation.gif)
