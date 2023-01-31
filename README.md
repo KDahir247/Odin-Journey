@@ -10,4 +10,4 @@ Working on physics and jumping currently
 Thank you Penusbmic
 
 
-![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/multi_animation.gif)
+![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/rough_physics.gif)
