@@ -14,7 +14,7 @@ create_game_entity ::proc(path : string,anim_config : [dynamic]container.Animati
     game_entity := load_animation_texture(path,anim_config)
 
     #no_bounds_check{    
-        ecs.add_component(&ctx.world, game_entity, container.Physics{mathematics.Vec2{0, 300},mathematics.Vec2{100, 1000},50 })
+        ecs.add_component(&ctx.world, game_entity, container.Physics{mathematics.Vec2{0, 98.1 },mathematics.Vec2{300, 1000},mathematics.Vec2{0.1, 0.9}, 20})
         if is_player{
             ecs.add_component_unchecked(&ctx.world, game_entity, container.Player{0})
         }

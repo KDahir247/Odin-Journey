@@ -15,7 +15,8 @@ Action :: enum{
 Physics :: struct{
     velocity : mathematics.Vec2,
     acceleration : mathematics.Vec2,
-    gravity : f32,
+    damping : mathematics.Vec2, // drag
+    inverse_mass : f32,
 }
 
 // Component to distingush playe

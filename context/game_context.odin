@@ -132,20 +132,21 @@ on_fixed_update :: proc(){
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		game_component := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
 
-		physics_component.velocity = mathematics.Vec2{0,0}
-		
 		direction_map := f32(game_component.direction) * -1.0
 		direction_map += 0.5
 
 		direction := direction_map * 2.0
-		physics_component.velocity.x += direction * physics_component.acceleration.x 
+		physics_component.velocity.x = physics_component.velocity.x  + (direction * physics_component.acceleration.x )  * delta_time
+		physics_component.velocity.x *= linalg.pow(physics_component.damping.x, delta_time)
 
 		//TODO : Khal working progress on jump
 		if container.Action.Jumping in game_component.actions{
-			physics_component.velocity.y -= physics_component.acceleration.y 
+			physics_component.velocity.y = physics_component.velocity.y - physics_component.acceleration.y * delta_time
 		}
 
-		physics_component.velocity.y += physics_component.gravity 
+		physics_component.velocity.y = physics_component.velocity.y + (physics_component.acceleration.y) * delta_time
+		physics_component.velocity.y *= linalg.pow(physics_component.damping.y, delta_time)
+
 		
 	}
 
@@ -165,13 +166,15 @@ on_update :: proc(){
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		
 		if game_entity.actions == {container.Action.Walking}{
-			current_translation.value.x += physics_component.velocity.x * resource.delta_time
+			current_translation.value.x += physics_component.velocity.x * resource.delta_time + physics_component.acceleration.x * resource.delta_time * resource.delta_time * 0.5
+		}else{
+			physics_component.velocity.x = 0
 		}
 
 		// handle collision this is a temporary solution... 
 		// if tounch ground disable velocity on the y.
 		if current_translation.value.y < 430 || physics_component.velocity.y < 0{
-			current_translation.value.y += physics_component.velocity.y  * resource.delta_time
+			current_translation.value.y += physics_component.velocity.y  * resource.delta_time + physics_component.acceleration.y * resource.delta_time * resource.delta_time * 0.5
 		}
 
 	}
