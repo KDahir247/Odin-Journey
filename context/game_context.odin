@@ -1,5 +1,6 @@
 package game_context
 
+import "../physics"
 import  "../ecs"
 import "../container"
 import "../mathematics"
@@ -10,6 +11,7 @@ import "core:log"
 
 import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
+
 
 Context :: struct{
 	window : ^sdl2.Window,
@@ -126,28 +128,43 @@ on_fixed_update :: proc(){
 	delta_time := (resource.current_physics_time - previous_physics_time) * 0.001
 	resource.delta_time = delta_time
 
-	physics_entities := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Physics})
+	physics_entities := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Physics, container.Position})
 
 	for entity in physics_entities{
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		game_component := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
+		position_component := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
 
 		direction_map := f32(game_component.direction) * -1.0
 		direction_map += 0.5
 
 		direction := direction_map * 2.0
-		physics_component.velocity.x = physics_component.velocity.x  + (direction * physics_component.acceleration.x )  * delta_time
-		physics_component.velocity.x *= linalg.pow(physics_component.damping.x, delta_time)
+		acceleration_direction := mathematics.Vec2{physics_component.acceleration.x * direction, physics_component.acceleration.y}
 
-		//TODO : Khal working progress on jump
-		if container.Action.Jumping in game_component.actions{
-			physics_component.velocity.y = physics_component.velocity.y - physics_component.acceleration.y * delta_time
+		//TODO : Khal working progress on jump hack solution.... need to be fleshed out correctly, but works :P
+		if container.Action.Jumping in game_component.actions && physics_component.velocity.y == 0{
+			physics_component.accumulated_force.y = -25000
 		}
 
-		physics_component.velocity.y = physics_component.velocity.y + (physics_component.acceleration.y) * delta_time
-		physics_component.velocity.y *= linalg.pow(physics_component.damping.y, delta_time)
+		result_acceleration := acceleration_direction + physics_component.accumulated_force * physics_component.inverse_mass
 
+		physics_component.velocity = physics_component.velocity  + result_acceleration  * delta_time
+		physics_component.velocity*= linalg.pow(physics_component.damping, delta_time)
+
+		if position_component.value.y > 430{
+			physics_component.velocity.y = clamp(physics_component.velocity.y, -100000, 0)
+		}
+
+		// if physics_component.velocity.y < 0 {
+		// 	physics_component.acceleration.y = 1000
+		// }else if physics_component.velocity.y > 0{
+		// 	physics_component.acceleration.y = 2000
+		// }
+
+		// if negative the going up  if positive then down
 		
+		physics_component.accumulated_force = mathematics.Vec2{0,0}
+
 	}
 
 	//Physics Loop Here
@@ -165,7 +182,7 @@ on_update :: proc(){
 		game_entity := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		
-		if game_entity.actions == {container.Action.Walking}{
+		if container.Action.Walking in game_entity.actions || container.Action.Jumping in game_entity.actions {
 			current_translation.value.x += physics_component.velocity.x * resource.delta_time + physics_component.acceleration.x * resource.delta_time * resource.delta_time * 0.5
 		}else{
 			physics_component.velocity.x = 0

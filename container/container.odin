@@ -12,10 +12,12 @@ Action :: enum{
     Dead,
 }
 
+
 Physics :: struct{
     velocity : mathematics.Vec2,
     acceleration : mathematics.Vec2,
     damping : mathematics.Vec2, // drag
+    accumulated_force : mathematics.Vec2,
     inverse_mass : f32,
 }
 
