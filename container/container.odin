@@ -3,15 +3,31 @@ package game_container
 import "../mathematics"
 import "vendor:sdl2"
 
-Action :: enum{
-    Idle,
-    Walking,
-    Falling,
-    Jumping,
-    Attacking,
-    Dead,
+OrientedRectangle :: struct{
+    center : mathematics.Vec2,
+    half_extent : mathematics.Vec2,
+    rotation_degree : f32,
 }
 
+Rectangle :: struct{
+    origin : mathematics.Vec2,
+    size : mathematics.Vec2,
+}
+
+Circle :: struct{
+    center : mathematics.Vec2,
+    radius : f32,
+}
+
+LineSegment :: struct{
+    start_point : mathematics.Vec2,
+    end_point : mathematics.Vec2,
+}
+
+Line :: struct{
+    base : mathematics.Vec2,
+    direction : mathematics.Vec2, // should be normalized this is direction
+}
 
 Physics :: struct{
     velocity : mathematics.Vec2,
@@ -21,9 +37,17 @@ Physics :: struct{
     inverse_mass : f32,
 }
 
-// Component to distingush playe
 Player :: struct{
     _unused : u8,
+}
+
+Action :: enum u8{
+    Idle = 0,
+    Walking = 1,
+    Falling,
+    Jumping,
+    Attacking,
+    Dead,
 }
 
 GameEntity :: struct{

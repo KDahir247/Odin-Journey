@@ -34,7 +34,7 @@ main :: proc() {
 	defer delete(configs)
 	
 	utility.create_game_entity(tex_path,configs, {400,100}, 0, {0.1	,0.2}, true)
-
+	
 	{
 		for running{
 			elapsed := utility.elapsed_frame_precise();
@@ -43,13 +43,12 @@ main :: proc() {
 
 			game.on_fixed_update()
 			game.on_update()
-			// todo calculate animation time...
-			game.update_animation() // delta time
+			game.update_animation()
 			game.on_late_update()
 			
 			game.on_render()
 
-			utility.cap_frame_rate_precise(elapsed, 60)
+			utility.cap_frame_rate_precise(elapsed, FPS_CAP)
 		}
 	}
 }

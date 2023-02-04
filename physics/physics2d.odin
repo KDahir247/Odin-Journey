@@ -16,7 +16,6 @@ integrate :: proc(physics : ^container.Physics, position : ^container.Position, 
     physics.velocity += acceleration * delta_time
     physics.velocity *= linalg.pow(physics.damping, delta_time)
 
-    
     position.value += physics.velocity * delta_time * physics.acceleration * delta_time * delta_time * 0.5
 }
 
