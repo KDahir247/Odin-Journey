@@ -2,6 +2,19 @@ package game_container
 
 import "../mathematics"
 import "vendor:sdl2"
+import "vendor:sdl2/image"
+
+GameConfig :: struct{
+    game_flags : sdl2.InitFlags,
+    img_flags : image.InitFlags,
+    window_flags : sdl2.WindowFlags,
+    render_flags : sdl2.RendererFlags,
+
+    title : cstring,
+    center : mathematics.Vec2i,
+    grid : mathematics.Vec3i,
+    clear_color : [4]u8,
+}
 
 OrientedRectangle :: struct{
     center : mathematics.Vec2,

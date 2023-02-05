@@ -7,17 +7,18 @@
     "image_flags" : [1],
 
     "window_config":{
-        "Title" : "Game",
+        "title" : "Odin Journey",
         "x" : -1,
         "y" : -1,
-        "width" : 800,
-        "height" : 500,
+        "grid_width" : 29,
+        "grid_height" : 17,
+        "grid_cell_size" : 36,
         "flags" : [2,5]
     },
 
     "render_config" : {
-        "clear_color" : [255, 255, 255, 255],
-        "flag" : [1, 2, 3]
+        "clear_color" : [40, 40, 40, 255],
+        "flags" : [1, 2, 3]
     }
     
 }

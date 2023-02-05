@@ -4,6 +4,7 @@ import "../physics"
 import  "../ecs"
 import "../container"
 import "../mathematics"
+import "../editor"
 
 import  "core:math/linalg"
 import "core:fmt"
@@ -11,20 +12,19 @@ import "core:log"
 
 import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
-
-GRID_CELL_SIZE :: 36
-GRID_WIDTH :: 29
-GRID_HEIGHT :: 17
+import "core:c"
 
 Context :: struct{
 	window : ^sdl2.Window,
 	renderer : ^sdl2.Renderer,
 	world : ecs.Context,
 	pixel_format : ^sdl2.PixelFormat,
-	// Cursor x,y, Shaodow Cursor x,y
-	cursor_pos : sdl2.Rect,
+	editor : editor.Context,
+	clear_color : [4]u8,
+
+	//TODO: khal find a way to remove the below variables.
 	mouse_hover : bool,
-	editor : bool,
+	editor_e : bool,
 	a : bool,
 }
 
@@ -44,40 +44,63 @@ initialize_dynamic_resource :: proc() -> ecs.Entity
 }
 
 @(cold)
-init :: proc() -> Context{
+init :: proc(game_cfg : container.GameConfig) -> Context{
 	ctx := Context{}
 
-	if err := sdl2.Init(sdl2.InitFlags{ .VIDEO, .TIMER}); err != 0{
+	if err := sdl2.Init(game_cfg.game_flags); err != 0{
 		log.error(sdl2.GetError())
 	}
 
-	img_res := sdl2_img.Init(sdl2_img.INIT_PNG)
+	img_res := sdl2_img.Init(game_cfg.img_flags)
 
-	if img_res != sdl2_img.INIT_PNG{
+	if img_res != game_cfg.img_flags{
 		log.errorf("sdl image init return %v", img_res)
 	}
 
 	sdl2.ClearError()
 
-	width := i32(GRID_WIDTH * GRID_CELL_SIZE) + 1
-	height := i32(GRID_HEIGHT * GRID_CELL_SIZE) + 1
-	ctx.window = sdl2.CreateWindow("game", sdl2.WINDOWPOS_CENTERED, sdl2.WINDOWPOS_CENTERED, width,height, sdl2.WindowFlags{ .SHOWN}) 
+	width := i32(game_cfg.grid.x * game_cfg.grid.z) + 1
+	height := i32(game_cfg.grid.y * game_cfg.grid.z) + 1
+
+	window_pos_x :c.int= sdl2.WINDOWPOS_CENTERED
+	window_pos_y :c.int= sdl2.WINDOWPOS_CENTERED
+
+	if game_cfg.center.x >= 0{
+		window_pos_x = game_cfg.center.x
+	}
+
+	if game_cfg.center.y >= 0{
+		window_pos_y = game_cfg.center.y
+	}
+
+	ctx.window = sdl2.CreateWindow(game_cfg.title, window_pos_x, window_pos_y, width,height, game_cfg.window_flags) 
 	ctx.pixel_format = sdl2.GetWindowSurface(ctx.window).format
 	
-	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, sdl2.RendererFlags{.ACCELERATED, .PRESENTVSYNC, .TARGETTEXTURE})
+	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, game_cfg.render_flags)
 	
-	if err := sdl2.SetRenderDrawColor(ctx.renderer, 45, 45, 45, 45); err != 0 {
-		log.error(sdl2.GetError())
+	#no_bounds_check{
+		if err := sdl2.SetRenderDrawColor(ctx.renderer, game_cfg.clear_color[0], game_cfg.clear_color[1], game_cfg.clear_color[2], game_cfg.clear_color[3]); err != 0 {
+			log.error(sdl2.GetError())
+		}
 	}
 
-	ctx.cursor_pos = sdl2.Rect{
-		(GRID_WIDTH - 1) / 2 * GRID_CELL_SIZE,
-		(GRID_HEIGHT - 1) / 2 * GRID_CELL_SIZE,
-		GRID_CELL_SIZE,
-		GRID_CELL_SIZE,
+	ctx.clear_color = game_cfg.clear_color
+
+	cursor_pos := mathematics.Vec4i{
+		(game_cfg.grid.x - 1) / 2 * game_cfg.grid.z,
+		(game_cfg.grid.y - 1) / 2 * game_cfg.grid.z,
+		game_cfg.grid.z,
+		game_cfg.grid.z,
 	}
 
-	ctx.editor = true
+	ctx.editor = editor.Context{
+		cursor_pos,
+		game_cfg.grid,
+		{55,55,55,255},
+		{55,55,55,255},
+	}
+
+	ctx.editor_e = true
 
 	return ctx;
 }
@@ -101,11 +124,11 @@ handle_event ::proc() -> bool{
 	
 		#partial switch sdl_event.type{
 			case sdl2.EventType.MOUSEMOTION:
-				ctx.cursor_pos = sdl2.Rect{
-					(sdl_event.motion.x / GRID_CELL_SIZE) * GRID_CELL_SIZE,
-					(sdl_event.motion.y / GRID_CELL_SIZE) * GRID_CELL_SIZE,
-					 GRID_CELL_SIZE,
-					 GRID_CELL_SIZE }
+				ctx.editor.cursor_position = mathematics.Vec4i{
+					(sdl_event.motion.x / ctx.editor.grid_dimension.z) * ctx.editor.grid_dimension.z,
+					(sdl_event.motion.y / ctx.editor.grid_dimension.z) * ctx.editor.grid_dimension.z,
+					ctx.editor.grid_dimension.z,
+					ctx.editor.grid_dimension.z }
 			case sdl2.EventType.WINDOWEVENT:
 				if sdl_event.window.event  == sdl2.WindowEventID.ENTER{
 					ctx.mouse_hover = true
@@ -122,7 +145,7 @@ handle_event ::proc() -> bool{
 
 	editor_mode := keyboard_snapshot[sdl2.Scancode.ESCAPE]
 	if editor_mode == 1 && ctx.a{
-		ctx.editor = !ctx.editor
+		ctx.editor_e = !ctx.editor_e
 		ctx.a = false
 	}else if editor_mode != 1{
 		ctx.a = true
@@ -304,67 +327,93 @@ on_render :: proc(){
 	sdl2.RenderClear(ctx.renderer)
 
 	texture_entities:= ecs.get_entities_with_components(&ctx.world, {container.TextureAsset, container.Position, container.Rotation, container.Scale})
+	
+	#no_bounds_check{
 
-	sdl2.SetRenderDrawColor(ctx.renderer, 45,45,45,255)
+		sdl2.SetRenderDrawColor(ctx.renderer,
+			ctx.clear_color.r,
+			ctx.clear_color.g,
+			ctx.clear_color.b,
+			ctx.clear_color.a,
+		)
 
-
-	if ctx.editor{
-		sdl2.RenderClear(ctx.renderer)
-
-		sdl2.SetRenderDrawColor(ctx.renderer,55,55,55,255)
-
-		for x :i32= 0; x < GRID_WIDTH * GRID_CELL_SIZE ; x+=GRID_CELL_SIZE {
-			sdl2.RenderDrawLine(ctx.renderer,x,0,x, i32(GRID_HEIGHT * GRID_CELL_SIZE) + 1)
-		}
-
-		for y :i32=0 ; y < GRID_HEIGHT * GRID_CELL_SIZE ; y+=GRID_CELL_SIZE {
-			sdl2.RenderDrawLine(ctx.renderer,0, y,i32(GRID_WIDTH * GRID_CELL_SIZE) + 1, y)
-		}
-
-		sdl2.SetRenderDrawColor(ctx.renderer,55, 55,55,255)
-
-		if ctx.mouse_hover{
-					//TODO: khal add blinking 
-					sdl2.RenderFillRect(ctx.renderer, &ctx.cursor_pos)
+		if ctx.editor_e{
+			sdl2.RenderClear(ctx.renderer)
+	
+			sdl2.SetRenderDrawColor(ctx.renderer,
+				ctx.editor.line_clear_color.r,
+				ctx.editor.line_clear_color.g,
+				ctx.editor.line_clear_color.b,
+				ctx.editor.line_clear_color.a,
+			)
+	
+			for x :i32= 0; x < ctx.editor.grid_dimension.x * ctx.editor.grid_dimension.z ; x+=ctx.editor.grid_dimension.z {
+				sdl2.RenderDrawLine(ctx.renderer,x,0,x, i32(ctx.editor.grid_dimension.y * ctx.editor.grid_dimension.z) + 1)
+			}
+	
+			for y :i32=0 ; y < ctx.editor.grid_dimension.y * ctx.editor.grid_dimension.z ; y+=ctx.editor.grid_dimension.z {
+				sdl2.RenderDrawLine(ctx.renderer,0, y,i32(ctx.editor.grid_dimension.x * ctx.editor.grid_dimension.z) + 1, y)
+			}
+	
+			sdl2.SetRenderDrawColor(ctx.renderer,
+				ctx.editor.cursor_clear_color.r,
+				ctx.editor.cursor_clear_color.g,
+				ctx.editor.cursor_clear_color.z,
+				ctx.editor.cursor_clear_color.w,
+			)
+	
+			if ctx.mouse_hover{
+				//TODO: khal add blinking
+					cursor_rect := sdl2.Rect{
+						ctx.editor.cursor_position.x,
+						ctx.editor.cursor_position.y,
+						ctx.editor.cursor_position.z,
+						ctx.editor.cursor_position.w,
+					}
+					
+					sdl2.RenderFillRect(ctx.renderer, &cursor_rect)
 				}
-	}
-
-	for texture_entity in texture_entities{
-		texture_component := ecs.get_component_unchecked(&ctx.world, texture_entity, container.TextureAsset)
-
-		game_entity := ecs.get_component(&ctx.world, texture_entity, container.GameEntity) or_else nil
-		animation_tree := ecs.get_component(&ctx.world, texture_entity, container.Animation_Tree) or_else nil
-
-		position := ecs.get_component_unchecked(&ctx.world, texture_entity, container.Position)
-		rotation := ecs.get_component_unchecked(&ctx.world,texture_entity, container.Rotation)
-		scale := ecs.get_component_unchecked(&ctx.world, texture_entity, container.Scale)
-
-		position_x := position.value.x
-		position_y := position.value.y
-
-		angle := rotation.value 
-
-		scale_x := scale.value.x
-		scale_y := scale.value.y
-
-		desired_scale_x := texture_component.dimension.x * scale_x
-		desired_scale_y := texture_component.dimension.y * scale_y
-
-		dst_rec := sdl2.FRect{position_x, position_y, desired_scale_x, desired_scale_y}
-		
-		src_res := new(sdl2.Rect)
-
-		if animation_tree != nil && game_entity != nil{
-			max_frame_len := len(animation_tree.animations[game_entity.animation_index].value) - 1
-			capped_frame := linalg.clamp(animation_tree.previous_frame, 0, max_frame_len)
-
-			src_res^ = animation_tree.animations[game_entity.animation_index].value[capped_frame]
-		}else{
-			src_res = nil
+	
 		}
-
-		sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.direction)
+	
+		for texture_entity in texture_entities{
+			texture_component := ecs.get_component_unchecked(&ctx.world, texture_entity, container.TextureAsset)
+	
+			game_entity := ecs.get_component(&ctx.world, texture_entity, container.GameEntity) or_else nil
+			animation_tree := ecs.get_component(&ctx.world, texture_entity, container.Animation_Tree) or_else nil
+	
+			position := ecs.get_component_unchecked(&ctx.world, texture_entity, container.Position)
+			rotation := ecs.get_component_unchecked(&ctx.world,texture_entity, container.Rotation)
+			scale := ecs.get_component_unchecked(&ctx.world, texture_entity, container.Scale)
+	
+			position_x := position.value.x
+			position_y := position.value.y
+	
+			angle := rotation.value 
+	
+			scale_x := scale.value.x
+			scale_y := scale.value.y
+	
+			desired_scale_x := texture_component.dimension.x * scale_x
+			desired_scale_y := texture_component.dimension.y * scale_y
+	
+			dst_rec := sdl2.FRect{position_x, position_y, desired_scale_x, desired_scale_y}
+			
+			src_res := new(sdl2.Rect)
+	
+			if animation_tree != nil && game_entity != nil{
+				max_frame_len := len(animation_tree.animations[game_entity.animation_index].value) - 1
+				capped_frame := linalg.clamp(animation_tree.previous_frame, 0, max_frame_len)
+	
+				src_res^ = animation_tree.animations[game_entity.animation_index].value[capped_frame]
+			}else{
+				src_res = nil
+			}
+	
+			sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.direction)
+		}
 	}
+
 
 	sdl2.RenderPresent(ctx.renderer)
 
