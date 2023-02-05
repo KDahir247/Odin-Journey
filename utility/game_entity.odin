@@ -6,8 +6,6 @@ import "../container"
 import game "../context"
 import "vendor:sdl2"
 
-GRAVITY_SCALE :: 9.81
-
 create_game_entity ::proc(path : string,anim_config : [dynamic]container.AnimationConfig, translation : [2]f32, rotation:f64, scale: [2]f32, is_player : bool) -> ecs.Entity{
 
 	ctx := cast(^game.Context) context.user_ptr

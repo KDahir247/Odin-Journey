@@ -9,7 +9,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/hellope",
+            "program": "${workspaceFolder}/game",
             "args": [],
             "cwd": "${workspaceFolder}"
         }

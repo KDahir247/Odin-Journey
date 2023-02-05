@@ -19,7 +19,7 @@ integrate :: proc(physics : ^container.Physics, position : ^container.Position, 
     position.value += physics.velocity * delta_time * physics.acceleration * delta_time * delta_time * 0.5
 }
 
-add_force :: proc(physics : ^container.Physics, force : mathematics.Vec2){
+add_force :: #force_inline proc(physics : ^container.Physics, force : mathematics.Vec2){
     physics.accumulated_force += force
 }
 

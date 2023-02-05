@@ -44,8 +44,9 @@ Player :: struct{
 Action :: enum u8{
     Idle = 0,
     Walking = 1,
-    Falling,
-    Jumping,
+    Falling = 2,
+    Jumping = 3,
+    Roll,
     Attacking,
     Dead,
 }
@@ -53,7 +54,7 @@ Action :: enum u8{
 GameEntity :: struct{
     animation_index : int,
     animation_time : f32,
-    animation_timer : u32,
+    animation_timer : i32,
     direction : sdl2.RendererFlip,
     actions : bit_set[Action],
 }

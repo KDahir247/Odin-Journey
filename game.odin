@@ -30,10 +30,10 @@ main :: proc() {
 
 	running := true;
 	
-	tex_path, configs := utility.parse_animation("config/animation/player.json",{"Idle", "Walk", "Jump", "Fall"})
+	tex_path, configs := utility.parse_animation("config/animation/player.json",{"Idle", "Walk", "Jump", "Fall", "Roll"})
 	defer delete(configs)
 	
-	utility.create_game_entity(tex_path,configs, {400,100}, 0, {0.1	,0.2}, true)
+	utility.create_game_entity(tex_path,configs, {400,500}, 0, {0.1	,0.2}, true)
 	
 	{
 		for running{
