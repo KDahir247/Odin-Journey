@@ -78,10 +78,8 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 	
 	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, game_cfg.render_flags)
 	
-	#no_bounds_check{
-		if err := sdl2.SetRenderDrawColor(ctx.renderer, game_cfg.clear_color[0], game_cfg.clear_color[1], game_cfg.clear_color[2], game_cfg.clear_color[3]); err != 0 {
-			log.error(sdl2.GetError())
-		}
+	if err := sdl2.SetRenderDrawColor(ctx.renderer, game_cfg.clear_color.r, game_cfg.clear_color.g, game_cfg.clear_color.b, game_cfg.clear_color.a); err != 0 {
+		log.error(sdl2.GetError())
 	}
 
 	ctx.clear_color = game_cfg.clear_color
