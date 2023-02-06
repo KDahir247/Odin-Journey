@@ -253,7 +253,8 @@ on_fixed_update :: proc(){
 
 		physics_component.velocity.x = physics_component.velocity.x * f32(linalg.abs(game_component.input_direction))
 
-		position_component.value += (physics_component.velocity * resource.delta_time) + (physics_component.acceleration * resource.delta_time) * (resource.delta_time * 0.5)
+		fmt.println(physics_component.acceleration)
+		position_component.value += physics_component.velocity * resource.delta_time 
 
 		physics_component.accumulated_force = mathematics.Vec2{0,0}
 	}
@@ -264,13 +265,14 @@ on_update :: proc(){
 	resource_entity := ecs.Entity(context.user_index)
 	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
 	
-	game_entities := ecs.get_entities_with_components(&ctx.world, {container.Position, container.GameEntity, container.Physics})
+	game_entities := ecs.get_entities_with_components(&ctx.world, {container.Position, container.GameEntity, container.Physics, container.Animation_Tree})
 	
 	for entity in game_entities{
 		current_translation := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
 		game_entity := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
-		
+		animation_component := ecs.get_component_unchecked(&ctx.world, entity, container.Animation_Tree)
+
 		if physics_component.velocity.y > 0{
 			game_entity.actions = {container.Action.Falling}
 			game_entity.animation_index = 3
@@ -284,7 +286,7 @@ on_update :: proc(){
 			}
 		}
 
-		if game_entity.animation_index == 5 && container.Action.TeleportDown not_in game_entity.actions{
+		if game_entity.animation_index == 5  && container.Action.TeleportDown not_in game_entity.actions {
 			direction_map := f32(game_entity.render_direction) * -1.0
 			direction_map += 0.5
 			direction := direction_map * 2.0		
@@ -332,7 +334,7 @@ update_animation :: proc(){
 		}
 
 		if game_entity.animation_index == 5{
-			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1 && container.Action.TeleportDown in game_entity.actions{
+			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1{
 				animation_tree.previous_frame = 0
 				game_entity.animation_index = 6
 			}
