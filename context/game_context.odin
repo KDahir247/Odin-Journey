@@ -288,13 +288,11 @@ on_update :: proc(){
 
 
 		if game_entity.animation_index == 6 && queue.peek_back(&ctx.event_queue)^ == container.Action.TeleportDown{
-			
 			direction_map := f32(game_entity.render_direction) * -1.0
 			direction_map += 0.5
 			direction := direction_map * 2.0		
 
-
-			current_translation.value.x = current_translation.value.x + 150 * direction
+			current_translation.value.x +=  (200 * direction)
 			queue.pop_back(&ctx.event_queue)
 		}
 	}
