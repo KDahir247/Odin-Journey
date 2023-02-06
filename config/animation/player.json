@@ -34,6 +34,21 @@
         "num_slice" : 7,
         "width" : 39.0,
         "height" : 41.0
+    },
+
+    "Teleport_Start" : {
+        "index" : 4,
+        "num_slice" : 7,
+        "width" : 38.0,
+        "height" : 40.5
+        
+    },
+
+    "Teleport_End" : {
+        "index" : 5,
+        "num_slice" : 5,
+        "width" : 38.0,
+        "height" : 40.5
     }
 
 }

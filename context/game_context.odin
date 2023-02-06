@@ -59,21 +59,22 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 
 	sdl2.ClearError()
 
-	width := i32(game_cfg.grid.x * game_cfg.grid.z) + 1
-	height := i32(game_cfg.grid.y * game_cfg.grid.z) + 1
+	width := i32(game_cfg.grid.x * game_cfg.grid.z) 
+	height := i32(game_cfg.grid.y * game_cfg.grid.z)
+	
+	width = width + 1
+	height = height + 1
 
-	window_pos_x :c.int= sdl2.WINDOWPOS_CENTERED
-	window_pos_y :c.int= sdl2.WINDOWPOS_CENTERED
+	pos_x_mask := i32(game_cfg.center.x >= 0)
+	pos_y_mask := i32(game_cfg.center.y >= 0)
 
-	if game_cfg.center.x >= 0{
-		window_pos_x = game_cfg.center.x
+	window_pos_x :[2]i32= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.x}
+	window_pos_y :[2]i32= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.y}
+
+	#no_bounds_check{
+			ctx.window = sdl2.CreateWindow(game_cfg.title, window_pos_x[pos_x_mask], window_pos_y[pos_y_mask], width,height, game_cfg.window_flags) 
 	}
-
-	if game_cfg.center.y >= 0{
-		window_pos_y = game_cfg.center.y
-	}
-
-	ctx.window = sdl2.CreateWindow(game_cfg.title, window_pos_x, window_pos_y, width,height, game_cfg.window_flags) 
+	
 	ctx.pixel_format = sdl2.GetWindowSurface(ctx.window).format
 	
 	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, game_cfg.render_flags)
@@ -107,6 +108,8 @@ handle_event ::proc() -> bool{
 	ctx := cast(^Context)context.user_ptr
 
 	player_entity := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Player}) // there should only be one playable player.
+	
+	player_component := ecs.get_component_unchecked(&ctx.world, player_entity[0], container.Player)
 	game_component := ecs.get_component_unchecked(&ctx.world, player_entity[0], container.GameEntity)
 	animation_component := ecs.get_component_unchecked(&ctx.world, player_entity[0], container.Animation_Tree)
 
@@ -133,6 +136,8 @@ handle_event ::proc() -> bool{
 				} else if sdl_event.window.event == sdl2.WindowEventID.LEAVE{
 					ctx.mouse_hover = false
 				}
+			case sdl2.EventType.MOUSEBUTTONDOWN:
+				// Handle attack here
 		}
 	}
 
@@ -142,6 +147,8 @@ handle_event ::proc() -> bool{
 	roll := keyboard_snapshot[sdl2.Scancode.C]
 
 	editor_mode := keyboard_snapshot[sdl2.Scancode.ESCAPE]
+
+	//TODO: khal move editor functionality to a seperate script.
 	if editor_mode == 1 && ctx.a{
 		ctx.editor_e = !ctx.editor_e
 		ctx.a = false
@@ -149,31 +156,42 @@ handle_event ::proc() -> bool{
 		ctx.a = true
 	}
 
-	if game_component.actions <= {container.Action.Idle, container.Action.Walking} && jumping >= 1 && container.Action.Roll not_in game_component.actions {
+	if game_component.actions <= {container.Action.Idle, container.Action.Walking} && jumping >= 1{
 		game_component.actions = {container.Action.Jumping}
 
-	}else if game_component.actions <= {container.Action.Idle, container.Action.Walking}&& container.Action.Roll not_in game_component.actions {
+	}else if game_component.actions <= {container.Action.Idle, container.Action.Walking}{
 		combined_left_right := int(left | right)
 
 		game_component.animation_index = combined_left_right
 		game_component.actions = {container.Action(linalg.abs(combined_left_right))}
 		
+		game_component.input_direction = combined_left_right
+
 		if combined_left_right != 0{
-			game_component.direction = sdl2.RendererFlip(left > right)
+			game_component.render_direction = sdl2.RendererFlip(left > right)
 		}
 	}
 	
-	if roll >= 1 && container.Action.Idle not_in game_component.actions{
-			//TODO: khal we need to add a timer to constraint have a cooldown.
-		if game_component.animation_timer <= 0{
+	//TODO: khal we need a better way for cooldown....
+		if roll >= 1 && game_component.actions & {container.Action.Idle, container.Action.Teleport, container.Action.TeleportDown} == {}{
+		if sdl2.GetTicks() > player_component.cooldown[0].cooldown_duration{
+			player_component.cooldown[0].cooldown_duration = sdl2.GetTicks() + player_component.cooldown[0].cooldown_amount
+
 			animation_component.previous_frame = 0
 			game_component.actions = {container.Action.Roll}
 			game_component.animation_index = 4
-			game_component.animation_timer = 200
+			
+		}
+	}else if roll >= 1 && container.Action.Idle in game_component.actions{
+		if sdl2.GetTicks() > player_component.cooldown[1].cooldown_duration{
+			player_component.cooldown[1].cooldown_duration = sdl2.GetTicks() + player_component.cooldown[1].cooldown_amount
+			animation_component.previous_frame = 0
+			game_component.actions = {container.Action.Teleport}
+			
+			game_component.animation_index = 5
 		}
 	}
 
-	game_component.animation_timer = linalg.clamp(game_component.animation_timer -1,0, 200);
 
 	return running;
 }
@@ -197,7 +215,7 @@ on_fixed_update :: proc(){
 		position_component := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
 
 		// TODO: can we clean this...
-		direction_map := f32(game_component.direction) * -1.0
+		direction_map := f32(game_component.render_direction) * -1.0
 		direction_map += 0.5
 		direction := direction_map * 2.0
 
@@ -205,9 +223,8 @@ on_fixed_update :: proc(){
 				
 		grounded :f32= 0.0;
 
-		// TODO: Khal we are doing a intersection check we need a ground check not a check on all side of the rect.
-		// if velocity is zero then acceleration must also be zero, since acceleration is velocity with respect of time
-		if sdl2.HasIntersection(&sdl2.Rect{i32(position_component.value.x), i32(position_component.value.y), 5, 100}, &sdl2.Rect{0,612,1000,36}){
+		// TODO: khal TEMP SOLUTION
+		if sdl2.HasIntersection(&sdl2.Rect{i32(position_component.value.x), i32(position_component.value.y), 5, 100}, &sdl2.Rect{0,612,2000,36}){
 			grounded = 1.0
 			physics_component.velocity.y = 0
 			physics_component.acceleration.y = 0
@@ -217,6 +234,8 @@ on_fixed_update :: proc(){
 			// TODO: khal magic number here...
 			physics_component.acceleration.y = (3000 * f32(fall)) + (1000 * f32(jump))
 		}
+
+
 		if container.Action.Jumping in game_component.actions{
 			// TODO: khal magic number here...
 			physics.add_force(physics_component, mathematics.Vec2{0, -21000 * grounded})
@@ -229,11 +248,12 @@ on_fixed_update :: proc(){
 
 
 		if container.Action.Roll in game_component.actions{
-			physics_component.velocity.x = physics_component.velocity.x * 1.05
+			physics_component.velocity.x = physics_component.velocity.x * 1.05 
 		}
 
-		// TODO : khal do this instead of check if idle in the update loop
-		//physics_component.velocity.x := physics_component.velocity.x * input_direction
+		physics_component.velocity.x = physics_component.velocity.x * f32(linalg.abs(game_component.input_direction))
+
+		position_component.value += (physics_component.velocity * resource.delta_time) + (physics_component.acceleration * resource.delta_time) * (resource.delta_time * 0.5)
 
 		physics_component.accumulated_force = mathematics.Vec2{0,0}
 	}
@@ -252,27 +272,29 @@ on_update :: proc(){
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		
 		if physics_component.velocity.y > 0{
-			//fall
 			game_entity.actions = {container.Action.Falling}
 			game_entity.animation_index = 3
 		}else if physics_component.velocity.y < 0{
-			// jump
 			game_entity.actions = {container.Action.Jumping}
 			game_entity.animation_index = 2
 		}else{
-			if game_entity.actions & {container.Action.Idle, container.Action.Walking, container.Action.Roll} == {}{
+			if game_entity.actions & {container.Action.Idle, container.Action.Walking, container.Action.Roll,container.Action.Teleport, container.Action.TeleportDown} == {}{
 				game_entity.actions = {container.Action.Idle}
 				game_entity.animation_index = 0
 			}
 		}
 
-		if container.Action.Idle in game_entity.actions{
-			physics_component.velocity.x = 0
-		}else{
-			current_translation.value.x += physics_component.velocity.x * resource.delta_time + physics_component.acceleration.x * resource.delta_time * resource.delta_time * 0.5
+		if game_entity.animation_index == 5 && container.Action.TeleportDown not_in game_entity.actions{
+			direction_map := f32(game_entity.render_direction) * -1.0
+			direction_map += 0.5
+			direction := direction_map * 2.0		
+
+
+			current_translation.value.x = current_translation.value.x + 100 * direction
+			game_entity.actions = {container.Action.TeleportDown}
 		}
 
-		current_translation.value.y += physics_component.velocity.y * resource.delta_time + physics_component.acceleration.y * resource.delta_time * resource.delta_time * 0.5
+		// Handle teleporting, since it directly change the position x axis without physics.
 	}
 }
 
@@ -288,7 +310,7 @@ update_animation :: proc(){
 		
 		delta_time := (current_time - game_entity.animation_time) * 0.001
 		frame_to_update := linalg.floor(delta_time * animation_tree.animation_fps)
-	
+
 		if(frame_to_update > 0){
 			animation_tree.previous_frame += int(frame_to_update)
 			animation_tree.previous_frame %= len(animation_tree.animations[game_entity.animation_index].value) 
@@ -302,6 +324,21 @@ update_animation :: proc(){
 		animation_tree := ecs.get_component_unchecked(&ctx.world, entity, container.Animation_Tree)
 
 		if game_entity.animation_index == 4{
+			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1{
+				game_entity.animation_index = 0
+				game_entity.actions = {container.Action.Idle}
+				animation_tree.previous_frame = 0
+			}
+		}
+
+		if game_entity.animation_index == 5{
+			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1 && container.Action.TeleportDown in game_entity.actions{
+				animation_tree.previous_frame = 0
+				game_entity.animation_index = 6
+			}
+		}
+
+		if game_entity.animation_index == 6{
 			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1{
 				game_entity.animation_index = 0
 				game_entity.actions = {container.Action.Idle}
@@ -408,7 +445,7 @@ on_render :: proc(){
 				src_res = nil
 			}
 	
-			sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.direction)
+			sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.render_direction)
 		}
 	}
 

@@ -24,11 +24,7 @@ rectangle_collision :: proc(rectangle_0 : container.Rectangle, rectangle_1 : con
     return overlapping(left_0, right_0, left_1, right_1) && overlapping(bottom_0, top_0, bottom_1, top_1)
 }
 
-// rect_collision_2 :: proc(rect_0 : mathematics.Vec4, rect_1 : mathematics.Vec4) -> bool{
 
-// }
-
-//x,y,w,h
 rect_collision :: proc(rect_0 : mathematics.Vec4, rect_1 : mathematics.Vec4) -> bool{
 
     if ((rect_0.z + rect_0.w + rect_1.z + rect_1.w) == 0){

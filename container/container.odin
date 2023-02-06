@@ -4,6 +4,7 @@ import "../mathematics"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
+
 GameConfig :: struct{
     game_flags : sdl2.InitFlags,
     img_flags : image.InitFlags,
@@ -50,25 +51,33 @@ Physics :: struct{
     inverse_mass : f32,
 }
 
-Player :: struct{
-    _unused : u8,
+CoolDownTimer:: struct{
+    cooldown_amount : u32,
+    cooldown_duration : u32,
 }
 
-Action :: enum u8{
+Player :: struct{
+    cooldown : [dynamic]CoolDownTimer, 
+}
+
+Action :: enum i32{
     Idle = 0,
     Walking = 1,
     Falling = 2,
     Jumping = 3,
     Roll,
+    Teleport,
+    TeleportDown,
     Attacking,
     Dead,
 }
 
 GameEntity :: struct{
     animation_index : int,
+    input_direction : int,
+
     animation_time : f32,
-    animation_timer : i32,
-    direction : sdl2.RendererFlip,
+    render_direction : sdl2.RendererFlip,
     actions : bit_set[Action],
 }
 
