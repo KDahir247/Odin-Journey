@@ -9,5 +9,11 @@ Working on cleaning solution & teleport system.
 
 Thank you Penusbmic
 
+To run exe you will need young swordmen asset from Penusbemic and place it in resource/padawan
+The spritesheet should be centered. Use ![sprite editor]: https://orama-interactive.itch.io/pixelorama
+and under image there should be centerize image. 
+The sprite sheet should the renamed to pad.png or you can change the animation config path.
+
+This will be change later to use custom asset that are accessable in the repo which will not break the executable.
 
 ![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/teleport_roll.gif)
