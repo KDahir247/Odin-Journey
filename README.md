@@ -10,4 +10,4 @@ Working on cleaning solution & teleport system.
 Thank you Penusbmic
 
 
-![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/rolling_and_grid.gif)
+![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/teleport_roll.gif)
