@@ -13,6 +13,7 @@ import "core:log"
 import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
 import "core:c"
+import "core:container/queue"
 
 Context :: struct{
 	window : ^sdl2.Window,
@@ -21,6 +22,9 @@ Context :: struct{
 	pixel_format : ^sdl2.PixelFormat,
 	editor : editor.Context,
 	clear_color : [4]u8,
+	// TODO: khal attach this GameEntity struct it will be used by npc, enemy and player.
+	event_queue : queue.Queue(container.Action),
+
 
 	//TODO: khal find a way to remove the below variables.
 	mouse_hover : bool,
@@ -84,6 +88,8 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 	}
 
 	ctx.clear_color = game_cfg.clear_color
+
+	queue.init(&ctx.event_queue)
 
 	cursor_pos := mathematics.Vec4i{
 		(game_cfg.grid.x - 1) / 2 * game_cfg.grid.z,
@@ -156,42 +162,40 @@ handle_event ::proc() -> bool{
 		ctx.a = true
 	}
 
-	if game_component.actions <= {container.Action.Idle, container.Action.Walking} && jumping >= 1{
-		game_component.actions = {container.Action.Jumping}
-
-	}else if game_component.actions <= {container.Action.Idle, container.Action.Walking}{
+	if ctx.event_queue.len <= 0{
 		combined_left_right := int(left | right)
-
 		game_component.animation_index = combined_left_right
-		game_component.actions = {container.Action(linalg.abs(combined_left_right))}
-		
 		game_component.input_direction = combined_left_right
-
+		
 		if combined_left_right != 0{
 			game_component.render_direction = sdl2.RendererFlip(left > right)
 		}
-	}
-	
-	//TODO: khal we need a better way for cooldown....
-		if roll >= 1 && game_component.actions & {container.Action.Idle, container.Action.Teleport, container.Action.TeleportDown} == {}{
-		if sdl2.GetTicks() > player_component.cooldown[0].cooldown_duration{
-			player_component.cooldown[0].cooldown_duration = sdl2.GetTicks() + player_component.cooldown[0].cooldown_amount
-
-			animation_component.previous_frame = 0
-			game_component.actions = {container.Action.Roll}
-			game_component.animation_index = 4
-			
+		
+		if jumping >= 1{
+			queue.push(&ctx.event_queue, container.Action.Jumping)
 		}
-	}else if roll >= 1 && container.Action.Idle in game_component.actions{
-		if sdl2.GetTicks() > player_component.cooldown[1].cooldown_duration{
-			player_component.cooldown[1].cooldown_duration = sdl2.GetTicks() + player_component.cooldown[1].cooldown_amount
-			animation_component.previous_frame = 0
-			game_component.actions = {container.Action.Teleport}
-			
-			game_component.animation_index = 5
-		}
-	}
+		
+		//TODO: khal we need a better way for cooldown....
+		if roll >= 1 && game_component.input_direction != 0{
+			if sdl2.GetTicks() > player_component.cooldown[0].cooldown_duration{
+				player_component.cooldown[0].cooldown_duration = sdl2.GetTicks() + player_component.cooldown[0].cooldown_amount
 
+				animation_component.previous_frame = 0
+				queue.push(&ctx.event_queue, container.Action.Roll)
+				game_component.animation_index = 4
+				
+			}
+		}else if roll >= 1{
+			if sdl2.GetTicks() > player_component.cooldown[1].cooldown_duration{
+				player_component.cooldown[1].cooldown_duration = sdl2.GetTicks() + player_component.cooldown[1].cooldown_amount
+				animation_component.previous_frame = 0
+				queue.push(&ctx.event_queue, container.Action.Teleport)
+				
+				game_component.animation_index = 5
+			}
+		}
+
+	}
 
 	return running;
 }
@@ -235,10 +239,12 @@ on_fixed_update :: proc(){
 			physics_component.acceleration.y = (3000 * f32(fall)) + (1000 * f32(jump))
 		}
 
-
-		if container.Action.Jumping in game_component.actions{
-			// TODO: khal magic number here...
-			physics.add_force(physics_component, mathematics.Vec2{0, -21000 * grounded})
+		if ctx.event_queue.len > 0{
+			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping{
+				physics.add_force(physics_component, mathematics.Vec2{0, -21000 * grounded})
+			}else if queue.peek_back(&ctx.event_queue)^ == container.Action.Roll{
+				physics_component.velocity.x = physics_component.velocity.x * 1.05 
+			}
 		}
 
 		result_acceleration := (acceleration_direction + physics_component.accumulated_force) * physics_component.inverse_mass
@@ -246,14 +252,8 @@ on_fixed_update :: proc(){
 		physics_component.velocity += result_acceleration * resource.delta_time
 		physics_component.velocity *= linalg.pow(physics_component.damping, resource.delta_time)
 
-
-		if container.Action.Roll in game_component.actions{
-			physics_component.velocity.x = physics_component.velocity.x * 1.05 
-		}
-
 		physics_component.velocity.x = physics_component.velocity.x * f32(linalg.abs(game_component.input_direction))
 
-		fmt.println(physics_component.acceleration)
 		position_component.value += physics_component.velocity * resource.delta_time 
 
 		physics_component.accumulated_force = mathematics.Vec2{0,0}
@@ -274,29 +274,29 @@ on_update :: proc(){
 		animation_component := ecs.get_component_unchecked(&ctx.world, entity, container.Animation_Tree)
 
 		if physics_component.velocity.y > 0{
-			game_entity.actions = {container.Action.Falling}
+			queue.pop_back_safe(&ctx.event_queue)
+			queue.push_back(&ctx.event_queue, container.Action.Falling)
 			game_entity.animation_index = 3
 		}else if physics_component.velocity.y < 0{
-			game_entity.actions = {container.Action.Jumping}
 			game_entity.animation_index = 2
 		}else{
-			if game_entity.actions & {container.Action.Idle, container.Action.Walking, container.Action.Roll,container.Action.Teleport, container.Action.TeleportDown} == {}{
-				game_entity.actions = {container.Action.Idle}
+			if ctx.event_queue.len > 0 && (queue.peek_back(&ctx.event_queue)^ == container.Action.Falling || queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping){
+				queue.clear(&ctx.event_queue)
 				game_entity.animation_index = 0
 			}
 		}
 
-		if game_entity.animation_index == 5  && container.Action.TeleportDown not_in game_entity.actions {
+
+		if game_entity.animation_index == 6 && queue.peek_back(&ctx.event_queue)^ == container.Action.TeleportDown{
+			
 			direction_map := f32(game_entity.render_direction) * -1.0
 			direction_map += 0.5
 			direction := direction_map * 2.0		
 
 
-			current_translation.value.x = current_translation.value.x + 100 * direction
-			game_entity.actions = {container.Action.TeleportDown}
+			current_translation.value.x = current_translation.value.x + 150 * direction
+			queue.pop_back(&ctx.event_queue)
 		}
-
-		// Handle teleporting, since it directly change the position x axis without physics.
 	}
 }
 
@@ -328,7 +328,7 @@ update_animation :: proc(){
 		if game_entity.animation_index == 4{
 			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1{
 				game_entity.animation_index = 0
-				game_entity.actions = {container.Action.Idle}
+				queue.pop_back(&ctx.event_queue)
 				animation_tree.previous_frame = 0
 			}
 		}
@@ -336,6 +336,8 @@ update_animation :: proc(){
 		if game_entity.animation_index == 5{
 			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1{
 				animation_tree.previous_frame = 0
+				queue.pop_back(&ctx.event_queue)
+				queue.push(&ctx.event_queue, container.Action.TeleportDown)
 				game_entity.animation_index = 6
 			}
 		}
@@ -343,7 +345,6 @@ update_animation :: proc(){
 		if game_entity.animation_index == 6{
 			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1{
 				game_entity.animation_index = 0
-				game_entity.actions = {container.Action.Idle}
 				animation_tree.previous_frame = 0
 			}
 		}

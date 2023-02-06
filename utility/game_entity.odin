@@ -19,7 +19,7 @@ create_game_entity ::proc(path : string,anim_config : [dynamic]container.Animati
             ecs.add_component_unchecked(&ctx.world, game_entity, container.Player{{container.CoolDownTimer{3000, 0}, container.CoolDownTimer{3000, 0}} })
         }
 
-        ecs.add_component_unchecked(&ctx.world, game_entity, container.GameEntity{0,0,0, sdl2.RendererFlip.NONE,{container.Action.Idle}})
+        ecs.add_component_unchecked(&ctx.world, game_entity, container.GameEntity{0,0,0, sdl2.RendererFlip.NONE})
         ecs.add_component_unchecked(&ctx.world, game_entity, container.Position{ mathematics.Vec2{translation.x, translation.y}})
         ecs.add_component_unchecked(&ctx.world, game_entity, container.Rotation{rotation})
         ecs.add_component_unchecked(&ctx.world, game_entity, container.Scale{mathematics.Vec2{scale.x, scale.y}})

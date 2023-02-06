@@ -78,7 +78,6 @@ GameEntity :: struct{
 
     animation_time : f32,
     render_direction : sdl2.RendererFlip,
-    actions : bit_set[Action],
 }
 
 AnimationConfig :: struct{
