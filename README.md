@@ -2,7 +2,7 @@
 playing around and learning Odin lang.
 Small game I am working on with sdl and Odin lang.
 
-Working on cleaning solution & teleport system.
+Working on cleaning solution & ldtk level parsing.
 
 <br/>
 (Sprite sheet not included, since it is paid. asset are at https://itch.io/s/88220/the-dark-series-bundle)
