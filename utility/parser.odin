@@ -121,3 +121,13 @@ parse_animation :: proc($path : string, animation_keys : []string) -> (string,[d
 
     return tex_path, anim_configs
 }
+
+
+//TODO: khal this will parse ldtk level file
+parse_level :: proc($path : string){
+    data, _ := os.read_entire_file_from_filename(path)
+    defer delete(data)
+
+    anim_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, true)
+    defer json.destroy_value(anim_json)
+}

@@ -20,16 +20,9 @@ Context :: struct{
 	renderer : ^sdl2.Renderer,
 	world : ecs.Context,
 	pixel_format : ^sdl2.PixelFormat,
-	editor : editor.Context,
 	clear_color : [4]u8,
 	// TODO: khal attach this GameEntity struct it will be used by npc, enemy and player.
 	event_queue : queue.Queue(container.Action),
-
-
-	//TODO: khal find a way to remove the below variables.
-	mouse_hover : bool,
-	editor_e : bool,
-	a : bool,
 }
 
 @(cold)
@@ -98,15 +91,6 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 		game_cfg.grid.z,
 	}
 
-	ctx.editor = editor.Context{
-		cursor_pos,
-		game_cfg.grid,
-		{55,55,55,255},
-		{55,55,55,255},
-	}
-
-	ctx.editor_e = true
-
 	return ctx;
 }
 
@@ -130,20 +114,12 @@ handle_event ::proc() -> bool{
 		running = sdl_event.type != sdl2.EventType.QUIT
 	
 		#partial switch sdl_event.type{
-			case sdl2.EventType.MOUSEMOTION:
-				ctx.editor.cursor_position = mathematics.Vec4i{
-					(sdl_event.motion.x / ctx.editor.grid_dimension.z) * ctx.editor.grid_dimension.z,
-					(sdl_event.motion.y / ctx.editor.grid_dimension.z) * ctx.editor.grid_dimension.z,
-					ctx.editor.grid_dimension.z,
-					ctx.editor.grid_dimension.z }
-			case sdl2.EventType.WINDOWEVENT:
-				if sdl_event.window.event  == sdl2.WindowEventID.ENTER{
-					ctx.mouse_hover = true
-				} else if sdl_event.window.event == sdl2.WindowEventID.LEAVE{
-					ctx.mouse_hover = false
-				}
 			case sdl2.EventType.MOUSEBUTTONDOWN:
-				// Handle attack here
+				if ctx.event_queue.len <= 0 || queue.peek_back(&ctx.event_queue)^ == container.Action.Attacking{
+					animation_component.previous_frame = 5 * int(ctx.event_queue.len)
+					queue.push(&ctx.event_queue, container.Action.Attacking)
+					game_component.animation_index = 7
+				}
 		}
 	}
 
@@ -153,14 +129,6 @@ handle_event ::proc() -> bool{
 	roll := keyboard_snapshot[sdl2.Scancode.C]
 
 	editor_mode := keyboard_snapshot[sdl2.Scancode.ESCAPE]
-
-	//TODO: khal move editor functionality to a seperate script.
-	if editor_mode == 1 && ctx.a{
-		ctx.editor_e = !ctx.editor_e
-		ctx.a = false
-	}else if editor_mode != 1{
-		ctx.a = true
-	}
 
 	if ctx.event_queue.len <= 0{
 		combined_left_right := int(left | right)
@@ -194,7 +162,6 @@ handle_event ::proc() -> bool{
 				game_component.animation_index = 5
 			}
 		}
-
 	}
 
 	return running;
@@ -239,7 +206,7 @@ on_fixed_update :: proc(){
 			physics_component.acceleration.y = (3000 * f32(fall)) + (1000 * f32(jump))
 		}
 
-		if ctx.event_queue.len > 0{
+		if ctx.event_queue.len > 0 {
 			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping{
 				physics.add_force(physics_component, mathematics.Vec2{0, -21000 * grounded})
 			}else if queue.peek_back(&ctx.event_queue)^ == container.Action.Roll{
@@ -254,7 +221,17 @@ on_fixed_update :: proc(){
 
 		physics_component.velocity.x = physics_component.velocity.x * f32(linalg.abs(game_component.input_direction))
 
-		position_component.value += physics_component.velocity * resource.delta_time 
+		temp_velocity := physics_component.velocity
+		temp_acceleration := physics_component.acceleration
+
+		if ctx.event_queue.len > 0 {
+			if queue.peek_back(&ctx.event_queue)^ == container.Action.Attacking{
+				temp_velocity.x = 0
+				temp_acceleration.x = 0
+			}
+		}
+
+		position_component.value += temp_velocity * resource.delta_time 
 
 		physics_component.accumulated_force = mathematics.Vec2{0,0}
 	}
@@ -292,7 +269,7 @@ on_update :: proc(){
 			direction_map += 0.5
 			direction := direction_map * 2.0		
 
-			current_translation.value.x +=  (200 * direction)
+			current_translation.value.x += (200 * direction)
 			queue.pop_back(&ctx.event_queue)
 		}
 	}
@@ -319,6 +296,7 @@ update_animation :: proc(){
 	}
 
 	//TODO: khal we want to confine this to the player only, enemy/npc will follow a different dodge animation.
+	// Should make this a map for string. It will be more readable this way..
 	for entity in game_entites{
 		game_entity := ecs.get_component_unchecked(&ctx.world,entity, container.GameEntity)
 		animation_tree := ecs.get_component_unchecked(&ctx.world, entity, container.Animation_Tree)
@@ -344,6 +322,16 @@ update_animation :: proc(){
 			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) -1{
 				game_entity.animation_index = 0
 				animation_tree.previous_frame = 0
+			}
+		}
+
+		if game_entity.animation_index == 7{
+			if animation_tree.previous_frame == len(animation_tree.animations[game_entity.animation_index].value) - (12 / int(ctx.event_queue.len)){
+				game_entity.animation_index = 0
+				animation_tree.previous_frame = 0
+				queue.pop_back(&ctx.event_queue)
+
+				// if queue len is 3 then we did the full combo and reset back to idle...
 			}
 		}
 	}
@@ -372,45 +360,6 @@ on_render :: proc(){
 			ctx.clear_color.b,
 			ctx.clear_color.a,
 		)
-
-		if ctx.editor_e{
-			sdl2.RenderClear(ctx.renderer)
-	
-			sdl2.SetRenderDrawColor(ctx.renderer,
-				ctx.editor.line_clear_color.r,
-				ctx.editor.line_clear_color.g,
-				ctx.editor.line_clear_color.b,
-				ctx.editor.line_clear_color.a,
-			)
-	
-			for x :i32= 0; x < ctx.editor.grid_dimension.x * ctx.editor.grid_dimension.z ; x+=ctx.editor.grid_dimension.z {
-				sdl2.RenderDrawLine(ctx.renderer,x,0,x, i32(ctx.editor.grid_dimension.y * ctx.editor.grid_dimension.z) + 1)
-			}
-	
-			for y :i32=0 ; y < ctx.editor.grid_dimension.y * ctx.editor.grid_dimension.z ; y+=ctx.editor.grid_dimension.z {
-				sdl2.RenderDrawLine(ctx.renderer,0, y,i32(ctx.editor.grid_dimension.x * ctx.editor.grid_dimension.z) + 1, y)
-			}
-	
-			sdl2.SetRenderDrawColor(ctx.renderer,
-				ctx.editor.cursor_clear_color.r,
-				ctx.editor.cursor_clear_color.g,
-				ctx.editor.cursor_clear_color.z,
-				ctx.editor.cursor_clear_color.w,
-			)
-	
-			if ctx.mouse_hover{
-				//TODO: khal add blinking
-					cursor_rect := sdl2.Rect{
-						ctx.editor.cursor_position.x,
-						ctx.editor.cursor_position.y,
-						ctx.editor.cursor_position.z,
-						ctx.editor.cursor_position.w,
-					}
-					
-					sdl2.RenderFillRect(ctx.renderer, &cursor_rect)
-				}
-	
-		}
 	
 		for texture_entity in texture_entities{
 			texture_component := ecs.get_component_unchecked(&ctx.world, texture_entity, container.TextureAsset)
@@ -436,6 +385,7 @@ on_render :: proc(){
 			dst_rec := sdl2.FRect{position_x, position_y, desired_scale_x, desired_scale_y}
 			
 			src_res := new(sdl2.Rect)
+			defer free(src_res)
 	
 			if animation_tree != nil && game_entity != nil{
 				max_frame_len := len(animation_tree.animations[game_entity.animation_index].value) - 1
@@ -445,7 +395,7 @@ on_render :: proc(){
 			}else{
 				src_res = nil
 			}
-	
+			
 			sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.render_direction)
 		}
 	}

@@ -49,6 +49,13 @@
         "num_slice" : 5,
         "width" : 38.0,
         "height" : 40.5
+    },
+
+    "Attack" : {
+        "index" : 3,
+        "num_slice" : 17,
+        "width" : 40.0,
+        "height" : 41.0
     }
 
 }
