@@ -1,0 +1,123 @@
+{
+	"identifier": "Sewers2",
+	"uniqueIdentifer": "a36b6d30-66b0-11ec-9cd7-8145d2a69a56",
+	"x": 256,
+	"y": 1024,
+	"width": 512,
+	"height": 512,
+	"bgColor": "#37494E",
+	"neighbourLevels": [
+		{
+			"levelIid": "a36c5790-66b0-11ec-9cd7-0d08d7991930",
+			"dir": "s"
+		},
+		{
+			"levelIid": "a36fda00-66b0-11ec-9cd7-ffa8f8d0b484",
+			"dir": "n"
+		}
+	],
+	"customFields": {
+		"roomType": null
+	},
+	"layers": [
+		"Background.png",
+		"Collisions.png",
+		"Wall_shadows.png"
+	],
+	"entities": {
+		"Item": [
+			{
+				"id": "Item",
+				"iid": "a36b6d36-66b0-11ec-9cd7-69fba161c5fc",
+				"layer": "Entities",
+				"x": 344,
+				"y": 320,
+				"width": 24,
+				"height": 24,
+				"color": 16772234,
+				"customFields": {
+					"type": "Ammo",
+					"price": 0,
+					"count": 10
+				}
+			}
+		],
+		"Teleport": [
+			{
+				"id": "Teleport",
+				"iid": "1a247570-66b0-11ec-b893-3368fa8363b5",
+				"layer": "Entities",
+				"x": 472,
+				"y": 256,
+				"width": 24,
+				"height": 24,
+				"color": 15487231,
+				"customFields": {
+					"destination": {
+						"entityIid": "abd6a7b0-66b0-11ec-a595-ffcc1299ef8f",
+						"layerIid": "9312a0d1-66b0-11ec-a595-23396da8cf9f",
+						"levelIid": "9312a0d0-66b0-11ec-a595-a934707bd447",
+						"worldIid": "137d71a0-9f30-11ed-9a9e-df46e8aad188"
+					}
+				}
+			}
+		],
+		"Ladder": [
+			{
+				"id": "Ladder",
+				"iid": "8cee7d00-66b0-11ec-9ccd-e9d0ce504542",
+				"layer": "Entities",
+				"x": 432,
+				"y": 256,
+				"width": 16,
+				"height": 64,
+				"color": 9755059,
+				"customFields" : {}
+			},
+			{
+				"id": "Ladder",
+				"iid": "dda183f0-66b0-11ec-9ccd-6dd03959680e",
+				"layer": "Entities",
+				"x": 144,
+				"y": 192,
+				"width": 16,
+				"height": 224,
+				"color": 9755059,
+				"customFields" : {}
+			},
+			{
+				"id": "Ladder",
+				"iid": "deec0550-66b0-11ec-9ccd-b937773f1451",
+				"layer": "Entities",
+				"x": 80,
+				"y": 416,
+				"width": 16,
+				"height": 96,
+				"color": 9755059,
+				"customFields" : {}
+			},
+			{
+				"id": "Ladder",
+				"iid": "0838d5f0-66b0-11ec-9ccd-e5960751723f",
+				"layer": "Entities",
+				"x": 448,
+				"y": 0,
+				"width": 16,
+				"height": 64,
+				"color": 9755059,
+				"customFields" : {}
+			},
+			{
+				"id": "Ladder",
+				"iid": "130bade0-66b0-11ec-9ccd-43c233a37d30",
+				"layer": "Entities",
+				"x": 416,
+				"y": 64,
+				"width": 16,
+				"height": 112,
+				"color": 9755059,
+				"customFields" : {}
+			}
+		]
+	}
+}

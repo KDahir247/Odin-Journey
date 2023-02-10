@@ -7,7 +7,6 @@ import "../container"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 import "core:strings"
-
 parse_game_config :: proc($path : string) -> container.GameConfig  {
     enabled_game_flags := sdl2.InitFlags{} 
     enabled_img_flags := image.InitFlags{}
@@ -123,11 +122,3 @@ parse_animation :: proc($path : string, animation_keys : []string) -> (string,[d
 }
 
 
-//TODO: khal this will parse ldtk level file
-parse_level :: proc($path : string){
-    data, _ := os.read_entire_file_from_filename(path)
-    defer delete(data)
-
-    anim_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, true)
-    defer json.destroy_value(anim_json)
-}

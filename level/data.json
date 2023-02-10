@@ -1,0 +1,575 @@
+{
+	"identifier": "Entities_demo",
+	"uniqueIdentifer": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+	"x": -1,
+	"y": -1,
+	"width": 816,
+	"height": 464,
+	"bgColor": "#1B1B2E",
+	"neighbourLevels": [],
+	"customFields" : {},
+	"layers": [
+		"Bg.png",
+		"Collisions.png",
+		"InnerWallFog.png"
+	],
+	"entities": {
+		"Button": [
+			{
+				"id": "Button",
+				"iid": "f80ee802-66b0-11ec-b121-7703f3b4b3e4",
+				"layer": "Triggerables",
+				"x": 632,
+				"y": 280,
+				"width": 16,
+				"height": 16,
+				"color": 16711680,
+				"customFields": {
+					"delay": 0,
+					"targets": [
+						{
+							"entityIid": "3396d6c0-66b0-11ec-b548-27e4812969a5",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						},
+						{
+							"entityIid": "f80ee800-66b0-11ec-b121-9b6ebb5b8d6e",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						}
+					]
+				}
+			}
+		],
+		"TriggerArea": [
+			{
+				"id": "TriggerArea",
+				"iid": "f80f0f10-66b0-11ec-b121-cbb2b35a0142",
+				"layer": "Triggerables",
+				"x": 176,
+				"y": 320,
+				"width": 64,
+				"height": 48,
+				"color": 14995205,
+				"customFields": {
+					"condition": "OnPlayerEnter",
+					"onTrigger": [
+						{
+							"entityIid": "34733ef0-66b0-11ec-b043-b1457bc19192",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						},
+						{
+							"entityIid": "f05f14b0-7820-11ed-b13c-3bd68d5556ee",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						}
+					]
+				}
+			},
+			{
+				"id": "TriggerArea",
+				"iid": "f80f0f11-66b0-11ec-b121-f14c96b08517",
+				"layer": "Triggerables",
+				"x": 640,
+				"y": 160,
+				"width": 80,
+				"height": 48,
+				"color": 14995205,
+				"customFields": {
+					"condition": "OnPlayerEnter",
+					"onTrigger": [
+						{
+							"entityIid": "dd32c940-7820-11ed-b13c-d7bdc343ece3",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						}
+					]
+				}
+			},
+			{
+				"id": "TriggerArea",
+				"iid": "b73ecb20-7820-11ed-b300-b382ab6bc704",
+				"layer": "Triggerables",
+				"x": 112,
+				"y": 192,
+				"width": 32,
+				"height": 64,
+				"color": 14995205,
+				"customFields": {
+					"condition": "OnPlayerEnter",
+					"onTrigger": [
+						{
+							"entityIid": "ba7bf4c0-7820-11ed-b300-97eb43836a46",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						}
+					]
+				}
+			}
+		],
+		"SpotLight": [
+			{
+				"id": "SpotLight",
+				"iid": "f80e99e2-66b0-11ec-b121-67b8aade98d9",
+				"layer": "Triggerables",
+				"x": 344,
+				"y": 160,
+				"width": 16,
+				"height": 16,
+				"color": 16772997,
+				"customFields": {
+					"flickering": false,
+					"colors": [
+						"#FFEF85"
+					],
+					"radius": 4.75,
+					"intensity": 50
+				}
+			},
+			{
+				"id": "SpotLight",
+				"iid": "f80ec0f0-66b0-11ec-b121-db9b161a9754",
+				"layer": "Triggerables",
+				"x": 488,
+				"y": 224,
+				"width": 16,
+				"height": 16,
+				"color": 16743706,
+				"customFields": {
+					"flickering": true,
+					"colors": [
+						"#FF7D1A",
+						"#B20101"
+					],
+					"radius": 2.5,
+					"intensity": 100
+				}
+			},
+			{
+				"id": "SpotLight",
+				"iid": "0ac19200-66b0-11ec-b043-21f75c6683af",
+				"layer": "Triggerables",
+				"x": 328,
+				"y": 320,
+				"width": 16,
+				"height": 16,
+				"color": 16772997,
+				"customFields": {
+					"flickering": false,
+					"colors": [
+						"#FFEF85"
+					],
+					"radius": 1.5,
+					"intensity": 100
+				}
+			},
+			{
+				"id": "SpotLight",
+				"iid": "15991840-7820-11ed-9e31-5d3ab678e30e",
+				"layer": "Triggerables",
+				"x": 552,
+				"y": 192,
+				"width": 16,
+				"height": 16,
+				"color": 16743706,
+				"customFields": {
+					"flickering": false,
+					"colors": [
+						"#FF7D1A",
+						"#B20101"
+					],
+					"radius": 2.5,
+					"intensity": 100
+				}
+			}
+		],
+		"Door": [
+			{
+				"id": "Door",
+				"iid": "f80ee800-66b0-11ec-b121-9b6ebb5b8d6e",
+				"layer": "Triggerables",
+				"x": 552,
+				"y": 368,
+				"width": 9,
+				"height": 32,
+				"color": 11111280,
+				"customFields": {
+					"locked": true
+				}
+			},
+			{
+				"id": "Door",
+				"iid": "f80ee801-66b0-11ec-b121-4d74c475d701",
+				"layer": "Triggerables",
+				"x": 440,
+				"y": 272,
+				"width": 9,
+				"height": 48,
+				"color": 11111280,
+				"customFields": {
+					"locked": true
+				}
+			},
+			{
+				"id": "Door",
+				"iid": "f80ee805-66b0-11ec-b121-09bc15634dc5",
+				"layer": "Triggerables",
+				"x": 360,
+				"y": 368,
+				"width": 9,
+				"height": 32,
+				"color": 11111280,
+				"customFields": {
+					"locked": false
+				}
+			},
+			{
+				"id": "Door",
+				"iid": "478c88a0-7820-11ed-96e3-cb21df51f96c",
+				"layer": "Triggerables",
+				"x": 152,
+				"y": 256,
+				"width": 9,
+				"height": 48,
+				"color": 11111280,
+				"customFields": {
+					"locked": true
+				}
+			}
+		],
+		"Repeater": [
+			{
+				"id": "Repeater",
+				"iid": "34733ef0-66b0-11ec-b043-b1457bc19192",
+				"layer": "Triggerables",
+				"x": 280,
+				"y": 344,
+				"width": 16,
+				"height": 16,
+				"color": 54880,
+				"customFields": {
+					"targets": [
+						{
+							"entityIid": "0ac19200-66b0-11ec-b043-21f75c6683af",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						},
+						{
+							"entityIid": "f80ee805-66b0-11ec-b121-09bc15634dc5",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						}
+					],
+					"delay": 1
+				}
+			},
+			{
+				"id": "Repeater",
+				"iid": "3396d6c0-66b0-11ec-b548-27e4812969a5",
+				"layer": "Triggerables",
+				"x": 552,
+				"y": 264,
+				"width": 16,
+				"height": 16,
+				"color": 54880,
+				"customFields": {
+					"targets": [
+						{
+							"entityIid": "f80ec0f0-66b0-11ec-b121-db9b161a9754",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						},
+						{
+							"entityIid": "f80ee801-66b0-11ec-b121-4d74c475d701",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						},
+						{
+							"entityIid": "15991840-7820-11ed-9e31-5d3ab678e30e",
+							"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+							"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+							"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+						}
+					],
+					"delay": 1
+				}
+			}
+		],
+		"MessagePopUp": [
+			{
+				"id": "MessagePopUp",
+				"iid": "dd32c940-7820-11ed-b13c-d7bdc343ece3",
+				"layer": "Triggerables",
+				"x": 760,
+				"y": 128,
+				"width": 32,
+				"height": 16,
+				"color": 12375266,
+				"customFields": {
+					"texts": [
+						"Secret area!"
+					]
+				}
+			},
+			{
+				"id": "MessagePopUp",
+				"iid": "f05f14b0-7820-11ed-b13c-3bd68d5556ee",
+				"layer": "Triggerables",
+				"x": 264,
+				"y": 400,
+				"width": 32,
+				"height": 16,
+				"color": 12375266,
+				"customFields": {
+					"texts": [
+						"A door to the right was opened by some hidden mechanism."
+					]
+				}
+			},
+			{
+				"id": "MessagePopUp",
+				"iid": "ba7bf4c0-7820-11ed-b300-97eb43836a46",
+				"layer": "Triggerables",
+				"x": 136,
+				"y": 288,
+				"width": 32,
+				"height": 16,
+				"color": 12375266,
+				"customFields": {
+					"texts": [
+						"Well done!"
+					]
+				}
+			}
+		],
+		"Exit": [
+			{
+				"id": "Exit",
+				"iid": "d516e9d0-7820-11ed-a572-2bc543126bf5",
+				"layer": "Triggerables",
+				"x": 0,
+				"y": 48,
+				"width": 32,
+				"height": 64,
+				"color": 65412,
+				"customFields" : {}
+			}
+		],
+		"Chest": [
+			{
+				"id": "Chest",
+				"iid": "f80e99e1-66b0-11ec-b121-273dce4c0a94",
+				"layer": "GameEntities",
+				"x": 712,
+				"y": 400,
+				"width": 24,
+				"height": 24,
+				"color": 9067320,
+				"customFields": {
+					"content": [
+						"Sword",
+						"Heavy sword",
+						"Bow"
+					],
+					"requireKey": true
+				}
+			},
+			{
+				"id": "Chest",
+				"iid": "ada47150-66b0-11ec-b043-2d6dd3346abd",
+				"layer": "GameEntities",
+				"x": 680,
+				"y": 208,
+				"width": 24,
+				"height": 24,
+				"color": 9067320,
+				"customFields": {
+					"content": [
+						"Bow",
+						"Arrow"
+					],
+					"requireKey": false
+				}
+			}
+		],
+		"Enemy": [
+			{
+				"id": "Enemy",
+				"iid": "f80ec0f2-66b0-11ec-b121-d96e502df2fb",
+				"layer": "GameEntities",
+				"x": 232,
+				"y": 256,
+				"width": 32,
+				"height": 32,
+				"color": 16711680,
+				"customFields": {
+					"patrol": [
+						{
+							"cx": 18,
+							"cy": 15
+						},
+						{
+							"cx": 18,
+							"cy": 17
+						},
+						{
+							"cx": 23,
+							"cy": 17
+						},
+						{
+							"cx": 23,
+							"cy": 16
+						},
+						{
+							"cx": 26,
+							"cy": 16
+						}
+					],
+					"loots": [
+						"Gold",
+						"Healing_potion"
+					],
+					"life": 10,
+					"type": "Fighter",
+					"triggerOnKill": {
+						"entityIid": "478c88a0-7820-11ed-96e3-cb21df51f96c",
+						"layerIid": "aba76db0-66b0-11ec-adce-c7e369098433",
+						"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+						"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+					}
+				}
+			},
+			{
+				"id": "Enemy",
+				"iid": "f80ee803-66b0-11ec-b121-6dcb8a513232",
+				"layer": "GameEntities",
+				"x": 504,
+				"y": 368,
+				"width": 16,
+				"height": 16,
+				"color": 16711680,
+				"customFields": {
+					"patrol": [
+						{
+							"cx": 24,
+							"cy": 22
+						}
+					],
+					"loots": [],
+					"life": 3,
+					"type": "Worm",
+					"triggerOnKill": null
+				}
+			},
+			{
+				"id": "Enemy",
+				"iid": "f80ee804-66b0-11ec-b121-874e33fcffe5",
+				"layer": "GameEntities",
+				"x": 680,
+				"y": 400,
+				"width": 16,
+				"height": 16,
+				"color": 16711680,
+				"customFields": {
+					"patrol": [
+						{
+							"cx": 35,
+							"cy": 24
+						}
+					],
+					"loots": [
+						"Mana_potion"
+					],
+					"life": 3,
+					"type": "Thief",
+					"triggerOnKill": null
+				}
+			}
+		],
+		"Teleporter": [
+			{
+				"id": "Teleporter",
+				"iid": "623b4880-7820-11ed-96e3-a559e7f13f25",
+				"layer": "GameEntities",
+				"x": 88,
+				"y": 256,
+				"width": 16,
+				"height": 16,
+				"color": 24063,
+				"customFields": {
+					"destination": {
+						"entityIid": "cec7c540-7820-11ed-a572-9d2143bfff9e",
+						"layerIid": "f80e99e0-66b0-11ec-b121-456135fb304a",
+						"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+						"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+					}
+				}
+			},
+			{
+				"id": "Teleporter",
+				"iid": "cec7c540-7820-11ed-a572-9d2143bfff9e",
+				"layer": "GameEntities",
+				"x": 136,
+				"y": 112,
+				"width": 16,
+				"height": 16,
+				"color": 24063,
+				"customFields": {
+					"destination": {
+						"entityIid": "623b4880-7820-11ed-96e3-a559e7f13f25",
+						"layerIid": "f80e99e0-66b0-11ec-b121-456135fb304a",
+						"levelIid": "f80e4bc0-66b0-11ec-b121-b327a018109c",
+						"worldIid": "71aad4f0-9f30-11ed-9f75-dfb27d955bd7"
+					}
+				}
+			}
+		],
+		"PlayerStart": [
+			{
+				"id": "PlayerStart",
+				"iid": "f80f0f12-66b0-11ec-b121-c7e0ed2499ae",
+				"layer": "GameEntities",
+				"x": 40,
+				"y": 368,
+				"width": 20,
+				"height": 20,
+				"color": 12115535,
+				"customFields": {
+					"life": 3,
+					"isAwaken": true,
+					"bag": [
+						"Mana_potion",
+						"Healing_potion"
+					],
+					"weapon": "Trout"
+				}
+			}
+		],
+		"Item": [
+			{
+				"id": "Item",
+				"iid": "4a7abfc0-7820-11ed-b300-2595de03b38f",
+				"layer": "GameEntities",
+				"x": 568,
+				"y": 304,
+				"width": 16,
+				"height": 16,
+				"color": 16763904,
+				"customFields": {
+					"type": "Key"
+				}
+			}
+		]
+	}
+}

@@ -16,7 +16,6 @@ FPS_CAP :: 60
 // Clean up tomorrow
 main :: proc() {
 	game_config := utility.parse_game_config("config/game_config.json")
-	
 	core := new(game.Context)
 	core^ = game.init(game_config)
 	context.user_ptr = core
@@ -31,6 +30,8 @@ main :: proc() {
 	defer ecs.deinit_ecs(&cxt)
 
 	running := true;
+
+	utility.parse_level_simplified("level/data2.json", 3)
 
 	tex_path, configs := utility.parse_animation("config/animation/player.json",{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	defer delete(configs)
