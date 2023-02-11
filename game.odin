@@ -31,7 +31,7 @@ main :: proc() {
 
 	running := true;
 
-	utility.parse_level_simplified("level/data2.json", 3)
+	utility.parse_ldtk("level/empty2.ldtk")
 
 	tex_path, configs := utility.parse_animation("config/animation/player.json",{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	defer delete(configs)
