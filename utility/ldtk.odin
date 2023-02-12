@@ -6,6 +6,7 @@ import "core:hash"
 import "core:strconv"
 import "core:fmt"
 import "core:intrinsics"
+import "core:reflect"
 HEXADECIMAL_BASE :: 16
 
 LDTK_CONTEXT :: struct(len : int){
@@ -79,6 +80,7 @@ parse_level_simplified :: proc($path : string, $layer_count : int) -> LDTK_CONTE
     ldtk_neighbour_levels := ldtk_level_root["neighbourLevels"].(json.Array)
     ldtk_neighbour_collection := make_dynamic_array_len([dynamic]LDTK_NEIGHBOUR, len(ldtk_neighbour_levels))
 
+    // Iterate over the neighbouring level
     for ldtk_neighbour, index in ldtk_neighbour_levels{
         ldtk_neighbour_obj := ldtk_neighbour.(json.Object)
 
@@ -99,6 +101,7 @@ parse_level_simplified :: proc($path : string, $layer_count : int) -> LDTK_CONTE
 
     ldtk_level_layers := ldtk_level_root["layers"].(json.Array)
     
+    // Iterate over the level images 
     for ldtk_layer, index in ldtk_level_layers{
         layers[index] = ldtk_layer.(json.String)
     }
@@ -171,11 +174,10 @@ parse_ldtk :: proc($path : string){
     // parse_ldtk function doesn't not support multiple world. Just a single world with multiple levels.
     // TODO: khal maybe make a function to support ldtk multiple world.. Maybe...
 
-
     data, _ := os.read_entire_file_from_filename(path)
     defer delete(data)
 
-    ldtk_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, true)
+    ldtk_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, false)
     defer json.destroy_value(ldtk_json)
 
     ldtk_world := ldtk_json.(json.Object)
@@ -189,32 +191,131 @@ parse_ldtk :: proc($path : string){
 
     ldtk_world_layer_definitions := ldtk_world_definitions["layers"].(json.Array)
 
-    for layer_def in ldtk_world_layer_definitions{
-        ldtk_layer_obj := layer_def.(json.Object)
+    for ldtk_layer_def in ldtk_world_layer_definitions{
+        // We only care about value not the identifier or color.
+        ldtk_int_grid_values := make([dynamic]f64)
+
+        ldtk_layer_obj := ldtk_layer_def.(json.Object)
 
         ldtk_layer_id := ldtk_layer_obj["identifier"].(json.String)
         ldtk_layer_type := ldtk_layer_obj["type"].(json.String)
-        ldtk_layer_iid := ldtk_layer_obj["uid"].(json.Integer)
+        ldtk_layer_iid := ldtk_layer_obj["uid"].(json.Float)
 
-        ldtk_layer_opacity := ldtk_layer_obj["displayOpacity"].(json.Integer)
+        ldtk_layer_opacity := ldtk_layer_obj["displayOpacity"].(json.Float)
 
-        ldtk_layer_grid_size := ldtk_layer_obj["gridSize"].(json.Integer)
-        fmt.println()
+        ldtk_layer_grid_size := ldtk_layer_obj["gridSize"].(json.Float)
+        
+        ldtk_layer_parallax_factor_x := ldtk_layer_obj["parallaxFactorX"].(json.Float)
+        ldtk_layer_parallax_factor_y := ldtk_layer_obj["parallaxFactorY"].(json.Float)
+        ldtk_layer_parallax_scaling := ldtk_layer_obj["parallaxScaling"].(json.Boolean)
 
+        ldtk_layer_pixel_offset_x := ldtk_layer_obj["pxOffsetX"].(json.Float)
+        ldtk_layer_pixel_offset_y := ldtk_layer_obj["pxOffsetY"].(json.Float)
 
+        if ldtk_layer_type == "AutoLayer"{
+
+            ldtk_layer_auto_source_def_iid := ldtk_layer_obj["autoSourceLayerDefUid"].(json.Float)
+            ldtk_layer_tileset_def_iid := ldtk_layer_obj["tilesetDefUid"].(json.Float)
+        }
+
+        ldtk_layer_intgrid_values := ldtk_layer_obj["intGridValues"].(json.Array)
+
+        for ldtk_grid_value in ldtk_layer_intgrid_values{
+            ldtk_layer_grid_value_obj := ldtk_grid_value.(json.Object)
+
+            ldtk_value := ldtk_layer_grid_value_obj["value"].(json.Float)
+
+            append(&ldtk_int_grid_values, ldtk_value)
+        }
     }
 
-    // Once we got the definition then we can do..
+    ldtk_world_entities_definitions := ldtk_world_definitions["entities"].(json.Array)
 
-    // if ldtk_has_external_level or if it is simplified then handle, since this parse function 
-    // has really explicit json parsing.
+    for ldtk_entity_def in ldtk_world_entities_definitions{
 
+        ldtk_entity_obj := ldtk_entity_def.(json.Object)
 
+        //TODO: do i need entity color. Thought entity was a action trigger, so it should be transparent.
+        // color is only used in ldtk to show where it is in the editor.
+        ldtk_entity_id := ldtk_entity_obj["identifier"].(json.String)
+        ldtk_entity_iid := ldtk_entity_obj["uid"].(json.Float)
 
+        ldtk_entity_width := ldtk_entity_obj["width"].(json.Float)
+        ldtk_entity_height := ldtk_entity_obj["height"].(json.Float)
 
-    //TODO: we want to check if both simplified and exported level
+        ldtk_entity_pivot_x := ldtk_entity_obj["pivotX"].(json.Float)
+        ldtk_entity_pivot_y := ldtk_entity_obj["pivotY"].(json.Float)
+        
+        ldtk_entity_tileset_iid := ldtk_entity_obj["tilesetId"].(json.Float) or_else -1
 
+        if ldtk_entity_tileset_iid > 0{
+            ldtk_entity_tile_rect := ldtk_entity_obj["tileRect"].(json.Object)
 
-    //toc, level, check json version, iid, def, background color, external level, 
+            ldtk_entity_tile_x := ldtk_entity_tile_rect["x"].(json.Float)
+            ldtk_entity_tile_y := ldtk_entity_tile_rect["y"].(json.Float)
+            
+            //TODO: khal isn't the faster way to make width the same as the entity width and the height the same as the entity height.
+            ldtk_entity_tile_width := ldtk_entity_tile_rect["w"].(json.Float)
+            ldtk_entity_tile_height := ldtk_entity_tile_rect["h"].(json.Float)
+        }
+    }
+
+    ldtk_world_tileset_definitions := ldtk_world_definitions["tilesets"].(json.Array)
+
+    for ldtk_tile_def in ldtk_world_tileset_definitions{
+        ldtk_tile_obj := ldtk_tile_def.(json.Object)
+    
+        ldtk_tileset_id := ldtk_tile_obj["identifier"].(json.String)
+        ldtk_tileset_iid := ldtk_tile_obj["uid"].(json.Float)
+
+        ldtk_tileset_path := ldtk_tile_obj["realPath"].(json.String) or_else "nil"
+
+        ldtk_tileset_pixel_width := ldtk_tile_obj["pxWid"].(json.Float)
+        ldtk_tileset_pixel_height := ldtk_tile_obj["pxHei"].(json.Float)
+
+        ldtk_tileset_grid_size := ldtk_tile_obj["tileGridSize"].(json.Float)
+        ldtk_tileset_spacing := ldtk_tile_obj["spacing"].(json.Float)
+        ldtk_tileset_padding := ldtk_tile_obj["padding"].(json.Float)
+
+        //enum support tileset..
+    }
+
+    ldtk_world_enum_definitions := ldtk_world_definitions["enums"].(json.Array)
+
+    for ldtk_enum_def in ldtk_world_enum_definitions{
+        ldtk_enum_obj := ldtk_enum_def.(json.Object)
+
+        ldtk_enum_id := ldtk_enum_obj["identifier"].(json.String)
+        ldtk_enum_iid := ldtk_enum_obj["uid"].(json.Float)
+
+        ldtk_enum_values := ldtk_enum_obj["values"].(json.Array)
+
+        for ldtk_enum_value in ldtk_enum_values{
+            ldtk_enum_value_obj := ldtk_enum_value.(json.Object)
+
+            ldtk_enum_value_id := ldtk_enum_value_obj["id"].(json.String)
+        }
+    }
+
+    // Now the instances....
+    ldtk_levels := ldtk_world["levels"].(json.Array)
+
+    for ldtk_level in ldtk_levels{
+        ldtk_level_obj := ldtk_level.(json.Object)
+
+        ldtk_level_id := ldtk_level_obj["identifier"].(json.String)
+        ldtk_level_iid := ldtk_level_obj["iid"].(json.String)
+        ldtk_level_uid := ldtk_level_obj["uid"].(json.Float)
+
+        ldtk_level_pos_x := ldtk_level_obj["worldX"].(json.Float)
+        ldtk_level_pos_y := ldtk_level_obj["worldY"].(json.Float)
+        ldtk_level_depth := ldtk_level_obj["worldDepth"].(json.Float)
+
+        ldtk_level_width := ldtk_level_obj["pxWid"].(json.Float)
+        ldtk_level_height := ldtk_level_obj["pxHei"].(json.Float)
+        
+        //
+
+    }
 
 }

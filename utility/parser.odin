@@ -86,8 +86,6 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
         clear_color,
 
     }
-
-
 }
 
 parse_animation :: proc($path : string, animation_keys : []string) -> (string,[dynamic]container.AnimationConfig) {
