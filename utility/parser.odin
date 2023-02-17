@@ -88,8 +88,8 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
     }
 }
 
-parse_animation :: proc($path : string, animation_keys : []string) -> (string,[dynamic]container.AnimationConfig) {
-    anim_configs := make([dynamic]container.AnimationConfig)
+parse_animation :: proc($path : string, animation_keys : [$E]string) -> (string,[E]container.AnimationConfig) {
+    anim_configs := [E]container.AnimationConfig{}
     
     data, _ := os.read_entire_file_from_filename(path)
     defer delete(data)
@@ -101,7 +101,7 @@ parse_animation :: proc($path : string, animation_keys : []string) -> (string,[d
     
     tex_path := root["path"].(json.String)
     
-    for anim_key in animation_keys{
+    for anim_key,index in animation_keys{
         anim_content := root[anim_key].(json.Object)
 
         anim_index := anim_content["index"].(json.Integer)
@@ -109,11 +109,11 @@ parse_animation :: proc($path : string, animation_keys : []string) -> (string,[d
         animation_width := anim_content["width"].(json.Float)
         animation_height := anim_content["height"].(json.Float)
 
-        append(&anim_configs, container.AnimationConfig{
+        anim_configs[index] = container.AnimationConfig{
             anim_index,
             animation_slice,
             animation_width,
-            animation_height})
+            animation_height}
     }
 
     return tex_path, anim_configs

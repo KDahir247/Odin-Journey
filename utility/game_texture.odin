@@ -12,12 +12,12 @@ import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
 
 ANIM_FPS :: 15
-load_animation_texture :: proc(path : string,anim_configs : [dynamic]container.AnimationConfig) -> ecs.Entity{
+load_animation_texture :: proc(path : string, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
 
 	ctx := cast(^game.Context) context.user_ptr
     texture_entity := ecs.create_entity(&ctx.world)
 
-    animations := make([dynamic]container.Animation, len(anim_configs))
+    animations := make_dynamic_array_len([dynamic]container.Animation,E)
 
     path := strings.clone_to_cstring(path, context.temp_allocator)
     
@@ -35,10 +35,11 @@ load_animation_texture :: proc(path : string,anim_configs : [dynamic]container.A
 
     sdl2.FreeSurface(surface)
 
-    for config, anim_config_index in anim_configs{
+    for config, index in anim_configs{
         for current_slice_index in 0..<config.slices {
             anim_rect := sdl2.Rect{i32(current_slice_index) * i32(config.width), i32(config.index) * i32(config.height), i32(config.width), i32(config.height) }
-            append_elem(&animations[anim_config_index].value, anim_rect)
+            
+            append(&animations[index].value, anim_rect)
         }
     }
 

@@ -33,16 +33,12 @@ main :: proc() {
 	dynamic_index := game.initialize_dynamic_resource()
 	context.user_index = int(dynamic_index)
 
-	defer game.cleanup()
-	defer free(core)
-	defer ecs.deinit_ecs(&cxt)
-
+	
 	running := true;
 
-	//utility.parse_ldtk("level/empty2.ldtk")
+	utility.parse_ldtk("level/empty2.ldtk")
 
-	tex_path, configs := utility.parse_animation("config/animation/player.json",{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
-	defer delete(configs)
+	tex_path, configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	
 	utility.create_game_entity(tex_path,configs, {400,500}, 0, {0.1	,0.2}, true)
 	
@@ -62,6 +58,15 @@ main :: proc() {
 			utility.cap_frame_rate_precise(elapsed, FPS_CAP)
 		}
 	}
+
+	// We want to do clean up before checking if there is any leaks.
+	game.cleanup()
+	
+	context.user_ptr = nil
+	free(core)
+
+	ecs.deinit_ecs(&cxt)
+
 
 	when ODIN_DEBUG{
 		// For debugging purpose (bad free, leak, etc...)
