@@ -1,23 +1,27 @@
 package utility
 
+import "../container"
+import "../utility"
+
+import "core:strconv"
 import "core:encoding/json"
 import "core:os"
-import "core:fmt"
-import "../container"
+import "core:strings"
+
 import "vendor:sdl2"
 import "vendor:sdl2/image"
-import "core:strings"
-parse_game_config :: proc($path : string) -> container.GameConfig  {
-    enabled_game_flags := sdl2.InitFlags{} 
-    enabled_img_flags := image.InitFlags{}
-    enabled_window_flags := sdl2.WindowFlags{}
-    enabled_render_flags := sdl2.RendererFlags{}
-    clear_color := [4]u8{}
-    
-    data, _ := os.read_entire_file_from_filename(path)
-    defer delete(data)
 
+
+parse_game_config :: proc($path : string) -> container.GameConfig  {
+    enabled_game_flags : sdl2.InitFlags
+    enabled_img_flags : image.InitFlags
+    enabled_window_flags : sdl2.WindowFlags
+    enabled_render_flags : sdl2.RendererFlags
+
+    data, _ := os.read_entire_file_from_filename(path)
     anim_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, true)
+    
+    defer delete(data)
     defer json.destroy_value(anim_json)
 
     root := anim_json.(json.Object)
@@ -41,13 +45,14 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
     
     window_title := window_config["title"].(json.String)
     title := strings.clone_to_cstring(window_title)
+    delete(window_title)
     
-    center_x := i32(window_config["x"].(json.Integer))
-    center_y := i32(window_config["y"].(json.Integer))
+    center_x := int(window_config["x"].(json.Integer))
+    center_y := int(window_config["y"].(json.Integer))
 
-    grid_width := i32(window_config["grid_width"].(json.Integer))
-    grid_height := i32(window_config["grid_height"].(json.Integer))
-    grid_cell := i32(window_config["grid_cell_size"].(json.Integer))
+    grid_width := int(window_config["grid_width"].(json.Integer))
+    grid_height := int(window_config["grid_height"].(json.Integer))
+    grid_cell := int(window_config["grid_cell_size"].(json.Integer))
 
     window_flags := window_config["flags"].(json.Array)
 
@@ -59,11 +64,13 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
 
     render_config := root["render_config"].(json.Object)
 
-    color := render_config["clear_color"].(json.Array)
+    color_hex_string := render_config["clear_color"].(json.String)
+    hex_int,valid_val :=  strconv.parse_int(color_hex_string[1:], HEXADECIMAL_BASE)
+    
+    color := [3]f32{45, 45, 45}
 
-    for i, index in color {
-        col :=  u8(i.(json.Integer))
-        clear_color[index] = col
+    if valid_val{
+        color = utility.hex_to_rgb(hex_int,false)
     }
 
     render_flag := render_config["flags"].(json.Array)
@@ -83,40 +90,50 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
         title,
         {center_x, center_y},
         {grid_width, grid_height, grid_cell},
-        clear_color,
-
+        {
+            u8(color.r),
+            u8(color.g),
+            u8(color.b),
+        },
     }
 }
 
-parse_animation :: proc($path : string, animation_keys : [$E]string) -> (string,[E]container.AnimationConfig) {
-    anim_configs := [E]container.AnimationConfig{}
+parse_animation :: proc($path : string, animation_keys : [$E]string) -> [E]container.AnimationConfig{
+    anim_configs : [E]container.AnimationConfig
     
     data, _ := os.read_entire_file_from_filename(path)
-    defer delete(data)
-
     anim_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, true)
+
+    defer delete(data)
     defer json.destroy_value(anim_json)
 
     root := anim_json.(json.Object)
     
-    tex_path := root["path"].(json.String)
+    #no_bounds_check{
+        for index in 0..<E{
+            current_key := animation_keys[index]
+            anim_content := root[current_key].(json.Object)
     
-    for anim_key,index in animation_keys{
-        anim_content := root[anim_key].(json.Object)
+            anim_index := anim_content["index"].(json.Integer)
+            animation_slice := anim_content["num_slice"].(json.Integer)
 
-        anim_index := anim_content["index"].(json.Integer)
-        animation_slice := anim_content["num_slice"].(json.Integer)
-        animation_width := anim_content["width"].(json.Float)
-        animation_height := anim_content["height"].(json.Float)
+            animation_width := anim_content["width"].(json.Float)
+            animation_height := anim_content["height"].(json.Float)
 
-        anim_configs[index] = container.AnimationConfig{
-            anim_index,
-            animation_slice,
-            animation_width,
-            animation_height}
+            animation_fps := anim_content["fps"].(json.Float)
+    
+            anim_configs[index] = container.AnimationConfig{
+                i32(anim_index),
+                i32(animation_slice),
+                i32(animation_width),
+                i32(animation_height),
+                f32(animation_fps),
+            }
+    
+        }
     }
 
-    return tex_path, anim_configs
+    return anim_configs
 }
 
 

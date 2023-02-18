@@ -324,8 +324,8 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
         if ldtk_layer_type == "AutoLayer"{
             auto_layer := LDTK_LAYER_AUTO_LAYER{}
 
-            auto_layer.autoSourceLayerDefUid := ldtk_layer_obj["autoSourceLayerDefUid"].(json.Float)
-            auto_layer.tilesetDefUid := ldtk_layer_obj["tilesetDefUid"].(json.Float)
+            auto_layer.autoSourceLayerDefUid = ldtk_layer_obj["autoSourceLayerDefUid"].(json.Float)
+            auto_layer.tilesetDefUid = ldtk_layer_obj["tilesetDefUid"].(json.Float)
             ldtk_layer_definition.auto_layer = auto_layer
         }
 
@@ -567,5 +567,4 @@ free_ldtk_context :: proc(ctx : ^LDTK_CONTEXT){
     }
 
     delete(ctx.levels)
-
 }

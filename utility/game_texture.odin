@@ -9,19 +9,18 @@ import "core:strings"
 import "core:fmt"
 
 import "vendor:sdl2"
-import sdl2_img "vendor:sdl2/image"
+import "vendor:sdl2/image"
 
-ANIM_FPS :: 15
-load_animation_texture :: proc(path : string, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
-
+load_animation_texture :: proc($path : string, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
 	ctx := cast(^game.Context) context.user_ptr
     texture_entity := ecs.create_entity(&ctx.world)
 
     animations := make_dynamic_array_len([dynamic]container.Animation,E)
 
-    path := strings.clone_to_cstring(path, context.temp_allocator)
-    
-    surface := sdl2_img.Load(path)
+    cpath := strings.clone_to_cstring(path)
+    defer delete(cpath)
+
+    surface := image.Load(cpath)
     optimal_surface := sdl2.ConvertSurface(surface, ctx.pixel_format, 0)
 
     key := sdl2.MapRGB(optimal_surface.format, 0,0,0)
@@ -35,17 +34,44 @@ load_animation_texture :: proc(path : string, anim_configs : [$E]container.Anima
 
     sdl2.FreeSurface(surface)
 
-    for config, index in anim_configs{
-        for current_slice_index in 0..<config.slices {
-            anim_rect := sdl2.Rect{i32(current_slice_index) * i32(config.width), i32(config.index) * i32(config.height), i32(config.width), i32(config.height) }
-            
-            append(&animations[index].value, anim_rect)
+    #no_bounds_check{
+        for current_animation_index in 0..<E{
+            current_animation_config := anim_configs[current_animation_index]
+            for current_slice_index in 0..<current_animation_config.slices{
+                
+                x := current_slice_index * current_animation_config.width
+                y := current_animation_config.index * current_animation_config.height
+
+                anim_rect := sdl2.Rect{x, y, current_animation_config.width, current_animation_config.height }
+                
+                animations[current_animation_index].animation_speed = current_animation_config.animation_speed
+                append(&animations[current_animation_index].value, anim_rect)
+            }
         }
     }
 
-    ecs.add_component(&ctx.world, texture_entity, container.Animation_Tree{0, ANIM_FPS, animations})
+    ecs.add_component(&ctx.world, texture_entity, container.Animation_Tree{0,  animations})
 
     return texture_entity;
+}
+
+free_all_animation_entities :: proc(){
+    ctx := cast(^game.Context) context.user_ptr
+
+    animation_trees,_ := ecs.get_component_list(&ctx.world, container.Animation_Tree)
+    tex_assets, _ := ecs.get_component_list(&ctx.world, container.TextureAsset)
+
+    for tree in animation_trees{
+        for animation in tree.animations{
+            delete(animation.value)
+        }
+
+        delete(tree.animations)
+    }
+
+    for tex in tex_assets{
+        sdl2.DestroyTexture(tex.texture)
+    }
 }
 
 

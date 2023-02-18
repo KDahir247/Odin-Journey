@@ -4,11 +4,11 @@ import "../physics"
 import  "../ecs"
 import "../container"
 import "../mathematics"
-import "../editor"
 
 import  "core:math/linalg"
 import "core:fmt"
 import "core:log"
+import "core:strings"
 
 import "vendor:sdl2"
 import sdl2_img "vendor:sdl2/image"
@@ -20,7 +20,7 @@ Context :: struct{
 	renderer : ^sdl2.Renderer,
 	world : ecs.Context,
 	pixel_format : ^sdl2.PixelFormat,
-	clear_color : [4]u8,
+	clear_color : [3]u8,
 	// TODO: khal attach this GameEntity struct it will be used by npc, enemy and player.
 	event_queue : queue.Queue(container.Action),
 }
@@ -44,6 +44,9 @@ initialize_dynamic_resource :: proc() -> ecs.Entity
 init :: proc(game_cfg : container.GameConfig) -> Context{
 	ctx := Context{}
 
+	// We only need the cstring for window title. Once created we can delete it to free memory.
+	defer delete(game_cfg.title)
+
 	if err := sdl2.Init(game_cfg.game_flags); err != 0{
 		log.error(sdl2.GetError())
 	}
@@ -65,18 +68,18 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 	pos_x_mask := i32(game_cfg.center.x >= 0)
 	pos_y_mask := i32(game_cfg.center.y >= 0)
 
-	window_pos_x :[2]i32= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.x}
-	window_pos_y :[2]i32= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.y}
+	window_pos_x :[2]int= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.x}
+	window_pos_y :[2]int= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.y}
 
 	#no_bounds_check{
-			ctx.window = sdl2.CreateWindow(game_cfg.title, window_pos_x[pos_x_mask], window_pos_y[pos_y_mask], width,height, game_cfg.window_flags) 
+			ctx.window = sdl2.CreateWindow(game_cfg.title, i32(window_pos_x[pos_x_mask]), i32(window_pos_y[pos_y_mask]), width,height, game_cfg.window_flags) 
 	}
-	
+
 	ctx.pixel_format = sdl2.GetWindowSurface(ctx.window).format
 	
 	ctx.renderer = sdl2.CreateRenderer(ctx.window,-1, game_cfg.render_flags)
 	
-	if err := sdl2.SetRenderDrawColor(ctx.renderer, game_cfg.clear_color.r, game_cfg.clear_color.g, game_cfg.clear_color.b, game_cfg.clear_color.a); err != 0 {
+	if err := sdl2.SetRenderDrawColor(ctx.renderer, game_cfg.clear_color.r, game_cfg.clear_color.g, game_cfg.clear_color.b, 255); err != 0 {
 		log.error(sdl2.GetError())
 	}
 
@@ -248,7 +251,6 @@ on_update :: proc(){
 		current_translation := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
 		game_entity := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
-		animation_component := ecs.get_component_unchecked(&ctx.world, entity, container.Animation_Tree)
 
 		if physics_component.velocity.y > 0{
 			queue.pop_back_safe(&ctx.event_queue)
@@ -285,12 +287,14 @@ update_animation :: proc(){
 		animation_tree := ecs.get_component_unchecked(&ctx.world, entity, container.Animation_Tree)
 		current_time := f32(sdl2.GetTicks())
 		
+		current_animation := animation_tree.animations[game_entity.animation_index]
+
 		delta_time := (current_time - game_entity.animation_time) * 0.001
-		frame_to_update := linalg.floor(delta_time * animation_tree.animation_fps)
+		frame_to_update := linalg.floor(delta_time * current_animation.animation_speed)
 
 		if(frame_to_update > 0){
 			animation_tree.previous_frame += int(frame_to_update)
-			animation_tree.previous_frame %= len(animation_tree.animations[game_entity.animation_index].value) 
+			animation_tree.previous_frame %= len(current_animation.value) 
 			game_entity.animation_time = current_time
 		}
 	}
@@ -358,7 +362,7 @@ on_render :: proc(){
 			ctx.clear_color.r,
 			ctx.clear_color.g,
 			ctx.clear_color.b,
-			ctx.clear_color.a,
+			255,
 		)
 	
 		for texture_entity in texture_entities{

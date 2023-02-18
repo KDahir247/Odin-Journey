@@ -17,7 +17,7 @@
     },
 
     "render_config" : {
-        "clear_color" : [40, 40, 40, 255],
+        "clear_color" : "#282828",
         "flags" : [1, 2, 3]
     }
     

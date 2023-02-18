@@ -14,7 +14,7 @@ GameConfig :: struct{
     title : cstring,
     center : mathematics.Vec2i,
     grid : mathematics.Vec3i,
-    clear_color : [4]u8,
+    clear_color : [3]u8,
 }
 
 OrientedRectangle :: struct{
@@ -81,10 +81,11 @@ GameEntity :: struct{
 }
 
 AnimationConfig :: struct{
-    index : i64,
-    slices : i64,
-    width : f64,
-    height : f64,
+    index : i32,
+    slices : i32,
+    width : i32,
+    height : i32,
+    animation_speed : f32,
 }
 
 DynamicResource :: struct{
@@ -99,11 +100,13 @@ DynamicResource :: struct{
 
 Animation_Tree :: struct{
     previous_frame : int,
-    animation_fps : f32,
+    //Idle Walk etc....
     animations : [dynamic]Animation,
 }
 
 Animation :: struct{
+    // The rect cycle maybe have animation speed for each animation....
+    animation_speed : f32,
     value : [dynamic]sdl2.Rect,
 }
 
