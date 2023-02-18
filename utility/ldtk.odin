@@ -52,7 +52,7 @@ LDTK_LAYER_IMG :: struct(len : int){
 }   
 
 load_level :: proc{parse_ldtk_simplified, parse_ldtk}
-free_level :: proc{free_ldtk_simplfied_context}
+free_level :: proc{free_ldtk_simplfied_context, free_ldtk_context}
 
 parse_ldtk_simplified :: proc($path : string, $layer_count : int) -> LDTK_CONTEXT_SIMPLIFIED(layer_count){
     ldtk_level :LDTK_LEVEL= {} 
@@ -185,6 +185,7 @@ LDTK_LAYER_DEFINITION :: struct{
     grid_size : f64,
     opacity : f64,
 
+    auto_layer : Maybe(LDTK_LAYER_AUTO_LAYER),
     //value as key and identfier as value
     int_grid : map[f64]string,
 }
@@ -198,7 +199,7 @@ LDTK_LAYER_AUTO_LAYER :: struct{
 // Don't need the img
 LDTK_ENTITY_DEFINITION :: struct{   
     identifier : string,
-    color : mathematics.Vec3,
+    //color : mathematics.Vec3,
     // Width, Height
     dimension : mathematics.Vec2,
     pivot : mathematics.Vec2,
@@ -230,8 +231,8 @@ LDTK_LEVEL :: struct{
 }
 
 LDTK_LAYER_INSTANCE :: struct{
+    id : string,
     offset : mathematics.Vec2,
-    id : f64,
     level_id : f64,
     layerdef_uid : f64,
 
@@ -257,7 +258,7 @@ LDTK_AUTO_LAYER_TILE :: struct{
 
 // TODO: there is quite a bit of configuaration in ldtk that will alter the way to read data.
 // eg. Export as png, saving level seperately.
-parse_ldtk :: proc($path : string){
+parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
 
     // this will load by world not by level which is done by parse_level_simplified function.
     // world will contain a collection of level in the given world.
@@ -268,6 +269,8 @@ parse_ldtk :: proc($path : string){
     ldtk_layer_def_collection := make([dynamic]LDTK_LAYER_DEFINITION)
     ldtk_entity_def_collection := make([dynamic]LDTK_ENTITY_DEFINITION)
     ldtk_tileset_def_collection := make([dynamic]LDTK_TILESET_DEFINITION)
+
+    ldtk_level_collection := make([dynamic]LDTK_LEVEL)
  
     data, _ := os.read_entire_file_from_filename(path)
     defer delete(data)
@@ -316,11 +319,14 @@ parse_ldtk :: proc($path : string){
 
         ldtk_layer_type := ldtk_layer_obj["type"].(json.String)
 
+        
         //TODO: khal add this to the struct... (later)
         if ldtk_layer_type == "AutoLayer"{
+            auto_layer := LDTK_LAYER_AUTO_LAYER{}
 
-            ldtk_layer_auto_source_def_iid := ldtk_layer_obj["autoSourceLayerDefUid"].(json.Float)
-            ldtk_layer_tileset_def_iid := ldtk_layer_obj["tilesetDefUid"].(json.Float)
+            auto_layer.autoSourceLayerDefUid := ldtk_layer_obj["autoSourceLayerDefUid"].(json.Float)
+            auto_layer.tilesetDefUid := ldtk_layer_obj["tilesetDefUid"].(json.Float)
+            ldtk_layer_definition.auto_layer = auto_layer
         }
 
         ldtk_layer_intgrid_values := ldtk_layer_obj["intGridValues"].(json.Array)
@@ -394,6 +400,8 @@ parse_ldtk :: proc($path : string){
     ldtk_levels := ldtk_world["levels"].(json.Array)
 
     for ldtk_level in ldtk_levels{
+        layer_instance_collection := make([dynamic]LDTK_LAYER_INSTANCE)
+
         ldtk_lv := LDTK_LEVEL{}
 
         ldtk_level_obj := ldtk_level.(json.Object)
@@ -428,11 +436,10 @@ parse_ldtk :: proc($path : string){
         ldtk_level_layer_instances := ldtk_level_obj["layerInstances"].(json.Array)
 
         for ldtk_level_layer_instance in ldtk_level_layer_instances{
-
             int_grid_csv_collection := make([dynamic]int)
             auto_layer_tiles_collection := make([dynamic]LDTK_AUTO_LAYER_TILE)
             entity_instance_collection := make([dynamic]LDTK_ENTITY_INSTANCE)
-
+    
             ldtk_level_layer := LDTK_LAYER_INSTANCE{}
 
             ldtk_level_layer_obj := ldtk_level_layer_instance.(json.Object)
@@ -483,9 +490,9 @@ parse_ldtk :: proc($path : string){
                     }
 
                     // flip bit
-                    auto_layer_tile.render_flip = f32(ldtk_level_auto_tile_obj["f"].(json.Float))
+                    auto_layer_tile.render_flip = ldtk_level_auto_tile_obj["f"].(json.Float)
 
-                    auto_layer_tile.tile_id = f32(ldtk_level_auto_tile_obj["t"].(json.Float))
+                    auto_layer_tile.tile_id = ldtk_level_auto_tile_obj["t"].(json.Float)
 
                     append(&auto_layer_tiles_collection, auto_layer_tile)
                 }
@@ -517,6 +524,48 @@ parse_ldtk :: proc($path : string){
                     append(&entity_instance_collection, level_entity)
                 }
             }
+
+
+            ldtk_level_layer.auto_layer_tiles = auto_layer_tiles_collection
+            ldtk_level_layer.entity_instances = entity_instance_collection
+            ldtk_level_layer.int_grid_csv = int_grid_csv_collection
+
+            append(&layer_instance_collection, ldtk_level_layer)
         }
+
+        ldtk_lv.layer_instances = layer_instance_collection
+
+        append(&ldtk_level_collection, ldtk_lv)
     }
+
+    ldtk_context.layer_def = ldtk_layer_def_collection
+    ldtk_context.entity_def = ldtk_entity_def_collection
+    ldtk_context.tileset_def = ldtk_tileset_def_collection
+    ldtk_context.levels = ldtk_level_collection
+
+    return ldtk_context
+}
+
+free_ldtk_context :: proc(ctx : ^LDTK_CONTEXT){
+    delete(ctx.entity_def)
+    delete(ctx.tileset_def)
+
+    for layer_def in ctx.layer_def{
+        delete(layer_def.int_grid)
+    }
+
+    delete(ctx.layer_def)
+
+    for lv in ctx.levels{
+        for inst in lv.layer_instances{
+            delete(inst.auto_layer_tiles)
+            delete(inst.entity_instances)
+            delete(inst.int_grid_csv)
+        }
+
+        delete(lv.layer_instances)
+    }
+
+    delete(ctx.levels)
+
 }

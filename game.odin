@@ -36,8 +36,6 @@ main :: proc() {
 	
 	running := true;
 
-	utility.parse_ldtk("level/empty2.ldtk")
-
 	tex_path, configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	
 	utility.create_game_entity(tex_path,configs, {400,500}, 0, {0.1	,0.2}, true)
@@ -66,7 +64,6 @@ main :: proc() {
 	free(core)
 
 	ecs.deinit_ecs(&cxt)
-
 
 	when ODIN_DEBUG{
 		// For debugging purpose (bad free, leak, etc...)
