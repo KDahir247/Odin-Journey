@@ -2,12 +2,8 @@ package utility
 
 import "core:encoding/json"
 import "core:os"
-import "core:hash"
 import "core:strconv"
-import "core:fmt"
 import "core:intrinsics"
-import "core:reflect"
-
 
 import "../mathematics"
 HEXADECIMAL_BASE :: 16
@@ -411,7 +407,7 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
         ldtk_lv.uid = ldtk_level_obj["uid"].(json.Float)
 
         ldtk_level_bg_color_str := ldtk_level_obj["__bgColor"].(json.String)
-        color_code,err := strconv.parse_int(ldtk_level_bg_color_str[1:], HEXADECIMAL_BASE)
+        color_code,_ := strconv.parse_int(ldtk_level_bg_color_str[1:], HEXADECIMAL_BASE)
         ldtk_level_background_color := hex_to_rgb(color_code, false)
 
         ldtk_lv.background_color = mathematics.Vec3{

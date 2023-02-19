@@ -45,7 +45,6 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
     
     window_title := window_config["title"].(json.String)
     title := strings.clone_to_cstring(window_title)
-    delete(window_title)
     
     center_x := int(window_config["x"].(json.Integer))
     center_y := int(window_config["y"].(json.Integer))

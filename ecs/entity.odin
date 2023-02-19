@@ -43,7 +43,11 @@ is_entity_valid :: proc(ctx: ^Context, entity: Entity) -> bool {
 // This is slow. 
 // This will be significantly faster when an archetype or sparse set ECS is implemented.
 get_entities_with_components :: proc(ctx: ^Context, components: []typeid) -> (entities: [dynamic]Entity) {
-  entities = make([dynamic]Entity)
+  //context.temp_allocator is for temporary and short lived allocations,
+  // which are to be freed once per cycle/frame/etc. This should handle the leak, since it will get
+  // freed once per cycle rather then using the context.allocator for long lived allocation which passes
+  // responsibility to the coder (ME :P).
+  entities = make([dynamic]Entity, context.temp_allocator)
 
   if len(components) <= 0 {
     return entities

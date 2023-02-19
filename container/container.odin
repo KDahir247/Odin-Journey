@@ -57,7 +57,7 @@ CoolDownTimer:: struct{
 }
 
 Player :: struct{
-    cooldown : [dynamic]CoolDownTimer, 
+    cooldown : [2]CoolDownTimer, 
 }
 
 Action :: enum i32{

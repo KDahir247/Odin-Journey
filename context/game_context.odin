@@ -6,13 +6,10 @@ import "../container"
 import "../mathematics"
 
 import  "core:math/linalg"
-import "core:fmt"
 import "core:log"
-import "core:strings"
 
 import "vendor:sdl2"
-import sdl2_img "vendor:sdl2/image"
-import "core:c"
+import "vendor:sdl2/image"
 import "core:container/queue"
 
 Context :: struct{
@@ -26,18 +23,14 @@ Context :: struct{
 }
 
 @(cold)
-initialize_dynamic_resource :: proc() -> ecs.Entity 
+initialize_dynamic_resource :: proc()
 {
-	resource_entity := ecs.Entity{}
-
 	if context.user_ptr != nil{
 		ctx := cast(^Context) context.user_ptr
-		resource_entity = ecs.create_entity(&ctx.world)
+		resource_entity := ecs.create_entity(&ctx.world)
 
 		ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,f32(sdl2.GetTicks())})
 	}
-	
-	return resource_entity
 }
 
 @(cold)
@@ -51,7 +44,7 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 		log.error(sdl2.GetError())
 	}
 
-	img_res := sdl2_img.Init(game_cfg.img_flags)
+	img_res := image.Init(game_cfg.img_flags)
 
 	if img_res != game_cfg.img_flags{
 		log.errorf("sdl image init return %v", img_res)
@@ -87,13 +80,6 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 
 	queue.init(&ctx.event_queue)
 
-	cursor_pos := mathematics.Vec4i{
-		(game_cfg.grid.x - 1) / 2 * game_cfg.grid.z,
-		(game_cfg.grid.y - 1) / 2 * game_cfg.grid.z,
-		game_cfg.grid.z,
-		game_cfg.grid.z,
-	}
-
 	return ctx;
 }
 
@@ -108,8 +94,6 @@ handle_event ::proc() -> bool{
 
 	keyboard_snapshot := sdl2.GetKeyboardState(nil)
 	sdl_event : sdl2.Event;
-
-	current_time := sdl2.GetTicks()
 
 	running := true;
 
@@ -130,8 +114,6 @@ handle_event ::proc() -> bool{
 	left := keyboard_snapshot[sdl2.Scancode.A] | keyboard_snapshot[sdl2.Scancode.LEFT]
 	right := keyboard_snapshot[sdl2.Scancode.D] | keyboard_snapshot[sdl2.Scancode.RIGHT]
 	roll := keyboard_snapshot[sdl2.Scancode.C]
-
-	editor_mode := keyboard_snapshot[sdl2.Scancode.ESCAPE]
 
 	if ctx.event_queue.len <= 0{
 		combined_left_right := int(left | right)
@@ -242,9 +224,7 @@ on_fixed_update :: proc(){
 
 on_update :: proc(){
 	ctx := cast(^Context)context.user_ptr
-	resource_entity := ecs.Entity(context.user_index)
-	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
-	
+
 	game_entities := ecs.get_entities_with_components(&ctx.world, {container.Position, container.GameEntity, container.Physics, container.Animation_Tree})
 	
 	for entity in game_entities{
@@ -414,6 +394,9 @@ on_render :: proc(){
 cleanup :: proc(){
 	ctx := cast(^Context) context.user_ptr
 
+	queue.clear(&ctx.event_queue)
+	queue.destroy(&ctx.event_queue)
+	
 	sdl2.DestroyRenderer(ctx.renderer)
 	sdl2.DestroyWindow(ctx.window)
 	sdl2.Quit()

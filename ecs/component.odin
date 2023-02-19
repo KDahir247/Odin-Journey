@@ -121,7 +121,7 @@ get_component :: proc(ctx: ^Context, entity: Entity, $T: typeid) -> (component: 
 get_component_unchecked :: proc(ctx: ^Context, entity: Entity, $T: typeid) -> ^T{
   #no_bounds_check{
         array := cast(^[dynamic]T)ctx.component_map[T].data
-        index, is_entity_a_key := ctx.component_map[T].entity_indices[entity]
+        index, _ := ctx.component_map[T].entity_indices[entity]
         return &array[index]
   }
 }

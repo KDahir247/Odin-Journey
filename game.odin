@@ -1,18 +1,16 @@
 package game;
 
-import "core:fmt"
-import "core:log"
-import "core:mem"
+when ODIN_DEBUG{
+	import "core:fmt"
+	import "core:mem"
+}
 
 import "ecs"
 
 import game "context"
 import  "utility"
 
-import "vendor:sdl2"
-
 MS_CAP :: 17
-
 
 // Clean up tomorrow
 main :: proc() {
@@ -31,13 +29,10 @@ main :: proc() {
 
 	cxt := ecs.init_ecs()
 
-	dynamic_index := game.initialize_dynamic_resource()
-	context.user_index = int(dynamic_index)
-
-	
+	game.initialize_dynamic_resource()
 	running := true;
 
-	//level: utility.LDTK_CONTEXT= utility.load_level("level/empty2.ldtk")
+	level: utility.LDTK_CONTEXT= utility.load_level("level/empty2.ldtk")
 
 	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	
@@ -60,13 +55,11 @@ main :: proc() {
 		}
 	}
 
-	// We want to do clean up before checking if there is any leaks.
 	utility.free_all_animation_entities()
-	//utility.free_level(&level)
+	utility.free_level(&level)
 
 	game.cleanup()
 	context.user_ptr = nil
-	
 	free(core)
 	
 	ecs.deinit_ecs(&cxt)
@@ -79,8 +72,10 @@ main :: proc() {
 		}
 		
 		for _,leak in track.allocation_map{
-			//fmt.println(leak.location)
 			fmt.printf("%v leaked %v bytes\n", leak.location, leak.size)
 		}
+
+		mem.tracking_allocator_clear(&track)
+		mem.tracking_allocator_destroy(&track)
 	}
 }

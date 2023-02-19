@@ -6,7 +6,6 @@ import game "../context"
 import "../container"
 
 import "core:strings"
-import "core:fmt"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"
