@@ -7,6 +7,7 @@ import "../mathematics"
 
 import  "core:math/linalg"
 import "core:log"
+import "core:intrinsics"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"
@@ -25,31 +26,23 @@ Context :: struct{
 @(cold)
 initialize_dynamic_resource :: proc()
 {
-	if context.user_ptr != nil{
-		ctx := cast(^Context) context.user_ptr
-		resource_entity := ecs.create_entity(&ctx.world)
-
-		ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,f32(sdl2.GetTicks())})
-	}
+	ctx := cast(^Context) context.user_ptr
+	resource_entity := ecs.create_entity(&ctx.world)
+	ecs.add_component_unchecked(&ctx.world, resource_entity, container.DynamicResource{sdl2.GetTicks(),0,f32(sdl2.GetTicks())})
 }
 
 @(cold)
 init :: proc(game_cfg : container.GameConfig) -> Context{
 	ctx := Context{}
 
-	// We only need the cstring for window title. Once created we can delete it to free memory.
-	defer delete(game_cfg.title)
-
 	if err := sdl2.Init(game_cfg.game_flags); err != 0{
 		log.error(sdl2.GetError())
 	}
 
-	img_res := image.Init(game_cfg.img_flags)
-
-	if img_res != game_cfg.img_flags{
+	if img_res := image.Init(game_cfg.img_flags); img_res != game_cfg.img_flags{
 		log.errorf("sdl image init return %v", img_res)
 	}
-
+	
 	sdl2.ClearError()
 
 	width := i32(game_cfg.grid.x * game_cfg.grid.z) 
@@ -59,14 +52,20 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 	height = height + 1
 
 	pos_x_mask := i32(game_cfg.center.x >= 0)
-	pos_y_mask := i32(game_cfg.center.y >= 0)
+	pos_y_mask := i32((game_cfg.center.y >= 0)) + 2
 
-	window_pos_x :[2]int= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.x}
-	window_pos_y :[2]int= {sdl2.WINDOWPOS_CENTERED, game_cfg.center.y}
+	window_pos :[4]int= {
+		sdl2.WINDOWPOS_CENTERED,
+		game_cfg.center.x,
+		sdl2.WINDOWPOS_CENTERED,
+		game_cfg.center.y,
+	}
 
 	#no_bounds_check{
-			ctx.window = sdl2.CreateWindow(game_cfg.title, i32(window_pos_x[pos_x_mask]), i32(window_pos_y[pos_y_mask]), width,height, game_cfg.window_flags) 
+			ctx.window = sdl2.CreateWindow(game_cfg.title, i32(window_pos[pos_x_mask]), i32(window_pos[pos_y_mask]), width,height, game_cfg.window_flags) 
 	}
+
+	delete(game_cfg.title)
 
 	ctx.pixel_format = sdl2.GetWindowSurface(ctx.window).format
 	
@@ -85,12 +84,11 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 
 handle_event ::proc() -> bool{
 	ctx := cast(^Context)context.user_ptr
+	player_entity := ecs.Entity(context.user_index)
 
-	player_entity := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Player}) // there should only be one playable player.
-	
-	player_component := ecs.get_component_unchecked(&ctx.world, player_entity[0], container.Player)
-	game_component := ecs.get_component_unchecked(&ctx.world, player_entity[0], container.GameEntity)
-	animation_component := ecs.get_component_unchecked(&ctx.world, player_entity[0], container.Animation_Tree)
+	player_component := ecs.get_component_unchecked(&ctx.world, player_entity, container.Player)
+	game_component := ecs.get_component_unchecked(&ctx.world, player_entity, container.GameEntity)
+	animation_component := ecs.get_component_unchecked(&ctx.world, player_entity, container.Animation_Tree)
 
 	keyboard_snapshot := sdl2.GetKeyboardState(nil)
 	sdl_event : sdl2.Event;
@@ -154,9 +152,7 @@ handle_event ::proc() -> bool{
 
 on_fixed_update :: proc(){
 	ctx := cast(^Context)context.user_ptr
-	
-	resource_entity := ecs.Entity(context.user_index)
-	resource := ecs.get_component_unchecked(&ctx.world, resource_entity, container.DynamicResource)
+	resource := ecs.get_component_unchecked(&ctx.world, 0, container.DynamicResource)
 	
 	previous_physics_time := resource.current_physics_time
 	resource.current_physics_time = f32(sdl2.GetTicks())
@@ -332,9 +328,10 @@ on_late_update :: proc(){
 
 on_render :: proc(){
 	ctx := cast(^Context)context.user_ptr
-	sdl2.RenderClear(ctx.renderer)
 
 	texture_entities:= ecs.get_entities_with_components(&ctx.world, {container.TextureAsset, container.Position, container.Rotation, container.Scale})
+	
+	sdl2.RenderClear(ctx.renderer)
 	
 	#no_bounds_check{
 
@@ -346,6 +343,7 @@ on_render :: proc(){
 		)
 	
 		for texture_entity in texture_entities{
+			
 			texture_component := ecs.get_component_unchecked(&ctx.world, texture_entity, container.TextureAsset)
 	
 			game_entity := ecs.get_component(&ctx.world, texture_entity, container.GameEntity) or_else nil
@@ -384,10 +382,7 @@ on_render :: proc(){
 		}
 	}
 
-
 	sdl2.RenderPresent(ctx.renderer)
-
-	// Rendering
 }
 
 @(cold)

@@ -1,8 +1,9 @@
 package physics
 
-import "core:math/linalg"
 import "../container"
 import "../mathematics"
+
+import "core:math/linalg"
 
 overlapping :: #force_inline proc(min_a : f32, max_a : f32, min_b : f32, max_b : f32) -> bool{
     return min_b <= max_a && min_a <= max_b

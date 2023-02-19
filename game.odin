@@ -1,4 +1,4 @@
-package game;
+package main;
 
 when ODIN_DEBUG{
 	import "core:fmt"
@@ -7,12 +7,16 @@ when ODIN_DEBUG{
 
 import "ecs"
 
-import game "context"
+import ctx "context"
+import "game"
 import  "utility"
 
 MS_CAP :: 17
 
-// Clean up tomorrow
+// entity index 0 will be the resource entity.
+// context.user_index is the player entity. To allow change in player in game.
+// eg. starting as a evil bad guy in the level, but as the story progress you might want.
+// to switch perspective to another character and play that character...
 main :: proc() {
 	//memory leak tracking.
 	when ODIN_DEBUG {
@@ -23,42 +27,47 @@ main :: proc() {
 
 	game_config := utility.parse_game_config("config/game_config.json")
 
-	core := new(game.Context)
-	core^ = game.init(game_config)
+	core := new(ctx.Context)
+	core^ = ctx.init(game_config)
+
 	context.user_ptr = core
+	// The second entity created is the player. (0 is for resource, 1 is for player)
+	// this value will change when player is playing to switch between character in the story.
+	// so order matter in the code layout.
+	context.user_index = 1
 
 	cxt := ecs.init_ecs()
 
-	game.initialize_dynamic_resource()
+	ctx.initialize_dynamic_resource()
 	running := true;
 
-	level: utility.LDTK_CONTEXT= utility.load_level("level/empty2.ldtk")
-
+	level: utility.LDTK_CONTEXT= utility.parse_level("level/empty2.ldtk")
 	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	
-	utility.create_game_entity("resource/padawan/pad.png",configs, {400,500}, 0, {0.1	,0.2}, true)
+	game.create_game_entity("resource/padawan/pad.png",configs, {400,500}, 0, {0.1,0.2})
+	game.create_game_level(&level)
 	
 	{
 		for running{
 			elapsed := utility.elapsed_frame_precise();
 
-			running = game.handle_event()
+			running = ctx.handle_event()
 
-			game.on_fixed_update()
-			game.on_update()
-			game.update_animation()
-			game.on_late_update()
+			ctx.on_fixed_update()
+			ctx.on_update()
+			ctx.update_animation()
+			ctx.on_late_update()
 			
-			game.on_render()
+			ctx.on_render()
 
 			utility.cap_frame_rate_precise(elapsed, MS_CAP)
 		}
 	}
 
-	utility.free_all_animation_entities()
+	game.free_all_animation_entities()
 	utility.free_level(&level)
 
-	game.cleanup()
+	ctx.cleanup()
 	context.user_ptr = nil
 	free(core)
 	

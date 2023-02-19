@@ -1,11 +1,12 @@
 package utility
 
+import "../mathematics"
+
 import "core:encoding/json"
 import "core:os"
 import "core:strconv"
 import "core:intrinsics"
 
-import "../mathematics"
 HEXADECIMAL_BASE :: 16
 
 LDTK_CONTEXT_SIMPLIFIED :: struct(len : int){
@@ -47,7 +48,7 @@ LDTK_LAYER_IMG :: struct(len : int){
      layer_imgs : [len]string,
 }   
 
-load_level :: proc{parse_ldtk_simplified, parse_ldtk}
+parse_level :: proc{parse_ldtk_simplified, parse_ldtk}
 free_level :: proc{free_ldtk_simplfied_context, free_ldtk_context}
 
 parse_ldtk_simplified :: proc($path : string, $layer_count : int) -> LDTK_CONTEXT_SIMPLIFIED(layer_count){

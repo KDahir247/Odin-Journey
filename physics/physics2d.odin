@@ -2,6 +2,7 @@ package physics
 
 import "../mathematics"
 import "../container"
+
 import "core:math/linalg"
 
 integrate :: proc(physics : ^container.Physics, position : ^container.Position, direction : f32, delta_time : f32) {
