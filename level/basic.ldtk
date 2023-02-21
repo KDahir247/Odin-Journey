@@ -293,7 +293,7 @@
 			"__cHei": 32,
 			"identifier": "Cavernas_by_Adam_Saltsman",
 			"uid": 9,
-			"relPath": "atlas/Cavernas_by_Adam_Saltsman.png",
+			"relPath": "resource/level_test/test.png",
 			"embedAtlas": null,
 			"pxWid": 96,
 			"pxHei": 256,

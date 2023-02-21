@@ -4,7 +4,6 @@ import "../mathematics"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
-
 GameConfig :: struct{
     game_flags : sdl2.InitFlags,
     img_flags : image.InitFlags,

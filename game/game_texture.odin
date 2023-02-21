@@ -10,11 +10,11 @@ import "core:strings"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
-create_animation_texture_entity :: proc($path : string, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
+// this will be used for static props any tilemapping.
+create_texture_entity :: proc(path : string) -> ecs.Entity{
 	ctx := cast(^ctx.Context) context.user_ptr
     texture_entity := ecs.create_entity(&ctx.world)
 
-    animations := make_dynamic_array_len([dynamic]container.Animation,E)
 
     cpath := strings.clone_to_cstring(path)
     defer delete(cpath)
@@ -32,6 +32,17 @@ create_animation_texture_entity :: proc($path : string, anim_configs : [$E]conta
     ecs.add_component(&ctx.world, texture_entity, container.TextureAsset{texture, dimension})
 
     sdl2.FreeSurface(surface)
+
+
+    return texture_entity
+}
+
+create_animation_texture_entity :: proc($path : string, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
+	ctx := cast(^ctx.Context) context.user_ptr
+
+    animations := make_dynamic_array_len([dynamic]container.Animation,E)
+
+    texture_entity := create_texture_entity(path)
 
     #no_bounds_check{
         for current_animation_index in 0..<E{
@@ -53,6 +64,8 @@ create_animation_texture_entity :: proc($path : string, anim_configs : [$E]conta
 
     return texture_entity;
 }
+
+
 
 free_all_animation_entities :: proc(){
     ctx := cast(^ctx.Context) context.user_ptr
