@@ -320,8 +320,8 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
         }
 
         ldtk_layer_definition.pixel_offset = mathematics.Vec2{
-            f32(ldtk_layer_obj["__pxTotalOffsetX"].(json.Float)),
-            f32(ldtk_layer_obj["__pxTotalOffsetY"].(json.Float)),
+            f32(ldtk_layer_obj["pxOffsetX"].(json.Float)),
+            f32(ldtk_layer_obj["pxOffsetY"].(json.Float)),
         }
 
         ldtk_layer_type := ldtk_layer_obj["type"].(json.String)
@@ -468,8 +468,8 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
                 ldtk_level_layer.layerdef_uid = ldtk_level_layer_obj["layerDefUid"].(json.Float)
 
                 ldtk_level_layer.offset = mathematics.Vec2{
-                    f32(ldtk_level_layer_obj["pxOffsetX"].(json.Float)),
-                    f32(ldtk_level_layer_obj["pxOffsetY"].(json.Float)),
+                    f32(ldtk_level_layer_obj["__pxTotalOffsetX"].(json.Float)),
+                    f32(ldtk_level_layer_obj["__pxTotalOffsetY"].(json.Float)),
                 }
 
                 ldtk_level_layer.grid_size = mathematics.Vec2{

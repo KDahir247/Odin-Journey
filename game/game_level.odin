@@ -15,14 +15,8 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_CONTEXT){
     //and one sdl2 texture of the full img.
 
     for tile in ldtk_ctx^.tileset_def{
-        tile_tex_entity := create_texture_entity(tile.tile_path)
         
-        ecs.add_component_unchecked(&ctx.world, tile_tex_entity, container.TileSheet{
-            tile.uid,
-            tile.grid_size,
-            tile.padding,
-            tile.spacing,
-        })
+       
         // we need to create all the entity with tile first...
     }
 
