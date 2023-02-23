@@ -16,4 +16,4 @@ The sprite sheet should the renamed to pad.png or you can change the animation c
 
 This will be change later to use custom asset that are accessable in the repo which will not break the executable.
 
-![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/teleport_roll.gif)
+![](https://github.com/KDahir247/Odin-Journey/blob/main/visual/ldtk_parser.gif)
