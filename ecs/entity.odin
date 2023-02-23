@@ -1,6 +1,7 @@
 package ecs
 
 import "core:container/queue"
+import "core:fmt"
 
 Entity :: distinct uint
 
@@ -19,18 +20,18 @@ Entities :: struct {
 create_entity :: proc(ctx: ^Context) -> Entity {
   using ctx.entities
 
-  #no_bounds_check{
     if queue.len(available_slots) <= 0 {
       append_elem(&entities, Entity_And_Some_Info{Entity(current_entity_id), true})
       current_entity_id += 1
       return Entity(current_entity_id - 1)
     } else {
+
       index := queue.pop_front(&available_slots)
       entities[index] = Entity_And_Some_Info{Entity(index), true}
       return Entity(index)
     }
+    
     return Entity(current_entity_id)
-  }
 }
 
 is_entity_valid :: proc(ctx: ^Context, entity: Entity) -> bool {

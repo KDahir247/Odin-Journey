@@ -10,6 +10,7 @@ import "core:strings"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
+
 // this will be used for static props any tilemapping.
 create_texture_entity :: proc(path : string) -> ecs.Entity{
 	ctx := cast(^ctx.Context) context.user_ptr

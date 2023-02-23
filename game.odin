@@ -41,11 +41,13 @@ main :: proc() {
 	ctx.initialize_dynamic_resource()
 	running := true;
 
-	level: utility.LDTK_CONTEXT= utility.parse_level("level/basic.ldtk")
+	// Player must be loaded first..
 	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
-	
 	game.create_game_entity("resource/padawan/pad.png",configs, {400,500}, 0, {0.1,0.2})
-	
+
+	level: utility.LDTK_CONTEXT= utility.parse_level("level/basic.ldtk")
+	game.create_game_level(&level)
+
 	{
 		for running{
 			elapsed := utility.elapsed_frame_precise();
@@ -64,6 +66,7 @@ main :: proc() {
 	}
 
 	game.free_all_animation_entities()
+	game.free_game_level()
 	utility.free_level(&level)
 
 	ctx.cleanup()

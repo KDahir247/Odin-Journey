@@ -232,6 +232,7 @@ LDTK_LAYER_INSTANCE :: struct{
     id : string,
     offset : mathematics.Vec2,
     level_id : f64,
+    tiledef_uid : f64,
     layerdef_uid : f64, 
     grid_size : mathematics.Vec2,
 
@@ -299,7 +300,6 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
 
     for ldtk_layer_def in ldtk_world_layer_definitions{
         ldtk_layer_definition := LDTK_LAYER_DEFINITION{}
-        ldtk_int_grid_values := make(map[f64]string)
 
         ldtk_layer_obj := ldtk_layer_def.(json.Object)
 
@@ -466,6 +466,7 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
                 ldtk_level_layer.id = ldtk_level_layer_obj["iid"].(json.String)
                 ldtk_level_layer.level_id = ldtk_level_layer_obj["levelId"].(json.Float)
                 ldtk_level_layer.layerdef_uid = ldtk_level_layer_obj["layerDefUid"].(json.Float)
+                ldtk_level_layer.tiledef_uid = ldtk_level_layer_obj["__tilesetDefUid"].(json.Float)
 
                 ldtk_level_layer.offset = mathematics.Vec2{
                     f32(ldtk_level_layer_obj["__pxTotalOffsetX"].(json.Float)),
@@ -666,8 +667,15 @@ get_tile_world_position :: proc(grid_pos : mathematics.Vec2i,level : LDTK_LEVEL,
     }
 }
 
-get_tile_texture_rect :: proc(){
-    //TODO: khal implement this
+get_tile_texture_rect :: proc(tile_id : int,tile : LDTK_TILESET_DEFINITION) -> mathematics.Vec4i{
+    tile_texture_pos := get_tile_texture_pos(tile_id, tile)
+
+    return mathematics.Vec4i{
+        tile_texture_pos.x,
+        tile_texture_pos.y,
+        int(tile.grid_size),
+        int(tile.grid_size),
+    }
 }
 
 get_tile_vertices :: proc(){
@@ -676,7 +684,7 @@ get_tile_vertices :: proc(){
 
 //pos is the px parameter from autoLayerTiles or gridTiles (not yet supported)
 //To get the layer definition use the layer layerdef_uid and compare it with the dynamic array LDTK_LAYER_DEFINITION uid
-get_layer_coord_id_at :: proc(pos : mathematics.Vec2i, layer : LDTK_LAYER_INSTANCE, layer_def : LDTK_LAYER_DEFINITION, point : mathematics.Vec2i) -> int{
+get_layer_coord_id_at :: proc(pos : mathematics.Vec2i, layer : LDTK_LAYER_INSTANCE, layer_def : LDTK_LAYER_DEFINITION) -> int{
     return (pos.x + pos.y * int(layer.grid_size.x)) / int(layer_def.cell_size)
 }
 

@@ -8,6 +8,7 @@ import "../mathematics"
 import  "core:math/linalg"
 import "core:log"
 import "core:intrinsics"
+import "core:fmt"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"
@@ -330,9 +331,19 @@ on_render :: proc(){
 	ctx := cast(^Context)context.user_ptr
 
 	texture_entities:= ecs.get_entities_with_components(&ctx.world, {container.TextureAsset, container.Position, container.Rotation, container.Scale})
-	
+	tileset_entities := ecs.get_entities_with_components(&ctx.world, {container.TileMap})
+
 	sdl2.RenderClear(ctx.renderer)
 	
+	for tile_entity in tileset_entities{
+		tileset_component := ecs.get_component_unchecked(&ctx.world, tile_entity, container.TileMap)
+		sdl2.SetTextureBlendMode(tileset_component.texture, sdl2.BlendMode.BLEND)
+        
+		sdl2.RenderCopy(ctx.renderer, tileset_component.texture, nil, nil)
+
+
+	}
+
 	#no_bounds_check{
 
 		sdl2.SetRenderDrawColor(ctx.renderer,
@@ -381,6 +392,7 @@ on_render :: proc(){
 			sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.render_direction)
 		}
 	}
+
 
 	sdl2.RenderPresent(ctx.renderer)
 }
