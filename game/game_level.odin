@@ -16,29 +16,22 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_CONTEXT){
 	ctx := cast(^ctx.Context) context.user_ptr
 
     for lv in ldtk_ctx.levels{
-       
+        
+        tile_path := ""
+        tile_dimension := mathematics.Vec2{}
+
+        layerdef := utility.LDTK_LAYER_DEFINITION{}
+        tiledef := utility.LDTK_TILESET_DEFINITION{}
 
         for layer in lv.layer_instances{
-            
-            tile_path := ""
-            tile_dimension := mathematics.Vec2{}
 
-            layerdef := utility.LDTK_LAYER_DEFINITION{}
-            tiledef := utility.LDTK_TILESET_DEFINITION{}
+            //TODO: khal we should sort layer def using uid
+            layerdef = ldtk_ctx.layer_def[layer.layerdef_uid]
 
-            for layer_def in ldtk_ctx.layer_def{
-                if layer.layerdef_uid == layer_def.uid{
-                    layerdef = layer_def
-                }
-            }
-
-            for tile_def in ldtk_ctx.tileset_def{
-                if layer.tiledef_uid == tile_def.uid{
-                    tile_dimension = tile_def.dimension
-                    tile_path = tile_def.tile_path
-                    tiledef = tile_def
-                }
-            }
+            //TODO: khal we should sort layer def using uid
+            tiledef = ldtk_ctx.tileset_def[layer.tiledef_uid]
+            tile_dimension = tiledef.dimension
+            tile_path = tiledef.tile_path
 
             c_path := strings.clone_to_cstring(tile_path)
             defer delete(c_path)
@@ -56,7 +49,6 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_CONTEXT){
 
             sdl2.SetRenderTarget(ctx.renderer, tilemap_texture)
             for tile in layer.auto_layer_tiles{
-                tileset_entity := ecs.create_entity(&ctx.world)
                
                 coord_id := utility.get_layer_coord_id_at(mathematics.Vec2i{int(tile.pixel.x), int(tile.pixel.y)}, layer, layerdef)
                 tile_grid_position := utility.get_tile_grid_position(coord_id, layer)
@@ -83,13 +75,13 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_CONTEXT){
                 flip := (flip_x == 1 ? 0x00000001 : 0x00000000) |
                  (flip_y == 1 ? 0x00000002 : 0x00000000)
 
-                 //ecs.add_component(&ctx.world, tileset_entity, container.TileSet{src_rect,dst_rect,sdl2.RendererFlip(flip), tileset_texture})
                  sdl2.SetTextureBlendMode(tileset_texture, sdl2.BlendMode.NONE)
 
                  sdl2.RenderCopyEx(ctx.renderer,tileset_texture, &src_rect,&dst_rect,0,nil, sdl2.RendererFlip(flip))
-                //add to tile collection for rendering or render..
             }
             sdl2.SetRenderTarget(ctx.renderer, nil)
+
+            sdl2.DestroyTexture(tileset_texture)
 
             ecs.add_component(&ctx.world, tilemap_entity, container.TileMap{tilemap_texture, lv.orientation.xy})
         }
@@ -97,19 +89,10 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_CONTEXT){
 }
 
 
-
-
 free_game_level :: proc(){
 	ctx := cast(^ctx.Context) context.user_ptr
     
-
-    tile_sets,_ := ecs.get_component_list(&ctx.world, container.TileSet)
-
     tile_maps,_ := ecs.get_component_list(&ctx.world, container.TileMap)
-
-    for tile in tile_sets{
-        sdl2.DestroyTexture(tile.texture)
-    }
 
     for tile_map in tile_maps{
         sdl2.DestroyTexture(tile_map.texture)

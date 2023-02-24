@@ -7,10 +7,13 @@ import "core:strconv"
 import "core:encoding/json"
 import "core:os"
 import "core:strings"
+import "core:math/linalg"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
+@(private)
+DEFAULT_BG_HEX :: 2960685
 
 parse_game_config :: proc($path : string) -> container.GameConfig  {
     enabled_game_flags : sdl2.InitFlags
@@ -26,21 +29,6 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
 
     root := anim_json.(json.Object)
 
-    game_flags := root["game_flags"].(json.Array)
-    image_flags := root["image_flags"].(json.Array)
-
-    for flag in game_flags{
-        init_game_flag := flag.(json.Integer)
-
-        incl(&enabled_game_flags, sdl2.InitFlag(init_game_flag))
-    }
-
-    for flag in image_flags{
-        init_img_flag := flag.(json.Integer)
-
-        incl(&enabled_img_flags, image.InitFlag(init_img_flag))
-    }
-
     window_config := root["window_config"].(json.Object)
     
     window_title := window_config["title"].(json.String)
@@ -53,33 +41,44 @@ parse_game_config :: proc($path : string) -> container.GameConfig  {
     grid_height := int(window_config["grid_height"].(json.Integer))
     grid_cell := int(window_config["grid_cell_size"].(json.Integer))
 
-    window_flags := window_config["flags"].(json.Array)
-
-    for flag in window_flags{
-        init_window_flag := flag.(json.Integer)
-
-        incl(&enabled_window_flags, sdl2.WindowFlag(init_window_flag))
-    }
-
     render_config := root["render_config"].(json.Object)
 
     color_hex_string := render_config["clear_color"].(json.String)
-    hex_int,valid_val :=  strconv.parse_int(color_hex_string[1:], HEXADECIMAL_BASE)
+    hex_int, valid_val :=  strconv.parse_int(color_hex_string[1:], HEXADECIMAL_BASE)
+    valid_mask := int(valid_val)
+
+    color := utility.hex_to_rgb((hex_int * valid_mask) + (DEFAULT_BG_HEX * (1 - valid_mask)),false)
+
+    {
+        game_flags := root["game_flags"].(json.Array)
+        image_flags := root["image_flags"].(json.Array)
+
+        window_flags := window_config["flags"].(json.Array)
+        render_flags := render_config["flags"].(json.Array)
+
+        game_flag_len := len(game_flags) - 1
+        img_flag_len := len(image_flags) - 1
+        window_flag_len := len(window_flags) - 1
+        render_flag_len := len(render_flags) - 1
+
+        length := linalg.max(game_flag_len, img_flag_len, linalg.max(window_flag_len, render_flag_len))
     
-    color := [3]f32{45, 45, 45}
-
-    if valid_val{
-        color = utility.hex_to_rgb(hex_int,false)
+        #no_bounds_check{
+            for i in 0..<length{
+                init_game_flag := game_flags[linalg.min(i, game_flag_len)].(json.Integer)
+                init_img_flag := image_flags[linalg.min(i, img_flag_len)].(json.Integer)
+                
+                init_window_flag := window_flags[linalg.min(i, window_flag_len)].(json.Integer)
+                init_render_flag := render_flags[linalg.min(i, render_flag_len)].(json.Integer)
+    
+                incl(&enabled_game_flags, sdl2.InitFlag(init_game_flag))
+                incl(&enabled_img_flags, image.InitFlag(init_img_flag))
+                incl(&enabled_window_flags, sdl2.WindowFlag(init_window_flag))
+                incl(&enabled_render_flags, sdl2.RendererFlag(init_render_flag))
+            }
+        }
     }
-
-    render_flag := render_config["flags"].(json.Array)
-
-    for flag in render_flag{
-        init_render_flag := flag.(json.Integer)
-
-        incl(&enabled_render_flags, sdl2.RendererFlag(init_render_flag))
-    }
-
+   
     return container.GameConfig{
         enabled_game_flags,
         enabled_img_flags,
@@ -116,8 +115,8 @@ parse_animation :: proc($path : string, animation_keys : [$E]string) -> [E]conta
             anim_index := anim_content["index"].(json.Integer)
             animation_slice := anim_content["num_slice"].(json.Integer)
 
-            animation_width := anim_content["width"].(json.Float)
-            animation_height := anim_content["height"].(json.Float)
+            animation_width := anim_content["width"].(json.Integer)
+            animation_height := anim_content["height"].(json.Integer)
 
             animation_fps := anim_content["fps"].(json.Float)
     
@@ -128,7 +127,6 @@ parse_animation :: proc($path : string, animation_keys : [$E]string) -> [E]conta
                 i32(animation_height),
                 f32(animation_fps),
             }
-    
         }
     }
 

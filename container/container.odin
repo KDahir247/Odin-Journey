@@ -4,13 +4,6 @@ import "../mathematics"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
-TileSet :: struct{
-    src_rect : sdl2.Rect,
-    dst_rect : sdl2.Rect,
-    flip : sdl2.RendererFlip,
-    texture : ^sdl2.Texture,
-}
-
 TileMap :: struct{
     texture : ^sdl2.Texture,
 	dimension : mathematics.Vec2,

@@ -2,64 +2,64 @@
     "Idle" : {
         "index" : 0,
         "num_slice" : 7,
-        "width" : 39.0,
-        "height" : 43.0,
+        "width" : 39,
+        "height" : 43,
         "fps" : 15.0
     },
 
     "Walk" : {
         "index" : 1,
         "num_slice" : 8,
-        "width" : 39.0,
-        "height" : 41.0,
+        "width" : 39,
+        "height" : 41,
         "fps" : 15.0
     },
 
     "Jump" : {
         "index" : 6,
         "num_slice" : 1,
-        "width" : 39.0,
-        "height" : 41.0,
+        "width" : 39,
+        "height" : 41,
         "fps" : 15.0
     },
 
     "Fall" : {
         "index" : 3,
         "num_slice" : 1,
-        "width" : 39.0,
-        "height" : 41.0,
+        "width" : 39,
+        "height" : 41,
         "fps" : 15.0
     },
 
     "Roll" : {
         "index" : 2,
         "num_slice" : 7,
-        "width" : 39.0,
-        "height" : 41.0,
+        "width" : 39,
+        "height" : 41,
         "fps" : 15.0
     },
 
     "Teleport_Start" : {
         "index" : 4,
         "num_slice" : 7,
-        "width" : 38.0,
-        "height" : 40.5,
+        "width" : 38,
+        "height" : 41,
         "fps" : 15.0
     },
 
     "Teleport_End" : {
         "index" : 5,
         "num_slice" : 5,
-        "width" : 38.0,
-        "height" : 40.5,
+        "width" : 38,
+        "height" : 41,
         "fps" : 15.0
     },
 
     "Attack" : {
         "index" : 3,
         "num_slice" : 17,
-        "width" : 40.0,
-        "height" : 41.0,
+        "width" : 40,
+        "height" : 41,
         "fps" : 15.0
     }
 

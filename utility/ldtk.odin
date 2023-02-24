@@ -169,9 +169,9 @@ where E > 0
 
 LDTK_CONTEXT :: struct{
     iid : string,
-    layer_def : [dynamic]LDTK_LAYER_DEFINITION,
+    layer_def : map[f64]LDTK_LAYER_DEFINITION,
+    tileset_def : map[f64]LDTK_TILESET_DEFINITION,
     entity_def : [dynamic]LDTK_ENTITY_DEFINITION,
-    tileset_def : [dynamic]LDTK_TILESET_DEFINITION,
     levels : [dynamic]LDTK_LEVEL,
 }
 
@@ -274,9 +274,9 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
     // TODO: khal maybe make a function to support ldtk multiple world.. Maybe...
     ldtk_context := LDTK_CONTEXT{}
 
-    ldtk_layer_def_collection := make([dynamic]LDTK_LAYER_DEFINITION)
+    ldtk_layer_def_collection := make(map[f64]LDTK_LAYER_DEFINITION)
+    ldtk_tileset_def_collection := make(map[f64]LDTK_TILESET_DEFINITION)
     ldtk_entity_def_collection := make([dynamic]LDTK_ENTITY_DEFINITION)
-    ldtk_tileset_def_collection := make([dynamic]LDTK_TILESET_DEFINITION)
 
     ldtk_level_collection := make([dynamic]LDTK_LEVEL)
  
@@ -305,7 +305,7 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
 
         ldtk_layer_definition.identifier = ldtk_layer_obj["identifier"].(json.String)
         ldtk_layer_definition.type = ldtk_layer_obj["type"].(json.String)
-        ldtk_layer_definition.uid = ldtk_layer_obj["uid"].(json.Float)
+        uid := ldtk_layer_obj["uid"].(json.Float)
 
         ldtk_layer_definition.opacity = ldtk_layer_obj["displayOpacity"].(json.Float)
 
@@ -359,8 +359,7 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
             append(&ldtk_layer_definition.int_grid, int_grid_value)
         }
 
-
-        append(&ldtk_layer_def_collection, ldtk_layer_definition)
+        ldtk_layer_def_collection[uid] = ldtk_layer_definition
     }
     // --------------------------------------------------------------------------------
 
@@ -396,7 +395,7 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
         ldtk_tile_obj := ldtk_tile_def.(json.Object)
     
         ldtk_tileset_definition.identifier = ldtk_tile_obj["identifier"].(json.String)
-        ldtk_tileset_definition.uid = ldtk_tile_obj["uid"].(json.Float)
+        uid := ldtk_tile_obj["uid"].(json.Float)
 
         ldtk_tileset_definition.tile_path = ldtk_tile_obj["relPath"].(json.String) or_else "nil"
 
@@ -411,7 +410,7 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
         ldtk_tileset_definition.padding = ldtk_tile_obj["padding"].(json.Float)
         //enum support tileset..
 
-        append(&ldtk_tileset_def_collection, ldtk_tileset_definition)
+        ldtk_tileset_def_collection[uid] = ldtk_tileset_definition
     }
     // --------------------------------------------------------------------------------
     
@@ -574,8 +573,8 @@ free_ldtk_context :: proc(ctx : ^LDTK_CONTEXT){
     delete(ctx.entity_def)
     delete(ctx.tileset_def)
 
-    for layer_def in ctx.layer_def{
-        delete(layer_def.int_grid)
+    for key, val in ctx.layer_def{
+        delete(val.int_grid)
     }
 
     delete(ctx.layer_def)

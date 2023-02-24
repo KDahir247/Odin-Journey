@@ -21,7 +21,7 @@ create_game_entity ::proc($path : string,anim_config : [$E]container.AnimationCo
     ecs.add_component_unchecked(&ctx.world, game_entity, container.Rotation{rotation})
     ecs.add_component_unchecked(&ctx.world, game_entity, container.Scale{mathematics.Vec2{scale.x, scale.y}})
 
-    ecs.add_component(&ctx.world, game_entity, container.Physics{mathematics.Vec2{0, 0},mathematics.Vec2{250, 1000},mathematics.Vec2{0.1, 1},mathematics.Vec2{0,0}, 1})
+    ecs.add_component_unchecked(&ctx.world, game_entity, container.Physics{mathematics.Vec2{0, 0},mathematics.Vec2{250, 1000},mathematics.Vec2{0.1, 1},mathematics.Vec2{0,0}, 1})
 
     ecs.add_component_unchecked(&ctx.world, game_entity, container.GameEntity{0,0,0, sdl2.RendererFlip.NONE})
 }
