@@ -11,11 +11,9 @@ import "vendor:sdl2"
 import "vendor:sdl2/image"
 
 
-// this will be used for static props any tilemapping.
 create_texture_entity :: proc(path : string) -> ecs.Entity{
 	ctx := cast(^ctx.Context) context.user_ptr
     texture_entity := ecs.create_entity(&ctx.world)
-
 
     cpath := strings.clone_to_cstring(path)
     defer delete(cpath)
@@ -33,7 +31,6 @@ create_texture_entity :: proc(path : string) -> ecs.Entity{
     ecs.add_component(&ctx.world, texture_entity, container.TextureAsset{texture, dimension})
 
     sdl2.FreeSurface(surface)
-
 
     return texture_entity
 }

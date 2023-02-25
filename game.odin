@@ -36,7 +36,7 @@ main :: proc() {
 	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	game.create_game_entity("resource/padawan/pad.png",configs, {400,500}, 0, {0.1,0.2})
 
-	level := utility.parse_level("level/basic.ldtk")
+	level := utility.parse_levels_ldtk("level/basic.ldtk")
 	game.create_game_level(&level)
 	
 	running := true;
@@ -57,7 +57,7 @@ main :: proc() {
 
 	game.free_all_animation_entities()
 	game.free_game_level()
-	utility.free_level(&level)
+	utility.free_ldtk_levels(&level)
 
 	ctx.cleanup()
 	context.user_ptr = nil

@@ -6,17 +6,9 @@ import "core:encoding/json"
 import "core:os"
 import "core:strconv"
 import "core:intrinsics"
-import "core:testing"
-import "core:fmt"
+import "core:strings"
 
 HEXADECIMAL_BASE :: 16
-
-LDTK_CONTEXT_SIMPLIFIED :: struct(len : int){
-    level : LDTK_LEVEL_SIMPLIFIED,
-    ldtk_neighbours : [dynamic]LDTK_NEIGHBOUR_SIMPLIFIED,
-    img : LDTK_LAYER_IMG(len),
-    entities : [dynamic]LDTK_ENTITY_SIMPLIFIED,
-}
 
 // Simpified..
 LDTK_LEVEL_SIMPLIFIED :: struct{
@@ -34,6 +26,11 @@ LDTK_NEIGHBOUR_SIMPLIFIED :: struct{
     direction : u8,
 }
 
+LDTK_LAYER_IMG :: struct(len : int){
+    // bg, background, collision, wall shadow.
+     layer_imgs : [len]string,
+}   
+
 LDTK_ENTITY_SIMPLIFIED :: struct{
     idenifier : string,
     uid : string,
@@ -45,13 +42,12 @@ LDTK_ENTITY_SIMPLIFIED :: struct{
     //custom_fields : container,
 }
 
-LDTK_LAYER_IMG :: struct(len : int){
-    // bg, background, collision, wall shadow.
-     layer_imgs : [len]string,
-}   
-
-parse_level :: proc{parse_ldtk_simplified, parse_ldtk}
-free_level :: proc{free_ldtk_simplfied_context, free_ldtk_context}
+LDTK_CONTEXT_SIMPLIFIED :: struct(len : int){
+    level : LDTK_LEVEL_SIMPLIFIED,
+    ldtk_neighbours : [dynamic]LDTK_NEIGHBOUR_SIMPLIFIED,
+    img : LDTK_LAYER_IMG(len),
+    entities : [dynamic]LDTK_ENTITY_SIMPLIFIED,
+}
 
 parse_ldtk_simplified :: proc($path : string, $layer_count : int) -> LDTK_CONTEXT_SIMPLIFIED(layer_count){
     ldtk_level :LDTK_LEVEL= {} 
@@ -167,253 +163,114 @@ where E > 0
     delete(ctx.entities)
 }
 
-LDTK_CONTEXT :: struct{
-    iid : string,
-    layer_def : map[f64]LDTK_LAYER_DEFINITION,
-    tileset_def : map[f64]LDTK_TILESET_DEFINITION,
-    entity_def : [dynamic]LDTK_ENTITY_DEFINITION,
+//-------------------------------------------------------------------------------
+
+LDTK_LEVELS ::struct{
     levels : [dynamic]LDTK_LEVEL,
 }
 
-LDTK_LAYER_DEFINITION :: struct{
-    identifier : string,
-    type : string,
-    parallax_factor : mathematics.Vec3,
-    pixel_offset : mathematics.Vec2,
-    uid : f64,
-    cell_size : f64,
-    opacity : f64,
+// LDTK_LAYER_DEFINITION :: struct{
+//     parallax_factor : mathematics.Vec3,
+//     pixel_offset : mathematics.Vec2,
+//     auto_layer : Maybe(LDTK_LAYER_AUTO_LAYER),
 
-    auto_layer : Maybe(LDTK_LAYER_AUTO_LAYER),
-    int_grid : [dynamic]LDTK_INT_GRID_VALUE,
-}
+//     uid : f64,
+//     cell_size : f64,
+//     opacity : f64,
 
-//TODO: khal this isn't used..
-LDTK_LAYER_AUTO_LAYER :: struct{
-    autoSourceLayerDefUid : f64,
-    tilesetDefUid : f64,
-}
+//     int_grid : [dynamic]LDTK_INT_GRID_VALUE,
+// }
 
-// Don't need the img
-LDTK_ENTITY_DEFINITION :: struct{   
-    identifier : string,
-    //color : mathematics.Vec3,
-    // Width, Height
-    dimension : mathematics.Vec2,
-    pivot : mathematics.Vec2,
-    uid : f64,
-}
+// //TODO: khal this isn't used..
+// LDTK_LAYER_AUTO_LAYER :: struct{
+//     autoSourceLayerDefUid : f64,
+//     tilesetDefUid : f64,
+// }
 
-LDTK_TILESET_DEFINITION :: struct{
-    identifier : string,
-    tile_path : string,
-    dimension : mathematics.Vec2,
-    grid_size : f64,
-    spacing : f64,
-    padding : f64,
-    uid : f64,
-}
+// // Don't need the img
+// LDTK_ENTITY_DEFINITION :: struct{   
+//     //color : mathematics.Vec3,
+//     // Width, Height
+//     dimension : mathematics.Vec2,
+//     pivot : mathematics.Vec2,
+//     uid : f64,
+// }
+
+
+// LDTK_INT_GRID_VALUE :: struct{
+//     identifier : string,
+//     color : mathematics.Vec3,
+//     value : f64,
+// }
 
 LDTK_LEVEL :: struct{
-    identifier : string,
-    iid : string,
-    
-    orientation : mathematics.Vec3,
-
-    dimension : mathematics.Vec2,
+    orientation : mathematics.Vec3i,
+    dimension : mathematics.Vec2i,
     background_color : mathematics.Vec3,
 
-    uid : f64,
+    uid : i64,
 
     layer_instances : [dynamic]LDTK_LAYER_INSTANCE,
 }
 
-LDTK_LAYER_INSTANCE :: struct{
-    id : string,
-    offset : mathematics.Vec2,
-    level_id : f64,
-    tiledef_uid : f64,
-    layerdef_uid : f64, 
-    grid_size : mathematics.Vec2,
-
-    entity_instances : [dynamic]LDTK_ENTITY_INSTANCE,
-    auto_layer_tiles : [dynamic]LDTK_AUTO_LAYER_TILE,
-    int_grid_csv : [dynamic]int,
-}
-
-LDTK_INT_GRID_VALUE :: struct{
-    value : f64,
-    identifier : string,
-    color : mathematics.Vec3,
+LDTK_TILESET_DEFINITION :: struct{
+    dimension : mathematics.Vec2i,
+    grid_dimension : mathematics.Vec2i,
+    grid_size : i64,
+    spacing : i64,
+    padding : i64,
+    uid : i64,
 }
 
 LDTK_ENTITY_INSTANCE :: struct{
-    iid : string,
-    dimension : mathematics.Vec2,
-    pixel : mathematics.Vec2,
-    def_uid : f64,
+    dimension : mathematics.Vec2i,
+    pixel : mathematics.Vec2i,
+    def_uid : i64,
 }
 
 LDTK_AUTO_LAYER_TILE :: struct{
-    src : mathematics.Vec2,
-    pixel : mathematics.Vec2,
-    tile_id : f64,
-    render_flip : f64,
+    src : mathematics.Vec2i,
+    pixel : mathematics.Vec2i,
+    tile_id : i64,
+    render_flip : i64,
+}
+
+LDTK_LAYER_INSTANCE :: struct{
+    tile_definition : LDTK_TILESET_DEFINITION,
+    
+    offset : mathematics.Vec2i,
+    grid_dimension : mathematics.Vec2i,
+    level_id : i64,
+
+    cell_size : i64,
+    texture_path : cstring,
+    opacity : i64,
+    //  __type, levelId, gridTiles
+
+    int_grid_csv : [dynamic]int,
+    entity_instances : [dynamic]LDTK_ENTITY_INSTANCE,
+    auto_layer_tiles : [dynamic]LDTK_AUTO_LAYER_TILE,
 }
 
 
-// TODO: there is quite a bit of configuaration in ldtk that will alter the way to read data.
-// eg. Export as png, saving level seperately.
-parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
+parse_levels_ldtk :: proc($path : string) -> LDTK_LEVELS{
 
-    //TODO: khal you forgot if there is no auto auto layer tile then we need to get gridTiles from the ldtk file.
-
-    // this will load by world not by level which is done by parse_level_simplified function.
-    // world will contain a collection of level in the given world.
-    // parse_ldtk function doesn't not support multiple world. Just a single world with multiple levels.
-    // TODO: khal maybe make a function to support ldtk multiple world.. Maybe...
-    ldtk_context := LDTK_CONTEXT{}
-
-    ldtk_layer_def_collection := make(map[f64]LDTK_LAYER_DEFINITION)
-    ldtk_tileset_def_collection := make(map[f64]LDTK_TILESET_DEFINITION)
-    ldtk_entity_def_collection := make([dynamic]LDTK_ENTITY_DEFINITION)
+    ldtk_cxt := LDTK_LEVELS{}
 
     ldtk_level_collection := make([dynamic]LDTK_LEVEL)
- 
+    
     data, _ := os.read_entire_file_from_filename(path)
     defer delete(data)
 
-    ldtk_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, false)
+    ldtk_json, _ := json.parse(data, json.DEFAULT_SPECIFICATION, true)
     defer json.destroy_value(ldtk_json)
 
-
     ldtk_world := ldtk_json.(json.Object)
-
-    ldtk_context.iid = ldtk_world["iid"].(json.String)
-
-    //ldtk_has_external_level := ldtk_world["externalLevels"].(json.Boolean)
-    //ldtk_simplified_export := ldtk_world["simplifiedExport"].(json.Boolean)
-
+    
     ldtk_world_definitions := ldtk_world["defs"].(json.Object);
-
-    ldtk_world_layer_definitions := ldtk_world_definitions["layers"].(json.Array)
-
-    for ldtk_layer_def in ldtk_world_layer_definitions{
-        ldtk_layer_definition := LDTK_LAYER_DEFINITION{}
-
-        ldtk_layer_obj := ldtk_layer_def.(json.Object)
-
-        ldtk_layer_definition.identifier = ldtk_layer_obj["identifier"].(json.String)
-        ldtk_layer_definition.type = ldtk_layer_obj["type"].(json.String)
-        uid := ldtk_layer_obj["uid"].(json.Float)
-
-        ldtk_layer_definition.opacity = ldtk_layer_obj["displayOpacity"].(json.Float)
-
-        ldtk_layer_definition.cell_size = ldtk_layer_obj["gridSize"].(json.Float)
-        
-        ldtk_layer_parallax_scaling := i64(ldtk_layer_obj["parallaxScaling"].(json.Boolean))
-
-        ldtk_layer_definition.parallax_factor = mathematics.Vec3{
-            f32(ldtk_layer_obj["parallaxFactorX"].(json.Float)),
-            f32(ldtk_layer_obj["parallaxFactorY"].(json.Float)),
-            f32(ldtk_layer_parallax_scaling),
-        }
-
-        ldtk_layer_definition.pixel_offset = mathematics.Vec2{
-            f32(ldtk_layer_obj["pxOffsetX"].(json.Float)),
-            f32(ldtk_layer_obj["pxOffsetY"].(json.Float)),
-        }
-
-        ldtk_layer_type := ldtk_layer_obj["type"].(json.String)
-
-        
-        //TODO: khal add this to the struct... (later)
-        if ldtk_layer_type == "AutoLayer"{
-            auto_layer := LDTK_LAYER_AUTO_LAYER{}
-
-            auto_layer.autoSourceLayerDefUid = ldtk_layer_obj["autoSourceLayerDefUid"].(json.Float)
-            auto_layer.tilesetDefUid = ldtk_layer_obj["tilesetDefUid"].(json.Float)
-            ldtk_layer_definition.auto_layer = auto_layer
-        }
-
-        ldtk_layer_intgrid_values := ldtk_layer_obj["intGridValues"].(json.Array)
-
-        for ldtk_grid_value in ldtk_layer_intgrid_values{
-            int_grid_value := LDTK_INT_GRID_VALUE{}
-
-            ldtk_layer_grid_value_obj := ldtk_grid_value.(json.Object)
-
-            int_grid_value.value = ldtk_layer_grid_value_obj["value"].(json.Float)
-            int_grid_value.identifier = ldtk_layer_grid_value_obj["identifier"].(json.String) or_else ""
-            
-            int_grid_value_color_str := ldtk_layer_grid_value_obj["color"].(json.String)
-            color_code,_ := strconv.parse_int(int_grid_value_color_str[1:], HEXADECIMAL_BASE)
-            color := hex_to_rgb(color_code, false)
-
-            int_grid_value.color = mathematics.Vec3{
-                color.r,
-                color.g,
-                color.b,
-            }
-
-            append(&ldtk_layer_definition.int_grid, int_grid_value)
-        }
-
-        ldtk_layer_def_collection[uid] = ldtk_layer_definition
-    }
-    // --------------------------------------------------------------------------------
-
-    ldtk_world_entities_definitions := ldtk_world_definitions["entities"].(json.Array)
-
-    for ldtk_entity_def in ldtk_world_entities_definitions{
-        ldtk_entity_definition := LDTK_ENTITY_DEFINITION{}
-
-        ldtk_entity_obj := ldtk_entity_def.(json.Object)
-
-        ldtk_entity_definition.identifier = ldtk_entity_obj["identifier"].(json.String)
-        ldtk_entity_definition.uid = ldtk_entity_obj["uid"].(json.Float)
-
-        ldtk_entity_definition.dimension = mathematics.Vec2{
-            f32(ldtk_entity_obj["width"].(json.Float)),
-            f32(ldtk_entity_obj["height"].(json.Float)),
-        }
-
-        ldtk_entity_definition.pivot = mathematics.Vec2{
-            f32(ldtk_entity_obj["pivotX"].(json.Float)),
-            f32(ldtk_entity_obj["pivotY"].(json.Float)),
-        }
-
-        append(&ldtk_entity_def_collection, ldtk_entity_definition)
-    }
-    // --------------------------------------------------------------------------------
 
     ldtk_world_tileset_definitions := ldtk_world_definitions["tilesets"].(json.Array)
 
-    for ldtk_tile_def in ldtk_world_tileset_definitions{
-        ldtk_tileset_definition := LDTK_TILESET_DEFINITION{}
-
-        ldtk_tile_obj := ldtk_tile_def.(json.Object)
-    
-        ldtk_tileset_definition.identifier = ldtk_tile_obj["identifier"].(json.String)
-        uid := ldtk_tile_obj["uid"].(json.Float)
-
-        ldtk_tileset_definition.tile_path = ldtk_tile_obj["relPath"].(json.String) or_else "nil"
-
-        ldtk_tileset_definition.dimension = mathematics.Vec2{
-            f32(ldtk_tile_obj["pxWid"].(json.Float)),
-            f32(ldtk_tile_obj["pxHei"].(json.Float)),
-        }
-
-        ldtk_tileset_definition.grid_size = ldtk_tile_obj["tileGridSize"].(json.Float)
-
-        ldtk_tileset_definition.spacing = ldtk_tile_obj["spacing"].(json.Float)
-        ldtk_tileset_definition.padding = ldtk_tile_obj["padding"].(json.Float)
-        //enum support tileset..
-
-        ldtk_tileset_def_collection[uid] = ldtk_tileset_definition
-    }
-    // --------------------------------------------------------------------------------
-    
     ldtk_levels := ldtk_world["levels"].(json.Array)
 
     for ldtk_level in ldtk_levels{
@@ -423,9 +280,10 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
 
         ldtk_level_obj := ldtk_level.(json.Object)
 
-        ldtk_lv.identifier = ldtk_level_obj["identifier"].(json.String)
-        ldtk_lv.iid = ldtk_level_obj["iid"].(json.String)
-        ldtk_lv.uid = ldtk_level_obj["uid"].(json.Float)
+        //TODO: khal full implemetation isn't completed. 
+        //__bgPos(only for background img), bgRelPath
+
+        ldtk_lv.uid = ldtk_level_obj["uid"].(json.Integer)
 
         ldtk_level_bg_color_str := ldtk_level_obj["__bgColor"].(json.String)
         color_code,_ := strconv.parse_int(ldtk_level_bg_color_str[1:], HEXADECIMAL_BASE)
@@ -437,18 +295,16 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
             ldtk_level_background_color.b,
         }
 
-        ldtk_lv.orientation = mathematics.Vec3{
-            f32(ldtk_level_obj["worldX"].(json.Float)),
-            f32(ldtk_level_obj["worldY"].(json.Float)),
-            f32(ldtk_level_obj["worldDepth"].(json.Float)),
+        ldtk_lv.orientation = mathematics.Vec3i{
+            int(ldtk_level_obj["worldX"].(json.Integer)),
+            int(ldtk_level_obj["worldY"].(json.Integer)),
+            int(ldtk_level_obj["worldDepth"].(json.Integer)),
         }
 
-        ldtk_lv.dimension = mathematics.Vec2{
-            f32(ldtk_level_obj["pxWid"].(json.Float)),
-            f32(ldtk_level_obj["pxHei"].(json.Float)),
+        ldtk_lv.dimension = mathematics.Vec2i{
+            int(ldtk_level_obj["pxWid"].(json.Integer)),
+            int(ldtk_level_obj["pxHei"].(json.Integer)),
         }
-
-        //back ground img support??
 
         ldtk_level_layer_instances := ldtk_level_obj["layerInstances"].(json.Array)
 
@@ -457,30 +313,34 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
             auto_layer_tiles_collection := make([dynamic]LDTK_AUTO_LAYER_TILE)
             entity_instance_collection := make([dynamic]LDTK_ENTITY_INSTANCE)
     
+            //TODO: khal full implemetation isn't completed. 
+            //  __type, levelId, gridTiles
             ldtk_level_layer := LDTK_LAYER_INSTANCE{}
 
             ldtk_level_layer_obj := ldtk_level_layer_instance.(json.Object)
 
             if ldtk_level_layer_obj["visible"].(json.Boolean){
-                ldtk_level_layer.id = ldtk_level_layer_obj["iid"].(json.String)
-                ldtk_level_layer.level_id = ldtk_level_layer_obj["levelId"].(json.Float)
-                ldtk_level_layer.layerdef_uid = ldtk_level_layer_obj["layerDefUid"].(json.Float)
-                ldtk_level_layer.tiledef_uid = ldtk_level_layer_obj["__tilesetDefUid"].(json.Float)
+                ldtk_level_layer.level_id = ldtk_level_layer_obj["levelId"].(json.Integer)
+                tile_def_uid := ldtk_level_layer_obj["__tilesetDefUid"].(json.Integer)
 
-                ldtk_level_layer.offset = mathematics.Vec2{
-                    f32(ldtk_level_layer_obj["__pxTotalOffsetX"].(json.Float)),
-                    f32(ldtk_level_layer_obj["__pxTotalOffsetY"].(json.Float)),
+                ldtk_level_layer.cell_size = ldtk_level_layer_obj["__gridSize"].(json.Integer)
+                ldtk_level_layer.opacity = ldtk_level_layer_obj["__opacity"].(json.Integer)
+                ldtk_level_layer.texture_path = strings.clone_to_cstring(ldtk_level_layer_obj["__tilesetRelPath"].(json.String))
+
+                ldtk_level_layer.offset = mathematics.Vec2i{
+                    int(ldtk_level_layer_obj["__pxTotalOffsetX"].(json.Integer)),
+                    int(ldtk_level_layer_obj["__pxTotalOffsetY"].(json.Integer)),
                 }
 
-                ldtk_level_layer.grid_size = mathematics.Vec2{
-                    f32(ldtk_level_layer_obj["__cWid"].(json.Float)),
-                    f32(ldtk_level_layer_obj["__cHei"].(json.Float)),
+                ldtk_level_layer.grid_dimension = mathematics.Vec2i{
+                    int(ldtk_level_layer_obj["__cWid"].(json.Integer)),
+                    int(ldtk_level_layer_obj["__cHei"].(json.Integer)),
                 }
 
                 ldtk_level_layer_int_grid_csv := ldtk_level_layer_obj["intGridCsv"].(json.Array)
 
                 for val in ldtk_level_layer_int_grid_csv{
-                    int_val := int(val.(json.Float))
+                    int_val := int(val.(json.Integer))
 
                     append(&int_grid_csv_collection, int_val)
                 }
@@ -492,30 +352,27 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
 
                     ldtk_level_auto_tile_obj := ldtk_level_auto_tile.(json.Object)
 
-                    //This is the positon of the tile in the level
                     ldtk_level_auto_tile_px := ldtk_level_auto_tile_obj["px"].(json.Array)
 
                     #no_bounds_check{
-                        auto_layer_tile.pixel = mathematics.Vec2{
-                            f32(ldtk_level_auto_tile_px[0].(json.Float)),
-                            f32(ldtk_level_auto_tile_px[1].(json.Float)),
+                        auto_layer_tile.pixel = mathematics.Vec2i{
+                            int(ldtk_level_auto_tile_px[0].(json.Integer)),
+                            int(ldtk_level_auto_tile_px[1].(json.Integer)),
                         }
                     }
 
-                    //this is the rect src for retrieving the correct sprite for the tile sheet.
                     ldtk_level_auto_tile_src := ldtk_level_auto_tile_obj["src"].(json.Array)
 
                     #no_bounds_check{
-                        auto_layer_tile.src = mathematics.Vec2{
-                            f32(ldtk_level_auto_tile_src[0].(json.Float)),
-                            f32(ldtk_level_auto_tile_src[1].(json.Float)),
+                        auto_layer_tile.src = mathematics.Vec2i{
+                            int(ldtk_level_auto_tile_src[0].(json.Integer)),
+                            int(ldtk_level_auto_tile_src[1].(json.Integer)),
                         }
                     }
 
-                    // flip bit
-                    auto_layer_tile.render_flip = ldtk_level_auto_tile_obj["f"].(json.Float)
+                    auto_layer_tile.render_flip = ldtk_level_auto_tile_obj["f"].(json.Integer)
 
-                    auto_layer_tile.tile_id = ldtk_level_auto_tile_obj["t"].(json.Float)
+                    auto_layer_tile.tile_id = ldtk_level_auto_tile_obj["t"].(json.Integer)
 
                     append(&auto_layer_tiles_collection, auto_layer_tile)
                 }
@@ -527,33 +384,56 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
 
                     ldtk_level_entity_obj := ldtk_level_entity.(json.Object)
 
-                    level_entity.iid = ldtk_level_entity_obj["iid"].(json.String)
-                    level_entity.dimension = mathematics.Vec2{
-                        f32(ldtk_level_entity_obj["width"].(json.Float)),
-                        f32(ldtk_level_entity_obj["height"].(json.Float)),
+                    level_entity.dimension = mathematics.Vec2i{
+                        int(ldtk_level_entity_obj["width"].(json.Integer)),
+                        int(ldtk_level_entity_obj["height"].(json.Integer)),
                     }
 
-                    level_entity.def_uid = ldtk_level_entity_obj["defUid"].(json.Float)
+                    level_entity.def_uid = ldtk_level_entity_obj["defUid"].(json.Integer)
 
                     ldtk_level_entity_pos := ldtk_level_entity_obj["px"].(json.Array)
 
                     #no_bounds_check{
-                        level_entity.pixel = mathematics.Vec2{
-                            f32(ldtk_level_entity_pos[0].(json.Float)),
-                            f32(ldtk_level_entity_pos[1].(json.Float)),
+                        level_entity.pixel = mathematics.Vec2i{
+                            int(ldtk_level_entity_pos[0].(json.Integer)),
+                            int(ldtk_level_entity_pos[1].(json.Integer)),
                         }
                     }
 
                     append(&entity_instance_collection, level_entity)
                 }
-            }
-
-
+            
             ldtk_level_layer.auto_layer_tiles = auto_layer_tiles_collection
             ldtk_level_layer.entity_instances = entity_instance_collection
             ldtk_level_layer.int_grid_csv = int_grid_csv_collection
 
+            
+            for tile_def in ldtk_world_tileset_definitions{
+                ldtk_tile_obj := tile_def.(json.Object)
+
+                if tile_def_uid == ldtk_tile_obj["uid"].(json.Integer){
+
+                    ldtk_level_layer.tile_definition.uid = ldtk_tile_obj["uid"].(json.Integer)
+
+                    ldtk_level_layer.tile_definition.grid_dimension = mathematics.Vec2i{
+                        int(ldtk_tile_obj["__cWid"].(json.Integer)),
+                        int(ldtk_tile_obj["__cHei"].(json.Integer)),
+                    }
+            
+                    ldtk_level_layer.tile_definition.dimension = mathematics.Vec2i{
+                        int(ldtk_tile_obj["pxWid"].(json.Integer)),
+                        int(ldtk_tile_obj["pxHei"].(json.Integer)),
+                    }
+            
+                    ldtk_level_layer.tile_definition.grid_size = ldtk_tile_obj["tileGridSize"].(json.Integer)
+            
+                    ldtk_level_layer.tile_definition.spacing = ldtk_tile_obj["spacing"].(json.Integer)
+                    ldtk_level_layer.tile_definition.padding = ldtk_tile_obj["padding"].(json.Integer)
+                }
+            }
+        
             append(&layer_instance_collection, ldtk_level_layer)
+            }
         }
 
         ldtk_lv.layer_instances = layer_instance_collection
@@ -561,112 +441,45 @@ parse_ldtk :: proc($path : string) -> LDTK_CONTEXT{
         append(&ldtk_level_collection, ldtk_lv)
     }
 
-    ldtk_context.layer_def = ldtk_layer_def_collection
-    ldtk_context.entity_def = ldtk_entity_def_collection
-    ldtk_context.tileset_def = ldtk_tileset_def_collection
-    ldtk_context.levels = ldtk_level_collection
+    ldtk_cxt.levels = ldtk_level_collection
 
-    return ldtk_context
+    return ldtk_cxt
 }
-
-free_ldtk_context :: proc(ctx : ^LDTK_CONTEXT){
-    delete(ctx.entity_def)
-    delete(ctx.tileset_def)
-
-    for key, val in ctx.layer_def{
-        delete(val.int_grid)
-    }
-
-    delete(ctx.layer_def)
-
-    for lv in ctx.levels{
-        for inst in lv.layer_instances{
-            delete(inst.auto_layer_tiles)
-            delete(inst.entity_instances)
-            delete(inst.int_grid_csv)
-        }
-
-        delete(lv.layer_instances)
-    }
-
-    delete(ctx.levels)
-}
-
-//TileSet 
 
 get_tile_texture_pos :: #force_inline proc(tile_id : int, tile : LDTK_TILESET_DEFINITION) -> mathematics.Vec2i{
     
-    grid_width := int(tile.dimension.x / f32(tile.grid_size))
+    grid_width := tile.dimension.x / int(tile.grid_size)
     
-    grid_tile_y := tile_id / grid_width
-    //or tile_id - grid_width * (tile_id / grid_width)
-    grid_tile_x := tile_id % grid_width
+    grid_tile := mathematics.Vec2i{
+        tile_id % grid_width,
+        tile_id / grid_width,
+    }
 
     grid_spacing := int(tile.grid_size + tile.spacing)
 
-    tile_tex_pos := mathematics.Vec2i{
-        int(tile.padding) + grid_tile_x * grid_spacing,
-        int(tile.padding) + grid_tile_y * grid_spacing,
-    }
-    
-    return tile_tex_pos
+    return grid_tile * grid_spacing + int(tile.padding)
 } 
 
-get_tile :: proc(grid : mathematics.Vec2i, layer : LDTK_LAYER_INSTANCE, tiles : [dynamic]LDTK_TILESET_DEFINITION) -> LDTK_TILESET_DEFINITION{
-    id := grid.x + int(layer.grid_size.x) * grid.y
-    res := LDTK_TILESET_DEFINITION{}
-
-    if len(tiles) > id{
-       res = tiles[id]
-    }
-
-    return res
+get_tile_position :: #force_inline proc(grid_pos : mathematics.Vec2i #any_int cell_size : int, offset : mathematics.Vec2i) -> mathematics.Vec2i{
+    return grid_pos * cell_size + offset
 }
 
-get_int_grid_value :: proc(grid : mathematics.Vec2i, layer : LDTK_LAYER_INSTANCE, int_grid : [dynamic]LDTK_INT_GRID_VALUE) -> LDTK_INT_GRID_VALUE{
-    id := grid.x + int(layer.grid_size.x) * grid.y
-    res := LDTK_INT_GRID_VALUE{}
-
-    if len(int_grid) > id {
-        res = int_grid[id]
-    }
-
-    return res
-}
-
-
-
-//To get the layer definition use the layer layerdef_uid and compare it with the dynamic array LDTK_LAYER_DEFINITION uid
-get_tile_position :: proc(grid_pos : mathematics.Vec2i, layer_def : LDTK_LAYER_DEFINITION, layer : LDTK_LAYER_INSTANCE) -> mathematics.Vec2i{
-    cell_size := int(layer_def.cell_size)
-
-    return mathematics.Vec2i{
-        grid_pos.x * cell_size + int(layer.offset.x),
-        grid_pos.y * cell_size + int(layer.offset.y),
-    }
-
-}
-
-get_tile_grid_position :: proc(coord_id : int, layer : LDTK_LAYER_INSTANCE) -> mathematics.Vec2i{
-    grid_width := int(layer.grid_size.x)
-
+get_tile_grid_position :: #force_inline proc(coord_id : int, grid_width : int) -> mathematics.Vec2i{
     y := coord_id / grid_width
     x := coord_id % grid_width
 
     return mathematics.Vec2i{x,y}
 }
 
-//To get the layer definition use the layer layerdef_uid and compare it with the dynamic array LDTK_LAYER_DEFINITION uid
-get_tile_world_position :: proc(grid_pos : mathematics.Vec2i,level : LDTK_LEVEL, layer_def : LDTK_LAYER_DEFINITION, layer : LDTK_LAYER_INSTANCE) -> mathematics.Vec2i{
-    pos := get_tile_position(grid_pos,layer_def, layer)
+get_tile_world_position :: #force_inline proc(grid_pos : mathematics.Vec2i, layer_grid_dimension : mathematics.Vec2i, #any_int layer_cell_size : int, #any_int layer_offset : int,) -> mathematics.Vec2i{
+    pos := get_tile_position(grid_pos,layer_cell_size, layer_offset)
 
-    return mathematics.Vec2i{
-        pos.x + int(level.orientation.x),
-        pos.y + int(level.orientation.y),
-    }
+    orientation := layer_grid_dimension * layer_cell_size
+
+    return pos + orientation
 }
 
-get_tile_texture_rect :: proc(tile_id : int,tile : LDTK_TILESET_DEFINITION) -> mathematics.Vec4i{
+get_tile_texture_rect :: #force_inline proc(#any_int tile_id : int, tile : LDTK_TILESET_DEFINITION) -> mathematics.Vec4i{
     tile_texture_pos := get_tile_texture_pos(tile_id, tile)
 
     return mathematics.Vec4i{
@@ -681,29 +494,21 @@ get_tile_vertices :: proc(){
     //TODO: khal implement this.
 }
 
-//pos is the px parameter from autoLayerTiles or gridTiles (not yet supported)
-//To get the layer definition use the layer layerdef_uid and compare it with the dynamic array LDTK_LAYER_DEFINITION uid
-get_layer_coord_id_at :: proc(pos : mathematics.Vec2i, layer : LDTK_LAYER_INSTANCE, layer_def : LDTK_LAYER_DEFINITION) -> int{
-    return (pos.x + pos.y * int(layer.grid_size.x)) / int(layer_def.cell_size)
+get_layer_coord_id_at :: #force_inline proc(pos : mathematics.Vec2i, grid_width : int, #any_int cell_size : int) -> int{
+    return (pos.x + pos.y * grid_width) / cell_size
 }
 
+free_ldtk_levels :: proc(ldtk_lv : ^LDTK_LEVELS){
 
-@(test)
-parse_test :: proc(v : ^testing.T){
-    //TODO: khal finish test
-    //odin test {dir}\utility -test-name:{test fn name}
-    ldtk := parse_ldtk("level/basic.ldtk")
+    for level in ldtk_lv.levels{
 
-    testing.expect_value(v, ldtk.iid, "a22d35f0-7820-11ed-b6fd-213e885f30da")
-    testing.expect_value(v, len(ldtk.layer_def), 1)
-    
-    layer_def := ldtk.layer_def[0]
+        for layer in level.layer_instances{
+            delete(layer.int_grid_csv)
+            delete(layer.auto_layer_tiles)
+            delete(layer.entity_instances)
 
-    testing.expect_value(v, layer_def.uid, 72)
-    testing.expect_value(v, layer_def.type, "IntGrid")
-    testing.expect_value(v, layer_def.pixel_offset, mathematics.Vec2{0,0})
-    testing.expect_value(v, layer_def.parallax_factor, mathematics.Vec3{0,0,1})
-    testing.expect_value(v, layer_def.opacity,1)
-    testing.expect_value(v, len(layer_def.int_grid),1 )
-
+        }
+        delete(level.layer_instances)
+    }
+    delete(ldtk_lv.levels)
 }

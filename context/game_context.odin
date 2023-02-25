@@ -8,7 +8,6 @@ import "../mathematics"
 import  "core:math/linalg"
 import "core:log"
 import "core:intrinsics"
-import "core:fmt"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"

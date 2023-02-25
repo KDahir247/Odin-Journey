@@ -1,7 +1,6 @@
 package ecs
 
 import "core:container/queue"
-import "core:fmt"
 
 Entity :: distinct uint
 

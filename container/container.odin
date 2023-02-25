@@ -6,7 +6,7 @@ import "vendor:sdl2/image"
 
 TileMap :: struct{
     texture : ^sdl2.Texture,
-	dimension : mathematics.Vec2,
+	dimension : mathematics.Vec2i,
 }
 
 GameConfig :: struct{

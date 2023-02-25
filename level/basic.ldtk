@@ -365,7 +365,7 @@
 					"__pxTotalOffsetX": 0,
 					"__pxTotalOffsetY": 0,
 					"__tilesetDefUid": 9,
-					"__tilesetRelPath": "../resource/level_test/test.png",
+					"__tilesetRelPath": "resource/level_test/test.png",
 					"iid": "a2a53701-66b0-11ec-9cd7-43934582bcfa",
 					"levelId": 70,
 					"layerDefUid": 72,
