@@ -4,31 +4,34 @@ import "../utility"
 import "../ecs"
 import ctx "../context"
 import "../container"
+import "../game"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"
-
 
 create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
 	ctx := cast(^ctx.Context) context.user_ptr
 
     for lv in ldtk_ctx.levels{
         for layer in lv.layer_instances{
+            defer delete(layer.texture_path)
 
             opacity_factor := u8(255 * layer.opacity)
 
-            defer delete(layer.texture_path)
-
             tilemap_entity := ecs.create_entity(&ctx.world)
-            tileset_texture := image.LoadTexture(ctx.renderer, layer.texture_path)
-        
+
+            tile_tex_entity := game.create_texture_entity(layer.texture_path)
+            tile_component := ecs.get_component_unchecked(&ctx.world, tile_tex_entity, container.TextureAsset)
+
             tilemap_texture := sdl2.CreateTexture(ctx.renderer,
                 ctx.pixel_format.format,
                 sdl2.TextureAccess.TARGET,
                 i32(lv.dimension.x),
                 i32(lv.dimension.y),
             )
+
             sdl2.SetRenderTarget(ctx.renderer, tilemap_texture)
+            
             for tile in layer.auto_layer_tiles{
                
                 coord_id := utility.get_layer_coord_id_at(tile.pixel, layer.grid_dimension.x, layer.cell_size)
@@ -44,30 +47,24 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
                 }
 
                 src_rect := sdl2.Rect{
-                    i32(tile_texture_rect.x), //x
-                    i32(tile_texture_rect.y), //y
-                    i32(tile_texture_rect.z), //width
-                    i32(tile_texture_rect.z), //height
+                    i32(tile_texture_rect.x),
+                    i32(tile_texture_rect.y),
+                    i32(tile_texture_rect.z),
+                    i32(tile_texture_rect.z),
                 }
 
-                flip_x := tile.render_flip & 1
-                flip_y := (tile.render_flip>>1)&1
+                 sdl2.SetTextureBlendMode(tile_component.texture, sdl2.BlendMode.NONE)
+                 sdl2.SetTextureAlphaMod(tile_component.texture, opacity_factor)
 
-                flip := (flip_x == 1 ? 0x00000001 : 0x00000000) |
-                 (flip_y == 1 ? 0x00000002 : 0x00000000)
-
-                 sdl2.SetTextureBlendMode(tileset_texture, sdl2.BlendMode.NONE)
-
-                 sdl2.SetTextureAlphaMod(tileset_texture, opacity_factor)
-
-                 sdl2.RenderCopyEx(ctx.renderer,tileset_texture, &src_rect,&dst_rect,0,nil, sdl2.RendererFlip(flip))
+                 sdl2.RenderCopyEx(ctx.renderer,tile_component.texture, &src_rect,&dst_rect,0,nil, sdl2.RendererFlip(tile.render_flip))
             }
 
             sdl2.SetRenderTarget(ctx.renderer, nil)
+            sdl2.SetTextureBlendMode(tilemap_texture, sdl2.BlendMode.BLEND)
 
-            sdl2.DestroyTexture(tileset_texture)
+            ecs.destroy_entity(&ctx.world, tile_tex_entity)
 
-            ecs.add_component(&ctx.world, tilemap_entity, container.TileMap{tilemap_texture, lv.orientation.xy})
+            ecs.add_component(&ctx.world, tilemap_entity, container.TileMap{tilemap_texture, lv.dimension.xy})
         }
     }
 }

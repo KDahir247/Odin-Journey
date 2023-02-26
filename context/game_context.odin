@@ -8,16 +8,21 @@ import "../mathematics"
 import  "core:math/linalg"
 import "core:log"
 import "core:intrinsics"
+import "core:container/queue"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"
-import "core:container/queue"
+
+//TODO: khal refactor this script and improve readability then optimize it.
 
 Context :: struct{
 	window : ^sdl2.Window,
 	renderer : ^sdl2.Renderer,
-	world : ecs.Context,
 	pixel_format : ^sdl2.PixelFormat,
+	world : ecs.Context,
+
+
+	//TODO: khal remove the below...
 	clear_color : [3]u8,
 	// TODO: khal attach this GameEntity struct it will be used by npc, enemy and player.
 	event_queue : queue.Queue(container.Action),
@@ -34,6 +39,7 @@ initialize_dynamic_resource :: proc()
 @(cold)
 init :: proc(game_cfg : container.GameConfig) -> Context{
 	ctx := Context{}
+	ecs_world := ecs.init_ecs()
 
 	if err := sdl2.Init(game_cfg.game_flags); err != 0{
 		log.error(sdl2.GetError())
@@ -76,6 +82,8 @@ init :: proc(game_cfg : container.GameConfig) -> Context{
 	}
 
 	ctx.clear_color = game_cfg.clear_color
+
+	ctx.world = ecs_world
 
 	queue.init(&ctx.event_queue)
 
@@ -336,7 +344,6 @@ on_render :: proc(){
 	
 	for tile_entity in tileset_entities{
 		tileset_component := ecs.get_component_unchecked(&ctx.world, tile_entity, container.TileMap)
-		sdl2.SetTextureBlendMode(tileset_component.texture, sdl2.BlendMode.BLEND)
         
 		sdl2.RenderCopy(ctx.renderer, tileset_component.texture, nil, nil)
 
@@ -345,13 +352,6 @@ on_render :: proc(){
 
 	#no_bounds_check{
 
-		sdl2.SetRenderDrawColor(ctx.renderer,
-			ctx.clear_color.r,
-			ctx.clear_color.g,
-			ctx.clear_color.b,
-			255,
-		)
-	
 		for texture_entity in texture_entities{
 			
 			texture_component := ecs.get_component_unchecked(&ctx.world, texture_entity, container.TextureAsset)
@@ -391,7 +391,6 @@ on_render :: proc(){
 			sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.render_direction)
 		}
 	}
-
 
 	sdl2.RenderPresent(ctx.renderer)
 }

@@ -1,15 +1,14 @@
 package main;
 
+import ctx "context"
+import "game"
+import  "utility"
+import "ecs"
+
 when ODIN_DEBUG{
 	import "core:fmt"
 	import "core:mem"
 }
-
-import "ecs"
-
-import ctx "context"
-import "game"
-import  "utility"
 
 MS_CAP :: 17
 
@@ -20,9 +19,9 @@ main :: proc() {
 		mem.tracking_allocator_init(&track, context.allocator)
 		context.allocator =mem.tracking_allocator(&track)
 	}
-
 	game_config := utility.parse_game_config("config/game_config.json")
-	ecs_ctx := ecs.init_ecs()
+	levels := utility.parse_levels_ldtk("level/basic.ldtk")
+
 
 	core := new(ctx.Context)
 	core^ = ctx.init(game_config)
@@ -36,8 +35,7 @@ main :: proc() {
 	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
 	game.create_game_entity("resource/padawan/pad.png",configs, {400,500}, 0, {0.1,0.2})
 
-	level := utility.parse_levels_ldtk("level/basic.ldtk")
-	game.create_game_level(&level)
+	game.create_game_level(&levels)
 	
 	running := true;
 	{
@@ -57,15 +55,12 @@ main :: proc() {
 
 	game.free_all_animation_entities()
 	game.free_game_level()
-	utility.free_ldtk_levels(&level)
+	utility.free_ldtk_levels(&levels)
 
 	ctx.cleanup()
 	context.user_ptr = nil
 	free(core)
 	
-	ecs.deinit_ecs(&ecs_ctx)
-
-
 	when ODIN_DEBUG{
 		// For debugging purpose (bad free, leak, etc...)
 		for bad in track.bad_free_array{

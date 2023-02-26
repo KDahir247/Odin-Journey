@@ -10,9 +10,19 @@ Vec2i :: distinct [2]int
 Vec3i :: distinct [3]int
 Vec4i :: distinct [4]int
 
+cross_vector :: proc(v, v1 : Vec2) -> f32{
+    return (v.x * v1.y) - (v.y * v1.x)
+}
 
+normal_vector :: proc (v : Vec2) -> Vec2{
+    return {-v.y, v.x}
+}
 
-rotate_vector_f32 :: proc(v: Vec2, angle_rad : f32) -> Vec2  {
+normal_neg_vector :: proc(v : Vec2) -> Vec2{
+    return {v.y, -v.x}
+}
+
+rotate_vector :: proc(v: Vec2, angle_rad : f32) -> Vec2  {
     sin := linalg.sin(angle_rad)
     cos := linalg.cos(angle_rad)
 
@@ -21,16 +31,15 @@ rotate_vector_f32 :: proc(v: Vec2, angle_rad : f32) -> Vec2  {
     return result
 }
 
-angle_vector :: proc(v0 :Vec2, v1 : Vec2) -> f32{
-    norm_v0 := linalg.normalize(v0)
+angle_vector :: proc(v, v1 : Vec2) -> f32{
+    norm_v0 := linalg.normalize(v)
     norm_v1 := linalg.normalize(v1)
 
     dp := linalg.dot(norm_v0, norm_v1)
-
     return linalg.degrees(linalg.acos(dp))
 }
 
-project_vector :: proc(proj : Vec2, onto : Vec2) -> Vec2{
+project_vector :: proc(proj, onto : Vec2) -> Vec2{
     length_sqr := linalg.length2(onto)
 
     res := onto

@@ -10,22 +10,18 @@ import "core:strings"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
-
-create_texture_entity :: proc(path : string) -> ecs.Entity{
+create_texture_entity :: proc(path : cstring) -> ecs.Entity{
 	ctx := cast(^ctx.Context) context.user_ptr
-    texture_entity := ecs.create_entity(&ctx.world)
 
-    cpath := strings.clone_to_cstring(path)
-    defer delete(cpath)
-
-    surface := image.Load(cpath)
+    surface := image.Load(path)
     optimal_surface := sdl2.ConvertSurface(surface, ctx.pixel_format, 0)
 
     key := sdl2.MapRGB(optimal_surface.format, 0,0,0)
     sdl2.SetColorKey(optimal_surface, 1, key)
 
-    texture := sdl2.CreateTextureFromSurface(ctx.renderer, optimal_surface )
+    texture_entity := ecs.create_entity(&ctx.world)
 
+    texture := sdl2.CreateTextureFromSurface(ctx.renderer, optimal_surface )
     dimension := mathematics.Vec2{ cast(f32)optimal_surface.w, cast(f32)optimal_surface.h}
 
     ecs.add_component(&ctx.world, texture_entity, container.TextureAsset{texture, dimension})
@@ -35,7 +31,7 @@ create_texture_entity :: proc(path : string) -> ecs.Entity{
     return texture_entity
 }
 
-create_animation_texture_entity :: proc($path : string, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
+create_animation_texture_entity :: proc($path : cstring, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
 	ctx := cast(^ctx.Context) context.user_ptr
 
     animations := make_dynamic_array_len([dynamic]container.Animation,E)
@@ -62,8 +58,6 @@ create_animation_texture_entity :: proc($path : string, anim_configs : [$E]conta
 
     return texture_entity;
 }
-
-
 
 free_all_animation_entities :: proc(){
     ctx := cast(^ctx.Context) context.user_ptr

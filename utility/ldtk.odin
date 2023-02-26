@@ -370,7 +370,12 @@ parse_levels_ldtk :: proc($path : string) -> LDTK_LEVELS{
                         }
                     }
 
-                    auto_layer_tile.render_flip = ldtk_level_auto_tile_obj["f"].(json.Integer)
+                    render_flip := ldtk_level_auto_tile_obj["f"].(json.Integer)
+                    render_flip_x := render_flip & 1
+                    render_fip_y := (render_flip>>1)&1
+
+                    auto_layer_tile.render_flip = (render_flip_x == 1 ? 0x00000001 : 0x00000000) |
+                    (render_fip_y == 1 ? 0x00000002 : 0x00000000)
 
                     auto_layer_tile.tile_id = ldtk_level_auto_tile_obj["t"].(json.Integer)
 

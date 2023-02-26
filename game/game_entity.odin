@@ -7,7 +7,7 @@ import ctx "../context"
 
 import "vendor:sdl2"
 
-create_game_entity ::proc($path : string,anim_config : [$E]container.AnimationConfig, translation : [2]f32, rotation:f64, scale: [2]f32){
+create_game_entity ::proc($path : cstring,anim_config : [$E]container.AnimationConfig, translation : [2]f32, rotation:f64, scale: [2]f32){
 
 	ctx := cast(^ctx.Context) context.user_ptr
 
