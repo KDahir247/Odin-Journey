@@ -14,6 +14,12 @@ CollisionHit :: struct{
     time : f32, //how far along the line the collision occurred (0,1)
 }   
 
+CollisionSweep :: struct{
+    hit : CollisionHit,
+    pos : mathematics.Vec2,
+    time : f32,
+}
+
 
 line_line_intersection :: proc "contextless" (a : mathematics.Line, b : mathematics.Line) -> (a_intersection: mathematics.Vec2, b_intersection: mathematics.Vec2){
     intersection_point_a : mathematics.Vec2
@@ -126,18 +132,78 @@ aabb_point_intersection :: proc "contextless"(a : mathematics.AABB, b : mathemat
 
     signed_displacement :mathematics.Vec2 = {math.sign(displacement_vector.x), math.sign(displacement_vector.y)} 
 
-    vertical_mask := i32(overlap.x < overlap.y)
-    horizontal_mask := f32(1 - vertical_mask)
+    collision_mask := i32(overlap.x < overlap.y)
 
-    mask :mathematics.Vec2 = {f32(vertical_mask), horizontal_mask}
+    mask :mathematics.Vec2 = {f32(collision_mask), f32(1- collision_mask)}
 
     hit.delta_displacement = overlap * signed_displacement * mask
     hit.contact_normal = signed_displacement * mask
-    hit.contact_point = {(a.origin.x + (a.half.x * signed_displacement.x) * mask.x) + (b.x * mask.y), (a.origin.y + (a.half.y * signed_displacement.y) * mask.x) + (b.y * mask.y) }
+    hit.contact_point = ((a.origin + (a.half * signed_displacement)) * mask.x) + (b * mask.y)
 
     return hit
 }
 
+aabb_segement_intersection :: proc "contextless"(a : mathematics.AABB, b : mathematics.Segement, padding : mathematics.Vec2 = {0,0}) -> CollisionHit{
+    hit : CollisionHit
+    
+    rcp_displacement := 1.0 / b.displacement
+    rcp_signed_displacement : mathematics.Vec2 = {math.sign(rcp_displacement.x),math.sign(rcp_displacement.y)}
+
+    near_time := (a.origin - rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
+    far_time := (a.origin + rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
+
+    if (near_time.x > far_time.y || near_time.y > far_time.x){
+        return hit
+    }
+
+    max_near_time := max(near_time.x, near_time.y)
+    min_far_time := min(far_time.x, far_time.y)
+
+    if (max_near_time >= 1 || min_far_time <= 0){
+        return hit
+    }
+
+    hit.collider = a
+    hit.time = clamp(max_near_time, 0, 1)
+
+    horizontal_mask := int(near_time.x > near_time.y)
+    vertical_mask := f32(1.0 - horizontal_mask)
+
+    hit.contact_normal = -rcp_signed_displacement * {f32(horizontal_mask), vertical_mask}
+
+    hit.delta_displacement = (1.0 - hit.time) * -b.displacement
+    hit.contact_point = b.origin + b.displacement * hit.time
+
+    return hit
+}
+
+aabb_aabb_intersection :: proc "contextless"(a : mathematics.AABB, b : mathematics.AABB) -> CollisionHit{
+    hit : CollisionHit
+
+    displacement_vector := b.origin - a.origin
+    overlap := (b.half + a.half) - {abs(displacement_vector.x),abs(displacement_vector.y)}
+
+    if (overlap.x <= 0 || overlap.y <= 0){
+        return hit
+    }
+
+    signed_displacement :mathematics.Vec2 = {math.sign(displacement_vector.x), math.sign(displacement_vector.y)}
+
+    hit.collider = a
+
+    collision_mask := int(overlap.x < overlap.y)
+    mask : mathematics.Vec2= {f32(collision_mask), f32(1 - collision_mask)} 
+
+    hit.delta_displacement = overlap * signed_displacement * mask
+    hit.contact_normal = signed_displacement * mask
+    hit.contact_point = ((a.origin + (a.half * signed_displacement)) * mask.x) + (b.origin * mask.y)
+
+    return hit
+} 
+
+aabb_aabb_sweep :: proc "contextless"(){
+    
+}
 
 @(test)
 line_line_intersection_test ::proc(t : ^testing.T){
