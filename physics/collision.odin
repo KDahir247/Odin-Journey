@@ -5,6 +5,7 @@ import "../mathematics"
 import "core:testing"
 import "core:fmt"
 import "core:math"
+import "core:math/linalg"
 
 CollisionHit :: struct{
     collider : mathematics.AABB,
@@ -201,8 +202,50 @@ aabb_aabb_intersection :: proc "contextless"(a : mathematics.AABB, b : mathemati
     return hit
 } 
 
-aabb_aabb_sweep :: proc "contextless"(){
-    
+
+aabb_aabb_sweep :: proc (a : mathematics.AABB, b : mathematics.AABB, velocity : mathematics.Vec2) -> CollisionSweep{
+    sweep : CollisionSweep
+
+    if (velocity.x == 0 && velocity.y == 0){
+        sweep.pos = b.origin
+        sweep.hit = aabb_aabb_intersection(a,b)
+        
+        if sweep.hit.collider == a{
+            sweep.hit.time = 0
+        }else{
+            sweep.time = 1
+        }
+
+        return sweep
+    }
+
+    segment := mathematics.Segement{b.origin,linalg.normalize(velocity),velocity}
+    sweep.hit = aabb_segement_intersection(a, segment, b.half)
+
+    if sweep.hit.collider == a{
+        sweep.time = clamp(sweep.hit.time - math.F32_EPSILON, 0, 1)
+        sweep.pos = b.origin + velocity * sweep.time
+        sweep.hit.contact_point = linalg.clamp(sweep.hit.contact_point + segment.direction * b.half, a.origin - a.half, a.origin + a.half)
+    }else{
+        sweep.pos = b.origin + velocity
+        sweep.time = 1
+    }
+
+    return sweep
+}
+
+sweep_aabb :: proc(dyn_col : mathematics.AABB, velocity : mathematics.Vec2, static_col : [dynamic] mathematics.AABB) -> CollisionSweep{
+    nearest : CollisionSweep
+    nearest.time = 1
+    nearest.pos = dyn_col.origin + velocity
+    for i := 0; i < len(static_col); i += 1 {
+        sweep := aabb_aabb_sweep(dyn_col, static_col[i], velocity)
+        if (sweep.time < nearest.time){
+            nearest = sweep
+        }   
+    }
+
+    return nearest
 }
 
 @(test)
