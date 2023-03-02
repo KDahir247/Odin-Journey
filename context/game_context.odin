@@ -183,8 +183,15 @@ on_fixed_update :: proc(){
 				
 		grounded :f32= 0.0;
 
+		//TODO: khal add a aabb collider rather then hardcoding a and b aabb collsion below 
+		// 80 is the sprite height
+		a := mathematics.AABB{mathematics.Vec2{position_component.value.x,position_component.value.y},mathematics.Vec2{2.5, 80.0}}
+		// 24.5 is  the (window height - tile_position.y) / grid size - custom offset 
+		// custom offset to reduce collision padding if wanted. 
+		b := mathematics.AABB{mathematics.Vec2{0, 612}, mathematics.Vec2{1000, 24.5}} 
+		res := physics.aabb_aabb_intersection(a,b)
 		// TODO: khal TEMP SOLUTION
-		if sdl2.HasIntersection(&sdl2.Rect{i32(position_component.value.x), i32(position_component.value.y), 5, 100}, &sdl2.Rect{0,612,2000,36}){
+		if res.collider == a{
 			grounded = 1.0
 			physics_component.velocity.y = 0
 			physics_component.acceleration.y = 0

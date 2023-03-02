@@ -45,7 +45,7 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
                     i32(layer.cell_size),
                     i32(layer.cell_size),
                 }
-
+              
                 src_rect := sdl2.Rect{
                     i32(tile_texture_rect.x),
                     i32(tile_texture_rect.y),
