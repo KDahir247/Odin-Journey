@@ -21,6 +21,36 @@ CollisionSweep :: struct{
     time : f32,
 }
 
+@(private)
+enlarge_aabb_point :: proc "contextless"(r : mathematics.AABB, p : mathematics.Vec2) -> mathematics.AABB{
+    enlarged : mathematics.AABB
+
+    enlarged.origin = mathematics.Vec2{min(r.origin.x, p.x), min(r.origin.y, p.y)}
+    enlarged.half = mathematics.Vec2{max(r.origin.x + r.half.x + r.half.x, p.x), max(r.origin.y + r.half.y + r.half.y, p.y)}
+    enlarged.half = (enlarged.half - enlarged.origin)
+
+    return enlarged
+}
+
+@(private)
+enlarge_aabb :: proc "contextless"(r : mathematics.AABB, extender : mathematics.AABB) -> mathematics.AABB{
+    max_corner := extender.origin + extender.half + extender.half
+
+    enlarged := enlarge_aabb_point(r, max_corner)
+    return enlarge_aabb_point(enlarged, extender.origin)
+}
+
+aabb_hull:: proc (a : [dynamic]mathematics.AABB) -> mathematics.AABB{
+    aabb_hull : mathematics.AABB
+
+    for index in 0..<len(a){
+        aabb_hull = enlarge_aabb(aabb_hull, a[index])
+    }
+
+    aabb_hull.half = aabb_hull.half / 2
+    return aabb_hull
+
+}
 
 line_line_intersection :: proc "contextless" (a : mathematics.Line, b : mathematics.Line) -> (a_intersection: mathematics.Vec2, b_intersection: mathematics.Vec2){
     intersection_point_a : mathematics.Vec2
@@ -47,7 +77,6 @@ line_line_intersection :: proc "contextless" (a : mathematics.Line, b : mathemat
   
     return intersection_point_a, intersection_point_b
 }
-
 
 
 // y represent the y axis for the horizontal line
