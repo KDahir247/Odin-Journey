@@ -9,6 +9,7 @@ import  "core:math/linalg"
 import "core:log"
 import "core:intrinsics"
 import "core:container/queue"
+import "core:fmt"
 
 import "vendor:sdl2"
 import "vendor:sdl2/image"
@@ -168,68 +169,35 @@ on_fixed_update :: proc(){
 	resource.delta_time = (resource.current_physics_time - previous_physics_time) * 0.001
 
 	physics_entities := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Physics, container.Position})
+	//aabb_colliders,_ := ecs.get_component_list(&ctx.world, container.AABBCollider)
+
 
 	for entity in physics_entities{
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		game_component := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
-		position_component := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
-
-		// TODO: can we clean this...
+		
 		direction_map := f32(game_component.render_direction) * -1.0
 		direction_map += 0.5
 		direction := direction_map * 2.0
-
-		acceleration_direction := mathematics.Vec2{physics_component.acceleration.x * direction, physics_component.acceleration.y}
-				
-		grounded :f32= 0.0;
-
-		//TODO: khal add a aabb collider rather then hardcoding a and b aabb collsion below 
-		// 80 is the sprite height
-		a := mathematics.AABB{mathematics.Vec2{position_component.value.x,position_component.value.y},mathematics.Vec2{2.5, 80.0}}
-		// 24.5 is  the (window height - tile_position.y) / grid size - custom offset 
-		// custom offset to reduce collision padding if wanted. 
-		b := mathematics.AABB{mathematics.Vec2{0, 612}, mathematics.Vec2{1000, 24.5}} 
-		res := physics.aabb_aabb_intersection(a,b)
-		// TODO: khal TEMP SOLUTION
-		if res.collider == a{
-			grounded = 1.0
-			physics_component.velocity.y = 0
-			physics_component.acceleration.y = 0
-		}else{
-			fall := int(physics_component.velocity.y > 0)
-			jump := int(physics_component.velocity.y < 0)
-			// TODO: khal magic number here...
-			physics_component.acceleration.y = (3000 * f32(fall)) + (1000 * f32(jump))
-		}
+		
+		physics.add_force(physics_component, {direction * 4000, 0} * resource.delta_time)
+		physics.add_force(physics_component, {0, -19.62})
+		physics.add_friction_force(physics_component, {0.9, 0.0})
 
 		if ctx.event_queue.len > 0 {
 			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping{
-				physics.add_force(physics_component, mathematics.Vec2{0, -21000 * grounded})
+				physics.add_impulse_force(physics_component,-10, {0,1})
 			}else if queue.peek_back(&ctx.event_queue)^ == container.Action.Roll{
-				physics_component.velocity.x = physics_component.velocity.x * 1.05 
+				physics.add_impulse_force(physics_component,5, {direction, 0})
 			}
 		}
 
-		result_acceleration := (acceleration_direction + physics_component.accumulated_force) * physics_component.inverse_mass
+		
+		//TODO: khal directly changing velocity isn't good
+		physics_component.velocity.x = f32(game_component.input_direction)  * physics_component.velocity.x
 
-		physics_component.velocity += result_acceleration * resource.delta_time
-		physics_component.velocity *= linalg.pow(physics_component.damping, resource.delta_time)
+		physics.integrate(physics_component, resource.delta_time)
 
-		physics_component.velocity.x = physics_component.velocity.x * f32(linalg.abs(game_component.input_direction))
-
-		temp_velocity := physics_component.velocity
-		temp_acceleration := physics_component.acceleration
-
-		if ctx.event_queue.len > 0 {
-			if queue.peek_back(&ctx.event_queue)^ == container.Action.Attacking{
-				temp_velocity.x = 0
-				temp_acceleration.x = 0
-			}
-		}
-
-		position_component.value += temp_velocity * resource.delta_time 
-
-		physics_component.accumulated_force = mathematics.Vec2{0,0}
 	}
 }
 
@@ -239,9 +207,12 @@ on_update :: proc(){
 	game_entities := ecs.get_entities_with_components(&ctx.world, {container.Position, container.GameEntity, container.Physics, container.Animation_Tree})
 	
 	for entity in game_entities{
-		current_translation := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
+		position_component := ecs.get_component_unchecked(&ctx.world, entity, container.Position)
 		game_entity := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
+
+		position_component.value = physics_component.position
+
 
 		if physics_component.velocity.y > 0{
 			queue.pop_back_safe(&ctx.event_queue)
@@ -262,7 +233,7 @@ on_update :: proc(){
 			direction_map += 0.5
 			direction := direction_map * 2.0		
 
-			current_translation.value.x += (200 * direction)
+			position_component.value.x += (200 * direction)
 			queue.pop_back(&ctx.event_queue)
 		}
 	}
@@ -348,7 +319,17 @@ on_render :: proc(){
 	tileset_entities := ecs.get_entities_with_components(&ctx.world, {container.TileMap})
 
 	sdl2.RenderClear(ctx.renderer)
+
+	//TODO: remove
+	//  aabb_colliders,_ := ecs.get_component_list(&ctx.world, container.AABBCollider)
+
+	// for col in aabb_colliders{
+	// 	sdl2.SetRenderDrawColor(ctx.renderer, 255,255,255,255)
+	// 	sdl2.RenderDrawRectF(ctx.renderer, &sdl2.FRect{col.value.origin.x, col.value.origin.y, col.value.half.x, col.value.half.y})
+	// }
 	
+	// sdl2.SetRenderDrawColor(ctx.renderer, 23,28,57,255)
+
 	for tile_entity in tileset_entities{
 		tileset_component := ecs.get_component_unchecked(&ctx.world, tile_entity, container.TileMap)
         
@@ -398,6 +379,9 @@ on_render :: proc(){
 			sdl2.RenderCopyExF(ctx.renderer, texture_component.texture,src_res, &dst_rec, angle, nil, game_entity.render_direction)
 		}
 	}
+
+	
+
 
 	sdl2.RenderPresent(ctx.renderer)
 }

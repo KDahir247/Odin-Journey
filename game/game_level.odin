@@ -5,7 +5,9 @@ import "../ecs"
 import ctx "../context"
 import "../container"
 import "../game"
+import  "../mathematics"
 
+import "core:fmt"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
@@ -34,6 +36,8 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
             
             for tile in layer.auto_layer_tiles{
                
+                aabb_collider_entity := ecs.create_entity(&ctx.world)
+
                 coord_id := utility.get_layer_coord_id_at(tile.pixel, layer.grid_dimension.x, layer.cell_size)
                 tile_grid_position := utility.get_tile_grid_position(coord_id, layer.grid_dimension.x)
                 tile_position := utility.get_tile_position(tile_grid_position,layer.cell_size, layer.offset)
@@ -57,6 +61,9 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
                  sdl2.SetTextureAlphaMod(tile_component.texture, opacity_factor)
 
                  sdl2.RenderCopyEx(ctx.renderer,tile_component.texture, &src_rect,&dst_rect,0,nil, sdl2.RendererFlip(tile.render_flip))
+
+                 ecs.add_component_unchecked(&ctx.world, aabb_collider_entity, container.AABBCollider{mathematics.AABB{ mathematics.Vec2{f32(tile_position.x), f32(tile_position.y)} , mathematics.Vec2{f32(layer.cell_size) , f32(layer.cell_size) }}})
+
             }
 
             sdl2.SetRenderTarget(ctx.renderer, nil)

@@ -4,6 +4,12 @@ import "../mathematics"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
+
+AABBCollider :: struct{
+    value : mathematics.AABB,
+}
+
+
 TileMap :: struct{
     texture : ^sdl2.Texture,
 	dimension : mathematics.Vec2i,
@@ -21,37 +27,12 @@ GameConfig :: struct{
     clear_color : [3]u8,
 }
 
-OrientedRectangle :: struct{
-    center : mathematics.Vec2,
-    half_extent : mathematics.Vec2,
-    rotation_degree : f32,
-}
-
-Rectangle :: struct{
-    origin : mathematics.Vec2,
-    size : mathematics.Vec2,
-}
-
-Circle :: struct{
-    center : mathematics.Vec2,
-    radius : f32,
-}
-
-LineSegment :: struct{
-    start_point : mathematics.Vec2,
-    end_point : mathematics.Vec2,
-}
-
-Line :: struct{
-    base : mathematics.Vec2,
-    direction : mathematics.Vec2, // should be normalized this is direction
-}
-
 Physics :: struct{
+    position : mathematics.Vec2,
     velocity : mathematics.Vec2,
     acceleration : mathematics.Vec2,
-    damping : mathematics.Vec2, // drag
     accumulated_force : mathematics.Vec2,
+    damping : f32, // drag
     inverse_mass : f32,
 }
 

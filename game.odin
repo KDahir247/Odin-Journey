@@ -22,7 +22,6 @@ main :: proc() {
 	game_config := utility.parse_game_config("config/game_config.json")
 	levels := utility.parse_levels_ldtk("level/basic.ldtk")
 
-
 	core := new(ctx.Context)
 	core^ = ctx.init(game_config)
 
@@ -33,7 +32,7 @@ main :: proc() {
 
 	// Player must be loaded first..
 	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
-	game.create_game_entity("resource/padawan/pad.png",configs, {400,500}, 0, {0.1,0.2})
+	game.create_game_entity("resource/padawan/pad.png",configs, {450,520}, 0, {0.1,0.2})
 
 	game.create_game_level(&levels)
 	
@@ -50,6 +49,7 @@ main :: proc() {
 			ctx.on_render()
 
 			utility.cap_frame_rate_precise(elapsed, MS_CAP)
+			free_all(context.temp_allocator)
 		}
 	}
 
