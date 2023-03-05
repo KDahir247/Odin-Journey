@@ -180,24 +180,34 @@ on_fixed_update :: proc(){
 		direction_map += 0.5
 		direction := direction_map * 2.0
 		
+		// movement 
 		physics.add_force(physics_component, {direction * 4000, 0} * resource.delta_time)
-		physics.add_force(physics_component, {0, -19.62})
-		physics.add_friction_force(physics_component, {0.9, 0.0})
+
+		//TODO: remove when implemented ground contact. this negate gravity.
 
 		if ctx.event_queue.len > 0 {
 			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping{
 				physics.add_impulse_force(physics_component,-10, {0,1})
 			}else if queue.peek_back(&ctx.event_queue)^ == container.Action.Roll{
-				physics.add_impulse_force(physics_component,5, {direction, 0})
+				physics.add_impulse_force(physics_component,6, {direction, 0})
 			}
 		}
 
-		
+		physics.add_friction_force(physics_component, {1.3, 0.0})
+
 		//TODO: khal directly changing velocity isn't good
 		physics_component.velocity.x = f32(game_component.input_direction)  * physics_component.velocity.x
 
 		physics.integrate(physics_component, resource.delta_time)
 
+		a := mathematics.AABB{mathematics.Vec2{physics_component.position.x,physics_component.position.y},mathematics.Vec2{2.5, 70.0}}
+		b := mathematics.AABB{mathematics.Vec2{0, 612}, mathematics.Vec2{1000, 24.5}} 
+
+		res := physics.aabb_aabb_intersection(container.AABBCollider{a},container.AABBCollider{b})
+
+		if res.collider == a{
+			physics.compute_contact_velocity(&container.Physics{},physics_component, 0.0)
+		}
 	}
 }
 

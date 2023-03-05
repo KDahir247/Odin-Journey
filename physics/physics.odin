@@ -41,11 +41,13 @@ compute_direction :: #force_inline proc "contextless"(velocity : mathematics.Vec
 }
 
 compute_seperation_velocity :: #force_inline proc(#no_alias physics, other : ^container.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
-    return (physics.velocity - other.velocity) * contact_normal
+    a := (physics.velocity - other.velocity)
+    return (a.x * contact_normal.x) + (a.y * contact_normal.y)
 }
 
 compute_closing_velocity :: #force_inline proc(#no_alias physics, other : ^container.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
-    return -(physics.velocity - other.velocity) * contact_normal
+    a := -(physics.velocity - other.velocity)
+    return (a.x * contact_normal.x) + (a.y * contact_normal.y)
 }
 
 add_impulse_force :: #force_inline proc(physics : ^container.Physics, impulse_factor : f32, impulse_direction : mathematics.Vec2){
@@ -146,4 +148,35 @@ add_drag_force :: #force_inline proc(physics : ^container.Physics, velocity_drag
 
 add_force :: #force_inline proc(physics : ^container.Physics, force : mathematics.Vec2){
     physics.accumulated_force += force
+}
+
+//TODO: we will not check if collided is nil, since we will be doing a test before hand then call this function if a intersection happens
+compute_contact_velocity :: proc(#no_alias collider, collided : ^container.Physics, restitution : f32, contact_normal : mathematics.Vec2 = {0,1}){
+    displacement_velocity := collider.velocity - collided.velocity
+
+    seperating_velocity := (displacement_velocity.x * contact_normal.x) + (displacement_velocity.y * contact_normal.y)
+
+    //seperating or stationary, so no impulse needed
+    if seperating_velocity > 0{
+        return
+    }
+
+    new_seperating_velocity := -seperating_velocity * restitution
+
+    delta_velocity := new_seperating_velocity - seperating_velocity
+
+    total_inv_mass := collider.inverse_mass + collided.inverse_mass
+
+    //Infinite mass impulse has no effect
+    if total_inv_mass <= 0{
+        return
+    }
+
+    impulse := (delta_velocity / total_inv_mass) * contact_normal
+
+    //TODO: khal not right here
+    collider.velocity += impulse 
+    collided.velocity += -impulse 
+
+
 }

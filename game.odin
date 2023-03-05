@@ -32,7 +32,7 @@ main :: proc() {
 
 	// Player must be loaded first..
 	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
-	game.create_game_entity("resource/padawan/pad.png",configs, {450,520}, 0, {0.1,0.2})
+	game.create_game_entity("resource/padawan/pad.png",configs, {450,100}, 0, {0.1,0.2})
 
 	game.create_game_level(&levels)
 	
