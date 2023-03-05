@@ -187,9 +187,9 @@ on_fixed_update :: proc(){
 
 		if ctx.event_queue.len > 0 {
 			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping{
-				physics.add_impulse_force(physics_component,-10, {0,1})
+				physics.add_impulse_force(physics_component,-3, {0,1})
 			}else if queue.peek_back(&ctx.event_queue)^ == container.Action.Roll{
-				physics.add_impulse_force(physics_component,6, {direction, 0})
+				physics.add_impulse_force(physics_component,5, {direction, 0})
 			}
 		}
 
@@ -206,7 +206,7 @@ on_fixed_update :: proc(){
 		res := physics.aabb_aabb_intersection(container.AABBCollider{a},container.AABBCollider{b})
 
 		if res.collider == a{
-			physics.compute_contact_velocity(&container.Physics{},physics_component, 0.0)
+			physics.compute_contact_velocity(&container.Physics{},physics_component, 0)
 		}
 	}
 }

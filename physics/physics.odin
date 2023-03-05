@@ -17,8 +17,7 @@ integrate :: proc(physics : ^container.Physics, dt : f32){
     if physics.inverse_mass == 0{
         return
     }
-
-    physics.position += physics.velocity * dt + physics.acceleration * dt * dt * 0.5
+    physics.position += physics.velocity * dt
 
     acc := physics.acceleration
     acc += (physics.inverse_mass * physics.accumulated_force)
