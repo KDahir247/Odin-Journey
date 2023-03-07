@@ -8,9 +8,6 @@ import "core:math/linalg"
 
 import "core:fmt"
 
-//TODO: khal move physics from game context here.
-// Note: Position and Velocity shouldn't be set directly (except for init), but the the physics engine.
-// Move Position Component to be a part of the physics component.
 
 //Update physics interal data.
 integrate :: proc(physics : ^container.Physics, dt : f32){
@@ -58,13 +55,10 @@ add_impulse_force :: #force_inline proc(physics : ^container.Physics, impulse_fa
 
 add_friction_force :: #force_inline proc(physics : ^container.Physics, friction : mathematics.Vec2){
 
-    //TODO: khal verify this physics logic is sound
-    //Friction is a force in the opposite direction. and add friction to physics component and swap {0.5, 0.0} with it 
     friction_force := -physics.velocity * friction
     add_force(physics, friction_force)
 }
 
-//TODO: khal don't like the structure.
 add_gravitation_force :: #force_inline proc(physics : ^container.Physics, gravity : mathematics.Vec2){
     
     if physics.inverse_mass == 0{
@@ -149,33 +143,57 @@ add_force :: #force_inline proc(physics : ^container.Physics, force : mathematic
     physics.accumulated_force += force
 }
 
-//TODO: we will not check if collided is nil, since we will be doing a test before hand then call this function if a intersection happens
-compute_contact_velocity :: proc(#no_alias collider, collided : ^container.Physics, restitution : f32, contact_normal : mathematics.Vec2 = {0,1}){
-    displacement_velocity := collider.velocity - collided.velocity
+compute_interpenetration :: proc(#no_alias collider, collided : ^container.Physics, penetration : f32, contact_normal : mathematics.Vec2 = {0,1}){
+
+    total_inv_mass := collider.inverse_mass + collided.inverse_mass
+    
+    if penetration <= 0 || total_inv_mass <= 0{
+        return
+    }
+
+    penetration_resolution := penetration / total_inv_mass * contact_normal
+
+
+    total_delta_pos_a := penetration_resolution * -collider.inverse_mass // other
+    total_delta_pos_b := penetration_resolution * collided.inverse_mass // player
+
+
+    collider.position += total_delta_pos_a
+    collided.position += total_delta_pos_b
+}
+
+
+compute_contact_velocity :: proc(#no_alias collider, collided : ^container.Physics, restitution : f32, contact_normal : mathematics.Vec2 = {0,1}, dt : f32){
+    displacement_velocity := collided.velocity - collider.velocity
 
     seperating_velocity := (displacement_velocity.x * contact_normal.x) + (displacement_velocity.y * contact_normal.y)
+    total_inv_mass := collider.inverse_mass + collided.inverse_mass
 
-    //seperating or stationary, so no impulse needed
-    if seperating_velocity > 0{
+    //seperating or stationary, so no impulse needed or Infinite mass impulse has no effect
+    if seperating_velocity > 0 || total_inv_mass <= 0{
         return
     }
 
     new_seperating_velocity := -seperating_velocity * restitution
 
-    delta_velocity := new_seperating_velocity - seperating_velocity
+    acc_caused_velocity := collided.acceleration - collider.acceleration
 
-    total_inv_mass := collider.inverse_mass + collided.inverse_mass
+    acc_caused_seperation_velocity := (acc_caused_velocity.x * contact_normal.x) + (acc_caused_velocity.y * contact_normal.y) * dt
 
-    //Infinite mass impulse has no effect
-    if total_inv_mass <= 0{
-        return
+    if acc_caused_seperation_velocity < 0{
+        new_seperating_velocity += restitution * acc_caused_seperation_velocity
+
+        if (new_seperating_velocity < 0){
+            new_seperating_velocity = 0
+        }
     }
+
+    delta_velocity := new_seperating_velocity - seperating_velocity
 
     impulse := (delta_velocity / total_inv_mass) * contact_normal
 
-    //TODO: khal not right here
-    collider.velocity += impulse 
-    collided.velocity += -impulse 
-
-
+    collider.velocity += impulse * -collider.inverse_mass
+    collided.velocity += impulse * collided.inverse_mass
 }
+
+

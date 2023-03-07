@@ -183,8 +183,6 @@ on_fixed_update :: proc(){
 		// movement 
 		physics.add_force(physics_component, {direction * 4000, 0} * resource.delta_time)
 
-		//TODO: remove when implemented ground contact. this negate gravity.
-
 		if ctx.event_queue.len > 0 {
 			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping{
 				physics.add_impulse_force(physics_component,-3, {0,1})
@@ -196,17 +194,21 @@ on_fixed_update :: proc(){
 		physics.add_friction_force(physics_component, {1.3, 0.0})
 
 		//TODO: khal directly changing velocity isn't good
-		physics_component.velocity.x = f32(game_component.input_direction)  * physics_component.velocity.x
+		physics_component.velocity.x = f32(game_component.input_direction) * physics_component.velocity.x
 
 		physics.integrate(physics_component, resource.delta_time)
 
+		//TODO: khal this isn't the desired solution, make a solver to handle contact. contact solving order matters.
 		a := mathematics.AABB{mathematics.Vec2{physics_component.position.x,physics_component.position.y},mathematics.Vec2{2.5, 70.0}}
 		b := mathematics.AABB{mathematics.Vec2{0, 612}, mathematics.Vec2{1000, 24.5}} 
-
 		res := physics.aabb_aabb_intersection(container.AABBCollider{a},container.AABBCollider{b})
 
 		if res.collider == a{
-			physics.compute_contact_velocity(&container.Physics{},physics_component, 0)
+			// ignore really minor penetration value to take into account for fp rounding issues
+			penetration := res.delta_displacement.y * res.contact_normal.y - 0.0001
+
+			physics.compute_contact_velocity(physics_component,&container.Physics{}, 0.0, res.contact_normal, resource.delta_time)
+			physics.compute_interpenetration(physics_component,&container.Physics{},penetration, res.contact_normal)
 		}
 	}
 }
@@ -222,7 +224,6 @@ on_update :: proc(){
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 
 		position_component.value = physics_component.position
-
 
 		if physics_component.velocity.y > 0{
 			queue.pop_back_safe(&ctx.event_queue)
@@ -271,8 +272,6 @@ update_animation :: proc(){
 		}
 	}
 
-	//TODO: khal we want to confine this to the player only, enemy/npc will follow a different dodge animation.
-	// Should make this a map for string. It will be more readable this way..
 	for entity in game_entites{
 		game_entity := ecs.get_component_unchecked(&ctx.world,entity, container.GameEntity)
 		animation_tree := ecs.get_component_unchecked(&ctx.world, entity, container.Animation_Tree)
@@ -329,16 +328,6 @@ on_render :: proc(){
 	tileset_entities := ecs.get_entities_with_components(&ctx.world, {container.TileMap})
 
 	sdl2.RenderClear(ctx.renderer)
-
-	//TODO: remove
-	//  aabb_colliders,_ := ecs.get_component_list(&ctx.world, container.AABBCollider)
-
-	// for col in aabb_colliders{
-	// 	sdl2.SetRenderDrawColor(ctx.renderer, 255,255,255,255)
-	// 	sdl2.RenderDrawRectF(ctx.renderer, &sdl2.FRect{col.value.origin.x, col.value.origin.y, col.value.half.x, col.value.half.y})
-	// }
-	
-	// sdl2.SetRenderDrawColor(ctx.renderer, 23,28,57,255)
 
 	for tile_entity in tileset_entities{
 		tileset_component := ecs.get_component_unchecked(&ctx.world, tile_entity, container.TileMap)
