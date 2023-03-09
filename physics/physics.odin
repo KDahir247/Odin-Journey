@@ -46,17 +46,23 @@ compute_closing_velocity :: #force_inline proc(#no_alias physics, other : ^conta
     return (a.x * contact_normal.x) + (a.y * contact_normal.y)
 }
 
-add_impulse_force :: #force_inline proc(physics : ^container.Physics, impulse_factor : f32, impulse_direction : mathematics.Vec2){
+add_impulse :: #force_inline proc(physics : ^container.Physics, impulse_factor : f32, impulse_direction : mathematics.Vec2){
     mass := 1.0 / physics.inverse_mass
     impulse := impulse_direction * impulse_factor * mass
 
     physics.velocity += impulse * physics.inverse_mass
 }
 
-add_friction_force :: #force_inline proc(physics : ^container.Physics, friction : mathematics.Vec2){
+add_friction_force :: #force_inline proc(physics : ^container.Physics, friction_coefficient : f32){
 
-    friction_force := -physics.velocity * friction
-    add_force(physics, friction_force)
+    //N = m*g
+    //if surface is inclined then the formula would be N = m * g *cos(theta)
+    mass := 1.0 / physics.inverse_mass
+    normal_force := mass * physics.acceleration.y
+    friction := normal_force * friction_coefficient
+
+    friction_force := -physics.velocity.x * friction
+    add_force(physics, {friction_force, 0})
 }
 
 add_gravitation_force :: #force_inline proc(physics : ^container.Physics, gravity : mathematics.Vec2){
@@ -153,9 +159,8 @@ compute_interpenetration :: proc(#no_alias collider, collided : ^container.Physi
 
     penetration_resolution := penetration / total_inv_mass * contact_normal
 
-
-    total_delta_pos_a := penetration_resolution * -collider.inverse_mass // other
-    total_delta_pos_b := penetration_resolution * collided.inverse_mass // player
+    total_delta_pos_a := penetration_resolution * -collider.inverse_mass
+    total_delta_pos_b := penetration_resolution * collided.inverse_mass
 
 
     collider.position += total_delta_pos_a
@@ -196,4 +201,34 @@ compute_contact_velocity :: proc(#no_alias collider, collided : ^container.Physi
     collided.velocity += impulse * collided.inverse_mass
 }
 
+resolve_contacts :: proc(iteration : int, contacts : [dynamic]container.PhysicsContact, dt : f32){
+    iteration_used := 0
+    contact_num := len(contacts)
+    for iteration_used < iteration {
+        max :f32 = math.F32_MAX
+        max_index := contact_num
+        for i := 0; i < contact_num; i += 1 {
+            // calculate seperating velocity
+            contact := contacts[i].contacts
+            displacement_velocity := contact[0].velocity - contact[1].velocity
+            seperating_velocity := (displacement_velocity.x * contacts[i].contact_normal.x) + (displacement_velocity.y * contacts[i].contact_normal.y)
 
+            if(seperating_velocity < max && seperating_velocity < 0 || contacts[i].penetration > 0){
+                max = seperating_velocity
+                max_index = i
+            }
+
+        }
+
+        if max_index == contact_num{
+            break
+        }
+
+        contact := contacts[max_index].contacts
+        contact_normal := contacts[max_index].contact_normal
+        compute_contact_velocity(&contact.x, &contact.y, 0.0, contact_normal,dt)
+        compute_interpenetration(&contact.x, &contact.y, contacts[max_index].penetration,contact_normal)
+
+        iteration_used = iteration_used + 1
+    }
+}

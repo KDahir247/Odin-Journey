@@ -27,6 +27,14 @@ GameConfig :: struct{
     clear_color : [3]u8,
 }
 
+PhysicsContact :: struct{
+    contacts : [2]Physics,
+    contact_normal : mathematics.Vec2,
+    penetration : f32,  
+}
+
+//TODO: khal add friction.
+//TODO: khal add restitution 
 Physics :: struct{
     position : mathematics.Vec2,
     velocity : mathematics.Vec2,

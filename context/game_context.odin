@@ -9,6 +9,7 @@ import  "core:math/linalg"
 import "core:log"
 import "core:intrinsics"
 import "core:container/queue"
+import "core:math"
 import "core:fmt"
 
 import "vendor:sdl2"
@@ -165,50 +166,56 @@ on_fixed_update :: proc(){
 	
 	previous_physics_time := resource.current_physics_time
 	resource.current_physics_time = f32(sdl2.GetTicks())
-
 	resource.delta_time = (resource.current_physics_time - previous_physics_time) * 0.001
 
-	physics_entities := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Physics, container.Position})
-	//aabb_colliders,_ := ecs.get_component_list(&ctx.world, container.AABBCollider)
+	physics_components, err := ecs.get_component_list(&ctx.world, container.Physics)
 
+	game_entities := ecs.get_entities_with_components(&ctx.world, {container.GameEntity, container.Physics, container.Position})
 
-	for entity in physics_entities{
+	for i in 0..<len(physics_components){
+		physics.add_friction_force(&physics_components[i], 0.65)
+
+		physics.integrate(&physics_components[i], resource.delta_time)
+	}
+
+	for entity in game_entities{
 		physics_component := ecs.get_component_unchecked(&ctx.world, entity, container.Physics)
 		game_component := ecs.get_component_unchecked(&ctx.world, entity, container.GameEntity)
 		
 		direction_map := f32(game_component.render_direction) * -1.0
 		direction_map += 0.5
 		direction := direction_map * 2.0
-		
-		// movement 
-		physics.add_force(physics_component, {direction * 4000, 0} * resource.delta_time)
+		sign_direction := math.copy_sign_f32(1, direction)
+
+		physics.add_force(physics_component, {f32(game_component.input_direction) * sign_direction * 250, 0} )
 
 		if ctx.event_queue.len > 0 {
-			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping{
-				physics.add_impulse_force(physics_component,-3, {0,1})
+			if queue.peek_back(&ctx.event_queue)^ == container.Action.Jumping && physics_component.velocity.y == 0{
+				physics.add_impulse(physics_component,-80, {0,1})
 			}else if queue.peek_back(&ctx.event_queue)^ == container.Action.Roll{
-				physics.add_impulse_force(physics_component,5, {direction, 0})
+				physics.add_impulse(physics_component,7, {direction, 0})
 			}
 		}
 
-		physics.add_friction_force(physics_component, {1.3, 0.0})
-
-		//TODO: khal directly changing velocity isn't good
-		physics_component.velocity.x = f32(game_component.input_direction) * physics_component.velocity.x
-
-		physics.integrate(physics_component, resource.delta_time)
+		if physics_component.velocity.y > 0{
+			physics.add_gravitation_force(physics_component, {0, 150})
+		}else if physics_component.velocity.y < 0{
+			physics.add_gravitation_force(physics_component, {0, 50})
+		}
 
 		//TODO: khal this isn't the desired solution, make a solver to handle contact. contact solving order matters.
 		a := mathematics.AABB{mathematics.Vec2{physics_component.position.x,physics_component.position.y},mathematics.Vec2{2.5, 70.0}}
 		b := mathematics.AABB{mathematics.Vec2{0, 612}, mathematics.Vec2{1000, 24.5}} 
-		res := physics.aabb_aabb_intersection(container.AABBCollider{a},container.AABBCollider{b})
+		
+		collided, sweep_res := physics.sweep_aabb(container.AABBCollider{a}, physics_component.velocity, {container.AABBCollider{b}})
 
-		if res.collider == a{
+		if collided{
 			// ignore really minor penetration value to take into account for fp rounding issues
-			penetration := res.delta_displacement.y * res.contact_normal.y - 0.0001
+			//penetration := res.delta_displacement.y * res.contact_normal.y - 0.001
+			penetration := sweep_res.hit.delta_displacement.y - 0.001
 
-			physics.compute_contact_velocity(physics_component,&container.Physics{}, 0.0, res.contact_normal, resource.delta_time)
-			physics.compute_interpenetration(physics_component,&container.Physics{},penetration, res.contact_normal)
+			physics.compute_contact_velocity(&container.Physics{},physics_component, 0.0, {0,-1}, resource.delta_time)
+			physics.compute_interpenetration(&container.Physics{},physics_component,penetration,{0, -1})
 		}
 	}
 }
