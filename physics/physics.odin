@@ -4,7 +4,6 @@ import "../mathematics"
 import "../container"
 
 import "core:math"
-import "core:math/linalg"
 
 import "core:fmt"
 

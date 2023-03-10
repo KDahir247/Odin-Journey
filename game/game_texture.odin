@@ -5,8 +5,6 @@ import "../mathematics"
 import ctx "../context"
 import "../container"
 
-import "core:strings"
-
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 

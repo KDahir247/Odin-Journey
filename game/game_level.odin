@@ -8,11 +8,14 @@ import "../game"
 import  "../mathematics"
 
 import "core:fmt"
-import "vendor:sdl2"
-import "vendor:sdl2/image"
 
-create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
+import "vendor:sdl2"
+
+    create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
 	ctx := cast(^ctx.Context) context.user_ptr
+
+    min_height := 2147483647
+    tile_entities := make([dynamic]ecs.Entity)
 
     for lv in ldtk_ctx.levels{
         for layer in lv.layer_instances{
@@ -35,8 +38,9 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
             sdl2.SetRenderTarget(ctx.renderer, tilemap_texture)
             
             for tile in layer.auto_layer_tiles{
-               
+
                 aabb_collider_entity := ecs.create_entity(&ctx.world)
+                append(&tile_entities, aabb_collider_entity)
 
                 coord_id := utility.get_layer_coord_id_at(tile.pixel, layer.grid_dimension.x, layer.cell_size)
                 tile_grid_position := utility.get_tile_grid_position(coord_id, layer.grid_dimension.x)
@@ -60,10 +64,23 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
                  sdl2.SetTextureBlendMode(tile_component.texture, sdl2.BlendMode.NONE)
                  sdl2.SetTextureAlphaMod(tile_component.texture, opacity_factor)
 
+                 if (tile_position.y < min_height){
+                    min_height = tile_position.y
+                 }
+ 
+                 physics_component := ecs.add_component_unchecked(&ctx.world, aabb_collider_entity, container.Physics{})
+                 
+                 physics_component.collider = mathematics.AABB{
+                    mathematics.Vec2{f32(tile_position.x), f32(tile_position.y)},
+                    mathematics.Vec2{f32(layer.cell_size),f32(layer.cell_size)},
+                }
+
                  sdl2.RenderCopyEx(ctx.renderer,tile_component.texture, &src_rect,&dst_rect,0,nil, sdl2.RendererFlip(tile.render_flip))
+            }
 
-                 ecs.add_component_unchecked(&ctx.world, aabb_collider_entity, container.AABBCollider{mathematics.AABB{ mathematics.Vec2{f32(tile_position.x), f32(tile_position.y)} , mathematics.Vec2{f32(layer.cell_size) , f32(layer.cell_size) }}})
-
+            for tile_entity in tile_entities{
+                tile_aabb_collider := ecs.get_component_unchecked(&ctx.world, tile_entity, container.Physics)
+                tile_aabb_collider.collider.origin.y = f32(min_height + int(layer.cell_size))
             }
 
             sdl2.SetRenderTarget(ctx.renderer, nil)
@@ -74,8 +91,8 @@ create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
             ecs.add_component(&ctx.world, tilemap_entity, container.TileMap{tilemap_texture, lv.dimension.xy})
         }
     }
+    delete(tile_entities)
 }
-
 
 free_game_level :: proc(){
 	ctx := cast(^ctx.Context) context.user_ptr

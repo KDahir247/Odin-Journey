@@ -3,7 +3,6 @@ package physics
 import "../mathematics"
 import "../container"
 
-import "core:testing"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
@@ -174,14 +173,14 @@ aabb_point_intersection :: proc "contextless"(a : mathematics.AABB, b : mathemat
     return hit
 }
 
-aabb_segement_intersection :: proc "contextless"(a : container.AABBCollider, b : mathematics.Segement, padding : mathematics.Vec2 = {0,0}) -> CollisionHit{
+aabb_segement_intersection :: proc "contextless"(a : mathematics.AABB, b : mathematics.Segement, padding : mathematics.Vec2 = {0,0}) -> CollisionHit{
     hit : CollisionHit
     
     rcp_displacement := 1.0 / b.displacement
     rcp_signed_displacement : mathematics.Vec2 = {math.sign(rcp_displacement.x),math.sign(rcp_displacement.y)}
 
-    near_time := (a.value.origin - rcp_signed_displacement * (a.value.half + padding) - b.origin) * rcp_displacement
-    far_time := (a.value.origin + rcp_signed_displacement * (a.value.half + padding) - b.origin) * rcp_displacement
+    near_time := (a.origin - rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
+    far_time := (a.origin + rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
 
     if (near_time.x > far_time.y || near_time.y > far_time.x){
         return hit
@@ -194,7 +193,7 @@ aabb_segement_intersection :: proc "contextless"(a : container.AABBCollider, b :
         return hit
     }
 
-    hit.collider = a.value
+    hit.collider = a
     hit.time = clamp(max_near_time, 0, 1)
 
     horizontal_mask := int(near_time.x > near_time.y)
@@ -208,11 +207,11 @@ aabb_segement_intersection :: proc "contextless"(a : container.AABBCollider, b :
     return hit
 }
 
-aabb_aabb_intersection :: proc "contextless"(a : container.AABBCollider, b : container.AABBCollider) -> CollisionHit{
+aabb_aabb_intersection :: proc "contextless"(a : mathematics.AABB, b : mathematics.AABB) -> CollisionHit{
     hit : CollisionHit
 
-    displacement_vector := b.value.origin - a.value.origin
-    overlap := (b.value.half + a.value.half) - {abs(displacement_vector.x),abs(displacement_vector.y)}
+    displacement_vector := b.origin - a.origin
+    overlap := (b.half + a.half) - {abs(displacement_vector.x),abs(displacement_vector.y)}
 
     if (overlap.x <= 0 || overlap.y <= 0){
         return hit
@@ -220,27 +219,27 @@ aabb_aabb_intersection :: proc "contextless"(a : container.AABBCollider, b : con
 
     signed_displacement :mathematics.Vec2 = {math.sign(displacement_vector.x), math.sign(displacement_vector.y)}
 
-    hit.collider = a.value
+    hit.collider = a
 
     collision_mask := int(overlap.x < overlap.y)
     mask : mathematics.Vec2= {f32(collision_mask), f32(1 - collision_mask)} 
 
     hit.delta_displacement = overlap * signed_displacement * mask
     hit.contact_normal = signed_displacement * mask
-    hit.contact_point = ((a.value.origin + (a.value.half * signed_displacement)) * mask.x) + (b.value.origin * mask.y)
+    hit.contact_point = ((a.origin + (a.half * signed_displacement)) * mask.x) + (b.origin * mask.y)
 
     return hit
 } 
 
 
-aabb_aabb_sweep :: proc (a : container.AABBCollider, b : container.AABBCollider, velocity : mathematics.Vec2) -> CollisionSweep{
+aabb_aabb_sweep :: proc (a : mathematics.AABB, b : mathematics.AABB, velocity : mathematics.Vec2) -> CollisionSweep{
     sweep : CollisionSweep
 
     if (velocity.x == 0 && velocity.y == 0){
-        sweep.pos = b.value.origin
+        sweep.pos = b.origin
         sweep.hit = aabb_aabb_intersection(a,b)
         
-        if sweep.hit.collider == a.value{
+        if sweep.hit.collider == a{
             sweep.hit.time = 0
         }else{
             sweep.time = 1
@@ -249,51 +248,35 @@ aabb_aabb_sweep :: proc (a : container.AABBCollider, b : container.AABBCollider,
         return sweep
     }
 
-    segment := mathematics.Segement{b.value.origin,linalg.normalize(velocity),velocity}
-    sweep.hit = aabb_segement_intersection(a, segment, b.value.half)
+    segment := mathematics.Segement{b.origin,linalg.normalize(velocity),velocity}
+    sweep.hit = aabb_segement_intersection(a, segment, b.half)
 
-    if sweep.hit.collider == a.value{
+    if sweep.hit.collider == a{
         sweep.time = clamp(sweep.hit.time - math.F32_EPSILON, 0, 1)
-        sweep.pos = b.value.origin + velocity * sweep.time
-        sweep.hit.contact_point = linalg.clamp(sweep.hit.contact_point + segment.direction * b.value.half, a.value.origin - a.value.half, a.value.origin + a.value.half)
+        sweep.pos = b.origin + velocity * sweep.time
+        sweep.hit.contact_point = linalg.clamp(sweep.hit.contact_point + segment.direction * b.half, a.origin - a.half, a.origin + a.half)
     }else{
-        sweep.pos = b.value.origin + velocity
+        sweep.pos = b.origin + velocity
         sweep.time = 1
     }
 
     return sweep
 }
 
-sweep_aabb :: proc(dyn_col : container.AABBCollider, velocity : mathematics.Vec2, static_col : [] container.AABBCollider) -> (bool, CollisionSweep){
+sweep_aabb :: proc(dyn_col : mathematics.AABB, velocity : mathematics.Vec2, static_col : [] container.Physics) -> (bool, CollisionSweep){
     nearest : CollisionSweep
     nearest.time = 1
     res := false
-    nearest.pos = dyn_col.value.origin + velocity
+    nearest.pos = dyn_col.origin + velocity
     for i := 0; i < len(static_col); i += 1 {
-        sweep := aabb_aabb_sweep(dyn_col, static_col[i], velocity)
-        if (sweep.time < nearest.time){
-            nearest = sweep
-            res = true
-        }   
+        if dyn_col != static_col[i].collider{
+            sweep := aabb_aabb_sweep(dyn_col, static_col[i].collider, velocity)
+            if (sweep.time < nearest.time){
+                nearest = sweep
+                res = true
+            }  
+        } 
     }
 
     return res, nearest
-}
-
-@(test)
-line_line_intersection_test ::proc(t : ^testing.T){
-
-    a := mathematics.Line{{-4.5,3.5}, {1.5, 2}}
-    b := mathematics.Line{{3,2}, {5,3}}
-    a_result, b_result := line_line_intersection(a,b)
-    fmt.println("%v %v",a_result, b_result)
-}
-
-@(test)
-line_horizontal_intersection_test :: proc(t : ^testing.T){
-    a := mathematics.Line{{-4.5,3.5}, {1.5, 2}}
-    b :f32= 4.0
-
-    res := line_horizontal_intersection(a, b)
-    fmt.println("%v", res)
 }

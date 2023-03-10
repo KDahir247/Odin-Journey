@@ -4,11 +4,17 @@ import "../mathematics"
 import "vendor:sdl2"
 import "vendor:sdl2/image"
 
-
-AABBCollider :: struct{
-    value : mathematics.AABB,
+Physics :: struct{
+    collider : mathematics.AABB,
+    position : mathematics.Vec2,
+    velocity : mathematics.Vec2,
+    acceleration : mathematics.Vec2,
+    accumulated_force : mathematics.Vec2,
+    damping : f32, 
+    inverse_mass : f32,
+    friction : f32,
+    restitution : f32,
 }
-
 
 TileMap :: struct{
     texture : ^sdl2.Texture,
@@ -33,16 +39,7 @@ PhysicsContact :: struct{
     penetration : f32,  
 }
 
-//TODO: khal add friction.
-//TODO: khal add restitution 
-Physics :: struct{
-    position : mathematics.Vec2,
-    velocity : mathematics.Vec2,
-    acceleration : mathematics.Vec2,
-    accumulated_force : mathematics.Vec2,
-    damping : f32, // drag
-    inverse_mass : f32,
-}
+
 
 CoolDownTimer:: struct{
     cooldown_amount : u32,
@@ -50,6 +47,7 @@ CoolDownTimer:: struct{
 }
 
 Player :: struct{
+    //TODO: khal this structure doesn't hold. enemy can have cooldown timer and possibly objects
     cooldown : [2]CoolDownTimer, 
 }
 
