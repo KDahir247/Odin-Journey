@@ -25,13 +25,12 @@ main :: proc() {
 	core^ = ctx.init(game_config)
 
 	context.user_ptr = core
-	context.user_index = 1
 
 	ctx.initialize_dynamic_resource()
 
-	// Player must be loaded first..
-	configs := utility.parse_animation("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
-	game.create_game_entity("resource/padawan/pad.png",configs, {450,430	}, 0, {0.1,0.2})
+	animation_clips := ctx.create_animation_clips("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
+	animator := ctx.create_animator(15, animation_clips)
+	context.user_index = game.create_game_entity("resource/padawan/pad.png",animator, {450,430}, 0, {0.1,0.2}, true)
 
 	game.create_game_level(&levels)
 	
@@ -52,7 +51,7 @@ main :: proc() {
 		}
 	}
 
-	game.free_all_animation_entities()
+	game.free_all_texture_entities()
 	game.free_game_level()
 	utility.free_ldtk_levels(&levels)
 

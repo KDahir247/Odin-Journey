@@ -29,47 +29,10 @@ create_texture_entity :: proc(path : cstring) -> ecs.Entity{
     return texture_entity
 }
 
-create_animation_texture_entity :: proc($path : cstring, anim_configs : [$E]container.AnimationConfig) -> ecs.Entity{
-	ctx := cast(^ctx.Context) context.user_ptr
-
-    animations := make_dynamic_array_len([dynamic]container.Animation,E)
-
-    texture_entity := create_texture_entity(path)
-
-    #no_bounds_check{
-        for current_animation_index in 0..<E{
-            current_animation_config := anim_configs[current_animation_index]
-            for current_slice_index in 0..<current_animation_config.slices{
-                
-                x := current_slice_index * current_animation_config.width
-                y := current_animation_config.index * current_animation_config.height
-
-                anim_rect := sdl2.Rect{x, y, current_animation_config.width, current_animation_config.height }
-                
-                animations[current_animation_index].animation_speed = current_animation_config.animation_speed
-                append(&animations[current_animation_index].value, anim_rect)
-            }
-        }
-    }
-
-    ecs.add_component(&ctx.world, texture_entity, container.Animation_Tree{0,  animations})
-
-    return texture_entity;
-}
-
-free_all_animation_entities :: proc(){
+free_all_texture_entities :: proc(){
     ctx := cast(^ctx.Context) context.user_ptr
 
-    animation_trees,_ := ecs.get_component_list(&ctx.world, container.Animation_Tree)
     tex_assets, _ := ecs.get_component_list(&ctx.world, container.TextureAsset)
-
-    for tree in animation_trees{
-        for animation in tree.animations{
-            delete(animation.value)
-        }
-
-        delete(tree.animations)
-    }
 
     for tex in tex_assets{
         sdl2.DestroyTexture(tex.texture)

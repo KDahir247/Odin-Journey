@@ -4,7 +4,7 @@
         "num_slice" : 7,
         "width" : 39,
         "height" : 43,
-        "fps" : 15.0
+        "loop" : false
     },
 
     "Walk" : {
@@ -12,7 +12,7 @@
         "num_slice" : 8,
         "width" : 39,
         "height" : 41,
-        "fps" : 15.0
+        "loop" : false
     },
 
     "Jump" : {
@@ -20,7 +20,7 @@
         "num_slice" : 1,
         "width" : 39,
         "height" : 41,
-        "fps" : 15.0
+        "loop" : false
     },
 
     "Fall" : {
@@ -28,7 +28,7 @@
         "num_slice" : 1,
         "width" : 39,
         "height" : 41,
-        "fps" : 15.0
+        "loop" : false
     },
 
     "Roll" : {
@@ -36,7 +36,7 @@
         "num_slice" : 7,
         "width" : 39,
         "height" : 41,
-        "fps" : 15.0
+        "loop" : false
     },
 
     "Teleport_Start" : {
@@ -44,7 +44,7 @@
         "num_slice" : 7,
         "width" : 38,
         "height" : 41,
-        "fps" : 15.0
+        "loop" : false
     },
 
     "Teleport_End" : {
@@ -52,7 +52,7 @@
         "num_slice" : 5,
         "width" : 38,
         "height" : 41,
-        "fps" : 15.0
+        "loop" : false
     },
 
     "Attack" : {
@@ -60,7 +60,7 @@
         "num_slice" : 17,
         "width" : 40,
         "height" : 41,
-        "fps" : 15.0
+        "loop" : false
     }
 
 }

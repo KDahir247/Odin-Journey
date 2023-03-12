@@ -3,7 +3,6 @@ package physics
 import "../mathematics"
 import "../container"
 
-import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 
@@ -263,14 +262,14 @@ aabb_aabb_sweep :: proc (a : mathematics.AABB, b : mathematics.AABB, velocity : 
     return sweep
 }
 
-sweep_aabb :: proc(dyn_col : mathematics.AABB, velocity : mathematics.Vec2, static_col : [] container.Physics) -> (bool, CollisionSweep){
+sweep_aabb :: proc(dyn_physic : ^container.Physics, static_col : [] container.Physics) -> (bool, CollisionSweep){
     nearest : CollisionSweep
     nearest.time = 1
     res := false
-    nearest.pos = dyn_col.origin + velocity
+    nearest.pos = dyn_physic.collider.origin + dyn_physic.velocity
     for i := 0; i < len(static_col); i += 1 {
-        if dyn_col != static_col[i].collider{
-            sweep := aabb_aabb_sweep(dyn_col, static_col[i].collider, velocity)
+        if dyn_physic.collider != static_col[i].collider{
+            sweep := aabb_aabb_sweep(dyn_physic.collider, static_col[i].collider, dyn_physic.velocity)
             if (sweep.time < nearest.time){
                 nearest = sweep
                 res = true

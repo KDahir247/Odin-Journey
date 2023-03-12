@@ -7,8 +7,6 @@ import "../container"
 import "../game"
 import  "../mathematics"
 
-import "core:fmt"
-
 import "vendor:sdl2"
 
     create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){

@@ -7,13 +7,17 @@ import ctx "../context"
 
 import "vendor:sdl2"
 
-create_game_entity ::proc($path : cstring,anim_config : [$E]container.AnimationConfig, translation : [2]f32, rotation:f64, scale: [2]f32){
+create_game_entity ::proc($path : cstring, animator : uint, translation : [2]f32, rotation:f64, scale: [2]f32, player : bool) -> int{
 
 	ctx := cast(^ctx.Context) context.user_ptr
 
-    game_entity := create_animation_texture_entity(path,anim_config)
+    game_entity := create_texture_entity(path)
     
-    if context.user_index == int(game_entity) {
+    // if context.user_index == int(game_entity) {
+    //     ecs.add_component_unchecked(&ctx.world, game_entity, container.Player{{container.CoolDownTimer{3000, 0}, container.CoolDownTimer{3000, 0}} })
+    // }
+
+    if player{
         ecs.add_component_unchecked(&ctx.world, game_entity, container.Player{{container.CoolDownTimer{3000, 0}, container.CoolDownTimer{3000, 0}} })
     }
 
@@ -27,6 +31,18 @@ create_game_entity ::proc($path : cstring,anim_config : [$E]container.AnimationC
 
     ecs.add_component_unchecked(&ctx.world, game_entity, physics_component)
 
-    ecs.add_component_unchecked(&ctx.world, game_entity, container.GameEntity{0,0,0, sdl2.RendererFlip.NONE})
+    ecs.add_component_unchecked(&ctx.world, game_entity, container.GameEntity{0, sdl2.RendererFlip.NONE})
     
+    animator_component := ecs.get_component_unchecked(&ctx.world, ecs.Entity(animator), container.Animator)
+    
+    ecs.add_component_unchecked(&ctx.world, game_entity,container.Animator{
+        animator_component.current_animation,
+        animator_component.previous_frame,
+        animator_component.animation_time,
+        animator_component.animation_speed,
+        animator_component.clips,
+    })
+
+
+    return int(game_entity)
 }

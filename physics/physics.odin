@@ -5,9 +5,6 @@ import "../container"
 
 import "core:math"
 
-import "core:fmt"
-
-
 //Update physics interal data.
 integrate :: proc(physics : ^container.Physics, dt : f32){
     if physics.inverse_mass == 0{
@@ -17,7 +14,6 @@ integrate :: proc(physics : ^container.Physics, dt : f32){
 
     acc := physics.acceleration
     acc += (physics.inverse_mass * physics.accumulated_force)
-
 
     physics.velocity += acc * dt 
     physics.velocity *= math.pow(physics.damping, dt)

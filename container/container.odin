@@ -39,8 +39,6 @@ PhysicsContact :: struct{
     penetration : f32,  
 }
 
-
-
 CoolDownTimer:: struct{
     cooldown_amount : u32,
     cooldown_duration : u32,
@@ -51,32 +49,9 @@ Player :: struct{
     cooldown : [2]CoolDownTimer, 
 }
 
-Action :: enum i32{
-    Idle = 0,
-    Walking = 1,
-    Falling = 2,
-    Jumping = 3,
-    Roll,
-    Teleport,
-    TeleportDown,
-    Attacking,
-    Dead,
-}
-
 GameEntity :: struct{
-    animation_index : int,
     input_direction : int,
-
-    animation_time : f32,
     render_direction : sdl2.RendererFlip,
-}
-
-AnimationConfig :: struct{
-    index : i32,
-    slices : i32,
-    width : i32,
-    height : i32,
-    animation_speed : f32,
 }
 
 DynamicResource :: struct{
@@ -89,16 +64,20 @@ DynamicResource :: struct{
 
 }
 
-Animation_Tree :: struct{
+Animator :: struct{
+    current_animation : string,
     previous_frame : int,
-    //Idle Walk etc....
-    animations : [dynamic]Animation,
+    animation_time : f32,
+    animation_speed : f32,
+    clips : map[string]AnimationClip, 
 }
 
-Animation :: struct{
-    // The rect cycle maybe have animation speed for each animation....
-    animation_speed : f32,
-    value : [dynamic]sdl2.Rect,
+AnimationClip :: struct{
+    name : string,
+    dimension : mathematics.Vec2i, //width and height
+    pos : int, // represent the vertical column of sprite sheet
+    len : int, // represent the horizontal column of sprite sheet 
+    loopable : bool, 
 }
 
 Position :: struct{
@@ -112,7 +91,6 @@ Rotation :: struct{
 Scale :: struct {
     value : mathematics.Vec2,
 }
-
 
 TextureAsset :: struct{
 	texture : ^sdl2.Texture,
