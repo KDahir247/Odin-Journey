@@ -321,11 +321,11 @@ parse_levels_ldtk :: proc($path : string) -> LDTK_LEVELS{
 
             if ldtk_level_layer_obj["visible"].(json.Boolean){
                 ldtk_level_layer.level_id = ldtk_level_layer_obj["levelId"].(json.Integer)
-                tile_def_uid := ldtk_level_layer_obj["__tilesetDefUid"].(json.Integer)
+                tile_def_uid := ldtk_level_layer_obj["__tilesetDefUid"].(json.Integer) or_else 0
 
                 ldtk_level_layer.cell_size = ldtk_level_layer_obj["__gridSize"].(json.Integer)
                 ldtk_level_layer.opacity = ldtk_level_layer_obj["__opacity"].(json.Integer)
-                ldtk_level_layer.texture_path = strings.clone_to_cstring(ldtk_level_layer_obj["__tilesetRelPath"].(json.String))
+                ldtk_level_layer.texture_path = strings.clone_to_cstring(ldtk_level_layer_obj["__tilesetRelPath"].(json.String) or_else "")
 
                 ldtk_level_layer.offset = mathematics.Vec2i{
                     int(ldtk_level_layer_obj["__pxTotalOffsetX"].(json.Integer)),

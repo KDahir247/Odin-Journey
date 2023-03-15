@@ -109,6 +109,7 @@ handle_event :: proc() -> bool {
 
 	player_component := ecs.get_component_unchecked(&ctx.world, player_entity, container.Player)
 	game_component := ecs.get_component_unchecked(&ctx.world, player_entity, container.GameEntity)
+	
 	animator_component := ecs.get_component_unchecked(
 		&ctx.world,
 		player_entity,
@@ -143,7 +144,7 @@ handle_event :: proc() -> bool {
 	game_component.input_direction = int(right) - int(left)
 
 	if animator_component.current_animation != "Roll" && animator_component.current_animation != "Fall" {
-		set_animation_clip(animator_component, ANIMATIONS[combined_left_right], 15.0)
+		set_animation_clip(animator_component, ANIMATIONS[combined_left_right], 13.0)
 
 		if combined_left_right != 0  {
 			game_component.render_direction = sdl2.RendererFlip(left > right)
@@ -154,7 +155,7 @@ handle_event :: proc() -> bool {
 		if resource.elapsed_time > player_component.cooldown[1].cooldown_duration {
 			player_component.cooldown[1].cooldown_duration =
 				resource.elapsed_time + player_component.cooldown[1].cooldown_amount
-			set_animation_clip_and_reset(animator_component, "Roll", 15)
+			set_animation_clip_and_reset(animator_component, "Roll", 15.0)
 		}
 	}
 
@@ -272,8 +273,8 @@ update_animation :: proc() {
 
 		delta_time := (current_time - animator_component.animation_time) * 0.001
 		frame_to_update := linalg.floor(delta_time * animator_component.animation_speed)
-
-		if (frame_to_update > 0) {
+	
+		if (frame_to_update > 0 && !animation_clip_finished(animator_component)) {
 			animator_component.previous_frame += int(frame_to_update)
 			animator_component.previous_frame %= current_clip.len
 			animator_component.animation_time = current_time
@@ -296,8 +297,17 @@ on_render :: proc() {
 		{container.TextureAsset, container.Position, container.Rotation, container.Scale},
 	)
 	tileset_entities := ecs.get_entities_with_components(&ctx.world, {container.TileMap})
+	physics_entities, _ := ecs.get_component_list(&ctx.world,container.Physics)
 
 	sdl2.RenderClear(ctx.renderer)
+
+	sdl2.SetRenderDrawColor(ctx.renderer, 255, 0, 0, 255)
+
+	for physic in physics_entities{
+		sdl2.RenderFillRect(ctx.renderer,&sdl2.Rect{i32(physic.collider.origin.x),i32(physic.collider.origin.y),i32(physic.collider.half.x),i32(physic.collider.half.y)} )
+
+	}
+	sdl2.SetRenderDrawColor(ctx.renderer, 23, 28, 57, 255)
 
 	for tile_entity in tileset_entities {
 		tileset_component := ecs.get_component_unchecked(

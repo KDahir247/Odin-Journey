@@ -13,10 +13,6 @@ create_game_entity ::proc($path : cstring, animator : uint, translation : [2]f32
 
     game_entity := create_texture_entity(path)
     
-    // if context.user_index == int(game_entity) {
-    //     ecs.add_component_unchecked(&ctx.world, game_entity, container.Player{{container.CoolDownTimer{3000, 0}, container.CoolDownTimer{3000, 0}} })
-    // }
-
     if player{
         ecs.add_component_unchecked(&ctx.world, game_entity, container.Player{{container.CoolDownTimer{3000, 0}, container.CoolDownTimer{3000, 0}} })
     }
@@ -25,7 +21,7 @@ create_game_entity ::proc($path : cstring, animator : uint, translation : [2]f32
     ecs.add_component_unchecked(&ctx.world, game_entity, container.Rotation{rotation})
     ecs.add_component_unchecked(&ctx.world, game_entity, container.Scale{mathematics.Vec2{scale.x, scale.y}})
 
-    collider_component := mathematics.AABB{{translation.x, translation.y}, {39,41}}
+    collider_component := mathematics.AABB{{translation.x , translation.y}, { 20,25  }}
 
     physics_component := container.Physics{collider_component,mathematics.Vec2{translation.x,translation.y}, mathematics.Vec2{0, 0},mathematics.Vec2{0, 9.81},mathematics.Vec2{0,0},0.999, 1, 0.65,0}
 
@@ -43,6 +39,7 @@ create_game_entity ::proc($path : cstring, animator : uint, translation : [2]f32
         animator_component.clips,
     })
 
+    ecs.destroy_entity(&ctx.world, ecs.Entity(animator))
 
     return int(game_entity)
 }

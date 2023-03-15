@@ -4,7 +4,7 @@
         "num_slice" : 7,
         "width" : 39,
         "height" : 43,
-        "loop" : false
+        "loop" : true
     },
 
     "Walk" : {
@@ -12,7 +12,7 @@
         "num_slice" : 8,
         "width" : 39,
         "height" : 41,
-        "loop" : false
+        "loop" : true
     },
 
     "Jump" : {

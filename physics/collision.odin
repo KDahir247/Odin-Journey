@@ -3,6 +3,7 @@ package physics
 import "../mathematics"
 import "../container"
 
+import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 
@@ -18,37 +19,6 @@ CollisionSweep :: struct{
     hit : CollisionHit,
     pos : mathematics.Vec2,
     time : f32,
-}
-
-@(private)
-enlarge_aabb_point :: proc "contextless"(r : mathematics.AABB, p : mathematics.Vec2) -> mathematics.AABB{
-    enlarged : mathematics.AABB
-
-    enlarged.origin = mathematics.Vec2{min(r.origin.x, p.x), min(r.origin.y, p.y)}
-    enlarged.half = mathematics.Vec2{max(r.origin.x + r.half.x + r.half.x, p.x), max(r.origin.y + r.half.y + r.half.y, p.y)}
-    enlarged.half = (enlarged.half - enlarged.origin)
-
-    return enlarged
-}
-
-@(private)
-enlarge_aabb :: proc "contextless"(r : mathematics.AABB, extender : mathematics.AABB) -> mathematics.AABB{
-    max_corner := extender.origin + extender.half + extender.half
-
-    enlarged := enlarge_aabb_point(r, max_corner)
-    return enlarge_aabb_point(enlarged, extender.origin)
-}
-
-aabb_hull:: proc (a : [dynamic]mathematics.AABB) -> mathematics.AABB{
-    aabb_hull : mathematics.AABB
-
-    for index in 0..<len(a){
-        aabb_hull = enlarge_aabb(aabb_hull, a[index])
-    }
-
-    aabb_hull.half = aabb_hull.half / 2
-    return aabb_hull
-
 }
 
 line_line_intersection :: proc "contextless" (a : mathematics.Line, b : mathematics.Line) -> (a_intersection: mathematics.Vec2, b_intersection: mathematics.Vec2){
@@ -136,7 +106,6 @@ aabb_vertical_collision_normal ::proc "contextless" (a : mathematics.AABB, x : f
 }
 
 
-
 fast_aabb_aabb_intersection :: proc "contextless"(a : mathematics.AABB, b : mathematics.AABB) -> bool{
 
     x :=  abs(a.origin.x - b.origin.x) <= (a.half.x + b.half.x)
@@ -209,8 +178,15 @@ aabb_segement_intersection :: proc "contextless"(a : mathematics.AABB, b : mathe
 aabb_aabb_intersection :: proc "contextless"(a : mathematics.AABB, b : mathematics.AABB) -> CollisionHit{
     hit : CollisionHit
 
-    displacement_vector := b.origin - a.origin
-    overlap := (b.half + a.half) - {abs(displacement_vector.x),abs(displacement_vector.y)}
+    //TODO:khal move this to ldtk collision. Note that the origin will change depending on the entity pivot point.
+    // Right now it is the top left
+    a_half := a.half * 0.5
+    b_half := b.half * 0.5
+    a_origin := a.origin + a_half
+    b_origin := b.origin + b_half
+    
+    displacement_vector := b_origin - a_origin
+    overlap := (b_half + a_half) - {abs(displacement_vector.x),abs(displacement_vector.y)}
 
     if (overlap.x <= 0 || overlap.y <= 0){
         return hit
@@ -225,7 +201,7 @@ aabb_aabb_intersection :: proc "contextless"(a : mathematics.AABB, b : mathemati
 
     hit.delta_displacement = overlap * signed_displacement * mask
     hit.contact_normal = signed_displacement * mask
-    hit.contact_point = ((a.origin + (a.half * signed_displacement)) * mask.x) + (b.origin * mask.y)
+    hit.contact_point = ((a_origin + (a_half * signed_displacement)) * mask.x) + (b_origin * mask.y)
 
     return hit
 } 
@@ -266,8 +242,10 @@ sweep_aabb :: proc(dyn_physic : ^container.Physics, static_col : [] container.Ph
     nearest : CollisionSweep
     nearest.time = 1
     res := false
+
     nearest.pos = dyn_physic.collider.origin + dyn_physic.velocity
     for i := 0; i < len(static_col); i += 1 {
+
         if dyn_physic.collider != static_col[i].collider{
             sweep := aabb_aabb_sweep(dyn_physic.collider, static_col[i].collider, dyn_physic.velocity)
             if (sweep.time < nearest.time){

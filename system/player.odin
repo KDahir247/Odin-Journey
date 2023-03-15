@@ -4,6 +4,7 @@ import "../container"
 import "../physics"
 import "../mathematics"
 
+import "core:fmt"
 import "core:math/linalg"
 
 move_player :: #force_inline proc(player_physics : ^container.Physics, direction : mathematics.Vec2, movement_speed : mathematics.Vec2){
@@ -12,17 +13,25 @@ move_player :: #force_inline proc(player_physics : ^container.Physics, direction
     physics.add_force(player_physics, normalized_direction_safe * movement_speed)
 }
 
-
 handle_player_collision :: proc(player_physics : ^container.Physics, static_collider : []container.Physics,dt : f32){
-    player_physics.collider.origin = player_physics.position
+    //TODO: pivot support khal?
+    player_physics.collider.origin = player_physics.position + player_physics.collider.half 
 
-    collided, sweep_result := physics.sweep_aabb(player_physics, static_collider)
+    for col in static_collider{
+       hit := physics.aabb_aabb_intersection(player_physics.collider, col.collider)
 
-    if collided{
-        penetration := sweep_result.hit.delta_displacement.y - 0.001
+        penetration := hit.delta_displacement.y - 0.001
 
-		physics.compute_contact_velocity(&container.Physics{},player_physics, 0.0, {0,-1}, dt)
-		physics.compute_interpenetration(&container.Physics{},player_physics,penetration,{0, -1})
+		physics.compute_contact_velocity(player_physics,&container.Physics{}, 0.0, hit.contact_normal, dt)
+		physics.compute_interpenetration(player_physics,&container.Physics{},penetration,hit.contact_normal)
     }
+    // collided, sweep_result := physics.sweep_aabb(player_physics, static_collider)
+
+    // if collided{
+    //     penetration := sweep_result.hit.delta_displacement.y - 0.001
+
+	// 	physics.compute_contact_velocity(&container.Physics{},player_physics, 0.0, {0,-1}, dt)
+	// 	physics.compute_interpenetration(&container.Physics{},player_physics,penetration,{0, -1})
+    // }
 
 }
