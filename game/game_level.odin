@@ -15,20 +15,17 @@ import "vendor:sdl2"
     create_game_level :: proc(ldtk_ctx : ^utility.LDTK_LEVELS){
 	ctx := cast(^ctx.Context) context.user_ptr
 
-    aabb := make([dynamic]mathematics.AABB)
-
     for lv in ldtk_ctx.levels{
         for layer in lv.layer_instances{
             defer delete(layer.texture_path)
 
             opacity_factor := u8(255 * layer.opacity)
 
-
             if layer.texture_path != ""{
-            tilemap_entity := ecs.create_entity(&ctx.world)
+            tilemap_entity := ecs.create_entity(ctx.world)
                                 
             tile_tex_entity := game.create_texture_entity(layer.texture_path)
-            tile_component := ecs.get_component_unchecked(&ctx.world, tile_tex_entity, container.TextureAsset)
+            tile_component := ecs.get_component_unchecked(ctx.world, tile_tex_entity, container.TextureAsset)
 
             tilemap_texture := sdl2.CreateTexture(ctx.renderer,
                 ctx.pixel_format.format,
@@ -64,27 +61,20 @@ import "vendor:sdl2"
                  sdl2.SetTextureBlendMode(tile_component.texture, sdl2.BlendMode.NONE)
                  sdl2.SetTextureAlphaMod(tile_component.texture, opacity_factor)
 
-                 collider := mathematics.AABB{
-                    mathematics.Vec2{f32(tile_position.x), f32(tile_position.y)},
-                    mathematics.Vec2{f32(layer.cell_size),f32(layer.cell_size)},
-                }
-
-                append(&aabb, collider)
-
                  sdl2.RenderCopyEx(ctx.renderer,tile_component.texture, &src_rect,&dst_rect,0,nil, sdl2.RendererFlip(tile.render_flip))
             }
 
                 sdl2.SetRenderTarget(ctx.renderer, nil)
                 sdl2.SetTextureBlendMode(tilemap_texture, sdl2.BlendMode.BLEND)
 
-                ecs.destroy_entity(&ctx.world, tile_tex_entity)
+                ecs.destroy_entity(ctx.world, tile_tex_entity)
 
-                ecs.add_component(&ctx.world, tilemap_entity, container.TileMap{tilemap_texture, lv.dimension.xy})
+                ecs.add_component(ctx.world, tilemap_entity, container.TileMap{tilemap_texture, lv.dimension.xy})
             }
 
             for entity in layer.entity_instances{
                 
-                tilemap_collider_entity := ecs.create_entity(&ctx.world)
+                tilemap_collider_entity := ecs.create_entity(ctx.world)
 
                 collider := mathematics.AABB{   
                     mathematics.Vec2{
@@ -92,23 +82,22 @@ import "vendor:sdl2"
                         f32(entity.pixel.y),
                     },
                     mathematics.Vec2{
-                        f32(entity.dimension.x),
-                        f32(entity.dimension.y),
-                    },
+                        f32(entity.dimension.x) ,
+                        f32(entity.dimension.y) ,
+                    } ,
                 }
 
-                tilemap_physics := ecs.add_component_unchecked(&ctx.world, tilemap_collider_entity, container.Physics{}) 
+                tilemap_physics := ecs.add_component_unchecked(ctx.world, tilemap_collider_entity, container.Physics{}) 
                 tilemap_physics.collider = collider
             }
         }
     }
-    delete(aabb)
 }
 
 free_game_level :: proc(){
 	ctx := cast(^ctx.Context) context.user_ptr
     
-    tile_maps,_ := ecs.get_component_list(&ctx.world, container.TileMap)
+    tile_maps := ecs.get_component_list(ctx.world, container.TileMap)
 
     for tile_map in tile_maps{
         sdl2.DestroyTexture(tile_map.texture)

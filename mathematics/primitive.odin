@@ -23,5 +23,3 @@ AABB :: struct{
     origin : Vec2,
     half : Vec2,
 }
-
-//TODO: khal add utility function to re-compute AABB when the Rect is rotated.

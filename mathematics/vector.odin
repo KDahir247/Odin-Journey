@@ -36,7 +36,7 @@ angle_vector :: proc(v, v1 : Vec2) -> f32{
     norm_v1 := linalg.normalize(v1)
 
     dp := linalg.dot(norm_v0, norm_v1)
-    return linalg.degrees(linalg.acos(dp))
+    return linalg.to_degrees(linalg.acos(dp))
 }
 
 project_vector :: proc(proj, onto : Vec2) -> Vec2{

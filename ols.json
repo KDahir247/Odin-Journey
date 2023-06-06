@@ -2,10 +2,10 @@
     "collections": [
         {
             "name": "core",
-            "path": "C:\\Program Files\\Odin\\core"
+            "path": "C:\\Users\\Dahir\\Odin\\core"
         },{
             "name": "vendor",
-            "path":"C:\\Program Files\\Odin\\vendor"
+            "path":"C:\\Users\\Dahir\\Odin\\vendor"
         }
     ],
     "enable_document_symbols": true,

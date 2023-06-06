@@ -1,75 +1,121 @@
 package main;
 
-import ctx "context"
-import "game"
-import  "utility"
+import "vendor:sdl2"
 
-when ODIN_DEBUG{
-	import "core:fmt"
-	import "core:mem"
+import "container"
+import "core:thread"
+import "core:sync"
+import "system"
+
+import "core:prof/spall"
+
+
+import "core:fmt"
+
+
+@(init)
+init_prof_buffer :: proc(){
+	container.CREATE_PROFILER("ProfilerData.spall")
 }
 
-MS_CAP :: 17
+
+@(optimization_mode="size")
+init_sdl2_win :: #force_inline  proc(window_descriptor : ^container.WINDOWS_DESC) -> ^sdl2.Window {
+	
+
+	sdl2.InitSubSystem(window_descriptor.Flags)
+
+	sdl_window := sdl2.CreateWindow(
+		"MyGame",
+		sdl2.WINDOWPOS_CENTERED, 
+		sdl2.WINDOWPOS_CENTERED,
+		window_descriptor.GridDesc.GridWidth,
+		window_descriptor.GridDesc.GridHeight,
+		window_descriptor.WinFlags,
+	)
+
+	return sdl_window
+}
+
 
 main :: proc() {
-	//memory leak tracking.
-	when ODIN_DEBUG {
-		track : mem.Tracking_Allocator
-		mem.tracking_allocator_init(&track, context.allocator)
-		context.allocator =mem.tracking_allocator(&track)
-	}
-	game_config := utility.parse_game_config("config/game_config.json")
-	levels := utility.parse_levels_ldtk("level/basic.ldtk")
+	running := true
 
-	core := new(ctx.Context)
-	core^ = ctx.init(game_config)
+	sdl2_event : sdl2.Event
+	sdl2_window : ^sdl2.Window
 
-	context.user_ptr = core
-
-	ctx.initialize_dynamic_resource()
-
-	animation_clips := ctx.create_animation_clips("config/animation/player.json",[8]string{"Idle", "Walk", "Jump", "Fall", "Roll", "Teleport_Start", "Teleport_End", "Attack"})
-	animator := ctx.create_animator(15, animation_clips)
-	context.user_index = game.create_game_entity("resource/padawan/pad.png",animator, {450,430}, 0, {0.1,0.2}, true)
-
-	game.create_game_level(&levels)
 	
-	running := true;
-	{
-		for running{
-			elapsed := utility.elapsed_frame_precise();
+	window_info : ^sdl2.SysWMinfo = new(sdl2.SysWMinfo)
+	shared_data : ^container.SharedContext = new(container.SharedContext)
 
-			running = ctx.handle_event()
-			ctx.on_fixed_update()
-			ctx.on_update()
-			ctx.update_animation()
-			ctx.on_late_update()
-			ctx.on_render()
-
-			utility.cap_frame_rate_precise(elapsed, MS_CAP)
-			free_all(context.temp_allocator)
-		}
+	window_descriptor := container.WINDOWS_DESC{
+		GridDesc = {
+			1045, // 29 * 36 + 1 (WIDTH + CELL SIZE + OFFSET)
+			613, // 17 * 36 + 1 (HEIGHT + CELL SIZE + OFFSET)
+		},
+		WinFlags = sdl2.WindowFlags{
+			sdl2.WindowFlag.SHOWN,
+			sdl2.WindowFlag.RESIZABLE,
+			sdl2.WindowFlag.ALLOW_HIGHDPI,
+			//sdl2.WindowFlag.FULLSCREEN,
+		},
+		Flags = sdl2.InitFlags{
+			sdl2.InitFlag.EVENTS,
+		},
 	}
 
-	game.free_all_texture_entities()
-	game.free_game_level()
-	utility.free_ldtk_levels(&levels)
-
-	ctx.cleanup()
-	context.user_ptr = nil
-	free(core)
-	
-	when ODIN_DEBUG{
-		// For debugging purpose (bad free, leak, etc...)
-		for bad in track.bad_free_array{
-			fmt.printf("%v bad \n\n", bad.location)
-		}
+	defer{
 		
-		for _,leak in track.allocation_map{
-			fmt.printf("%v leaked %v bytes\n", leak.location, leak.size)
-		}
+		free(shared_data)
+		free(window_info)
 
-		mem.tracking_allocator_clear(&track)
-		mem.tracking_allocator_destroy(&track)
+		sdl2.DestroyWindow(sdl2_window)
+		sdl2_window = nil
+
+		sdl2.QuitSubSystem(window_descriptor.Flags)
+
+		container.FREE_PROFILER()
 	}
+
+	container.BEGIN_EVENT("SDL Initialization")
+
+	sdl2_window = init_sdl2_win(&window_descriptor)
+	sdl2.GetWindowWMInfo(sdl2_window, window_info)
+	
+	container.END_EVENT()
+
+
+	container.BEGIN_EVENT("Shared Data and Thread Creation")
+	
+	shared_data.Systems = container.SystemInitFlags{
+		.DX11System,
+		.GameSystem,
+		.WindowSystem,
+	}
+
+	shared_data.Mutex = sync.Mutex{}
+	shared_data.Cond = sync.Cond{}
+	// This will store the process id (PID) we might change this later.
+	context.user_index = 0
+	context.user_ptr = shared_data
+
+	//TODO: got to look at profiler x.x
+	game_thread := thread.create_and_start(system.init_game_subsystem, context)
+	render_thread := thread.create_and_start_with_data(window_info,system.init_render_subsystem, context)
+
+	container.END_EVENT()
+
+	for running{
+		for sdl2.PollEvent(&sdl2_event){
+			running = sdl2_event.type != sdl2.EventType.QUIT
+		}
+	}
+
+	excl(&shared_data.Systems, container.System.WindowSystem)
+
+
+	thread.join_multiple(game_thread, render_thread)
+
+
+	
 }

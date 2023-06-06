@@ -14,16 +14,22 @@ move_player :: #force_inline proc(player_physics : ^container.Physics, direction
 }
 
 handle_player_collision :: proc(player_physics : ^container.Physics, static_collider : []container.Physics,dt : f32){
-    //TODO: pivot support khal?
+    //TODO: pivot support 
     player_physics.collider.origin = player_physics.position + player_physics.collider.half 
 
+    player_physics.grounded = false
+    
     for col in static_collider{
        hit := physics.aabb_aabb_intersection(player_physics.collider, col.collider)
 
-        penetration := hit.delta_displacement.y - 0.001
+        penetration := (hit.delta_displacement.x * hit.contact_normal.x) + (hit.delta_displacement.y * hit.contact_normal.y) - 0.001
 
 		physics.compute_contact_velocity(player_physics,&container.Physics{}, 0.0, hit.contact_normal, dt)
 		physics.compute_interpenetration(player_physics,&container.Physics{},penetration,hit.contact_normal)
+
+        if hit.contact_normal == {0, 1}{
+            player_physics.grounded = true
+        }
     }
     // collided, sweep_result := physics.sweep_aabb(player_physics, static_collider)
 

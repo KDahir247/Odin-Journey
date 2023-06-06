@@ -17,12 +17,12 @@ create_texture_entity :: proc(path : cstring) -> ecs.Entity{
     key := sdl2.MapRGB(optimal_surface.format, 0,0,0)
     sdl2.SetColorKey(optimal_surface, 1, key)
 
-    texture_entity := ecs.create_entity(&ctx.world)
+    texture_entity := ecs.create_entity(ctx.world)
 
     texture := sdl2.CreateTextureFromSurface(ctx.renderer, optimal_surface )
-    dimension := mathematics.Vec2{ cast(f32)optimal_surface.w, cast(f32)optimal_surface.h}
+    dimension := mathematics.Vec2{f32(optimal_surface.w), f32(optimal_surface.h)}
 
-    ecs.add_component(&ctx.world, texture_entity, container.TextureAsset{texture, dimension})
+    ecs.add_component(ctx.world, texture_entity, container.TextureAsset{texture, dimension})
 
     sdl2.FreeSurface(surface)
 
@@ -32,7 +32,7 @@ create_texture_entity :: proc(path : cstring) -> ecs.Entity{
 free_all_texture_entities :: proc(){
     ctx := cast(^ctx.Context) context.user_ptr
 
-    tex_assets, _ := ecs.get_component_list(&ctx.world, container.TextureAsset)
+    tex_assets := ecs.get_component_list(ctx.world, container.TextureAsset)
 
     for tex in tex_assets{
         sdl2.DestroyTexture(tex.texture)
