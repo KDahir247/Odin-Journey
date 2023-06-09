@@ -116,6 +116,7 @@ main :: proc() {
 
 	thread.join_multiple(game_thread, render_thread)
 
+	
 
 	
 }
