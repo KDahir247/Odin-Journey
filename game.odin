@@ -11,44 +11,24 @@ import "core:prof/spall"
 
 
 import "core:fmt"
+import "core:time"
 
+import "ecs"
 
 @(init)
 init_prof_buffer :: proc(){
 	container.CREATE_PROFILER("ProfilerData.spall")
 }
 
-
-@(optimization_mode="size")
-init_sdl2_win :: #force_inline  proc(window_descriptor : ^container.WINDOWS_DESC) -> ^sdl2.Window {
-	
-
-	sdl2.InitSubSystem(window_descriptor.Flags)
-
-	sdl_window := sdl2.CreateWindow(
-		"MyGame",
-		sdl2.WINDOWPOS_CENTERED, 
-		sdl2.WINDOWPOS_CENTERED,
-		window_descriptor.GridDesc.GridWidth,
-		window_descriptor.GridDesc.GridHeight,
-		window_descriptor.WinFlags,
-	)
-
-	return sdl_window
-}
-
-
 main :: proc() {
+
 	running := true
 
 	sdl2_event : sdl2.Event
-	sdl2_window : ^sdl2.Window
-
 	
-	window_info : ^sdl2.SysWMinfo = new(sdl2.SysWMinfo)
 	shared_data : ^container.SharedContext = new(container.SharedContext)
 
-	window_descriptor := container.WINDOWS_DESC{
+	WINDOW_DESCRIPTOR :: container.WINDOWS_DESC{
 		GridDesc = {
 			1045, // 29 * 36 + 1 (WIDTH + CELL SIZE + OFFSET)
 			613, // 17 * 36 + 1 (HEIGHT + CELL SIZE + OFFSET)
@@ -64,6 +44,22 @@ main :: proc() {
 		},
 	}
 
+	container.BEGIN_EVENT("SDL Initialization")
+
+	window_info : ^sdl2.SysWMinfo = new(sdl2.SysWMinfo)
+	sdl2.InitSubSystem(WINDOW_DESCRIPTOR.Flags)
+
+	sdl2_window := sdl2.CreateWindow(
+		"MyGame",
+		sdl2.WINDOWPOS_CENTERED, 
+		sdl2.WINDOWPOS_CENTERED,
+		WINDOW_DESCRIPTOR.GridDesc.GridWidth,
+		WINDOW_DESCRIPTOR.GridDesc.GridHeight,
+		WINDOW_DESCRIPTOR.WinFlags,
+	)
+
+	sdl2.GetWindowWMInfo(sdl2_window, window_info)
+	
 	defer{
 		
 		free(shared_data)
@@ -72,16 +68,11 @@ main :: proc() {
 		sdl2.DestroyWindow(sdl2_window)
 		sdl2_window = nil
 
-		sdl2.QuitSubSystem(window_descriptor.Flags)
+		sdl2.QuitSubSystem(WINDOW_DESCRIPTOR.Flags)
 
 		container.FREE_PROFILER()
 	}
 
-	container.BEGIN_EVENT("SDL Initialization")
-
-	sdl2_window = init_sdl2_win(&window_descriptor)
-	sdl2.GetWindowWMInfo(sdl2_window, window_info)
-	
 	container.END_EVENT()
 
 
@@ -93,30 +84,29 @@ main :: proc() {
 		.WindowSystem,
 	}
 
-	shared_data.Mutex = sync.Mutex{}
-	shared_data.Cond = sync.Cond{}
-	// This will store the process id (PID) we might change this later.
-	context.user_index = 0
+	shared_data.Mutex = {}
+	shared_data.Cond = {}
+	shared_data.ecs = ecs.init_ecs()
+	
 	context.user_ptr = shared_data
 
-	//TODO: got to look at profiler x.x
-	game_thread := thread.create_and_start(system.init_game_subsystem, context)
-	render_thread := thread.create_and_start_with_data(window_info,system.init_render_subsystem, context)
+	thread.run(system.init_game_subsystem, context)
+	thread.run_with_data(window_info,system.init_render_subsystem, context)
+
+	start_time := time.tick_now()._nsec
 
 	container.END_EVENT()
 
 	for running{
+
+		shared_data.time = (time.tick_now()._nsec - start_time) / 1000_000
+
 		for sdl2.PollEvent(&sdl2_event){
 			running = sdl2_event.type != sdl2.EventType.QUIT
 		}
 	}
 
 	excl(&shared_data.Systems, container.System.WindowSystem)
+	ecs.deinit_ecs(&shared_data.ecs)
 
-
-	thread.join_multiple(game_thread, render_thread)
-
-	
-
-	
 }

@@ -15,7 +15,16 @@ import "core:c/libc"
 import "core:prof/spall"
 import "core:fmt"
 
+import "core:strings"
+import "core:os"
+import "core:unicode/utf16"
+import "core:path/filepath"
+
+import "../ecs"
 import "../container"
+
+//MAX_BATCH_SIZE :: 1024
+//SpriteData := [MAX_BATCH_SIZE]SpriteInstanceData{}
 
 
 
@@ -24,24 +33,24 @@ SpriteIndex :: struct{
     position : hlsl.float2, //UV has the same values as position.
 }
 
-SpriteInstanceData :: struct{
-    transform : hlsl.float4x4,
-    src_rect : hlsl.float4,
-}
 
 GlobalDynamicConstantBuffer :: struct #align 16{
     sprite_sheet_size : hlsl.float2,
     device_conversion : hlsl.float2,
     viewport_size : hlsl.float2,
-    time : f32,
-    delta_time : f32,
+    time : u32,
+    delta_time : u32,
 }
 
 
-@(optimization_mode = "size")
-set_sprite_batch :: proc(shader_res : ^d3d11.IShaderResourceView){
-    //TODO 
-    //Set the cbuffer
+@(private)
+Shader :: struct{
+    vertex_shader : ^d3d11.IVertexShader,
+    vertex_blob : ^d3d_compiler.ID3DBlob,
+
+    pixel_shader : ^d3d11.IPixelShader,
+    pixel_blob : ^d3d_compiler.ID3DBlob,
+
 }
 
 
@@ -71,72 +80,80 @@ init_render_subsystem :: proc(winfo : rawptr){
 	dxgi_adapter: ^dxgi.IAdapter
     dxgi_factory : ^dxgi.IFactory4
 
+    vertices := [4]SpriteIndex{
+        {{0.0, 0.0}},
+        {{1, 0.0}},
+        {{1, 1}},
+        {{0, 1}},
+    }
+
+    indices := [6]u16{
+        0, 1, 2, 3, 0, 2,
+    }
+
+    cached_shaders : map[string]Shader = make(map[string]Shader)
+    cached_layout : map[string]^d3d11.IInputLayout = make(map[string]^d3d11.IInputLayout)
+
+    //TODO: issue with defer something doesn't work or the thread exit early (get destroyed)........
     defer{
+        container.FREE_PROFILER_BUFFER()
+
+
+        for _, cache in cached_shaders{
+            if cache.vertex_shader != nil do cache.vertex_shader->Release() 
+            if cache.vertex_blob != nil do cache.vertex_blob->Release()
+            if cache.pixel_shader != nil do cache.pixel_shader->Release()
+            if cache.pixel_blob != nil do cache.pixel_blob->Release()
+        }
+
+
+        for _, cache in cached_layout{
+            if cache != nil do cache->Release()
+        }
+
+
+        delete_map(cached_layout)
+        delete_map(cached_shaders)
+
+        free(native_win)
         excl(&shared_data.Systems, container.System.DX11System)
 
-        container.FREE_PROFILER_BUFFER()
     }
 
     container.BEGIN_EVENT("Device Construction & Query")
 
     d3d_feature_level := [2]d3d11.FEATURE_LEVEL{d3d11.FEATURE_LEVEL._11_0, d3d11.FEATURE_LEVEL._11_1}
 
-    d3d11.CreateDevice(nil, d3d11.DRIVER_TYPE.HARDWARE, nil, d3d11.CREATE_DEVICE_FLAGS{.SINGLETHREADED},&d3d_feature_level[0],len(d3d_feature_level), d3d11.SDK_VERSION,&base_device, nil, &base_device_context)
-    
-    container.AUTO_FREE(base_device)
-    container.AUTO_FREE(base_device_context)
+    container.DX_CALL(
+        d3d11.CreateDevice(nil, d3d11.DRIVER_TYPE.HARDWARE, nil, d3d11.CREATE_DEVICE_FLAGS{.SINGLETHREADED},&d3d_feature_level[0],len(d3d_feature_level), d3d11.SDK_VERSION,&base_device, nil, &base_device_context),
 
-    base_device->QueryInterface(d3d11.IDevice_UUID, (^rawptr)(&device))
-	base_device_context->QueryInterface(d3d11.IDeviceContext_UUID, (^rawptr)(&device_context))
-    
-    container.AUTO_FREE(device)
-    container.AUTO_FREE(device_context)
+        base_device,
+    )
 
+    container.DX_CALL(
+        base_device->QueryInterface(d3d11.IDevice_UUID, (^rawptr)(&device)),
+        device,
+    )
 
-    //TODO: khal we want to create all the Img texture and cache the data.
-    //We then want to have a way to spawn the enemy that have died after a set condition.
-    //We need to figure out a way to move from the sprite sheet to play the next animation sequence.
+    container.DX_CALL(
+        base_device_context->QueryInterface(d3d11.IDeviceContext_UUID, (^rawptr)(&device_context)),
+        device_context,
+    )
 
-    width : i32 = 0
-    height : i32 = 0
-    channel : i32 = 0
-    desired_channel : i32 = 4
+    container.DX_CALL(
+        device->QueryInterface(dxgi.IDevice_UUID, (^rawptr)(&dxgi_device)),
+        dxgi_device,
+    )
 
-    img_data := image.load("resource/padawan/pad.png", &width, &height, &channel, desired_channel)
+    container.DX_CALL(
+        dxgi_device->GetAdapter(&dxgi_adapter),
+        dxgi_adapter,
+    )
 
-    img_pitch := u32(width * 4)
-
-    sprite_texture_resource_view : ^d3d11.IShaderResourceView
-    sprite_texture : ^d3d11.ITexture2D
-    sprite_sheet_resource : d3d11.SUBRESOURCE_DATA
-    atlas_texture_descriptor := d3d11.TEXTURE2D_DESC{}
-
-    atlas_texture_descriptor.Width = u32(width) //full sprite sheet width
-    atlas_texture_descriptor.Height = u32(height) //full sprite sheet height
-    atlas_texture_descriptor.MipLevels = 1
-    atlas_texture_descriptor.ArraySize = 1
-    atlas_texture_descriptor.Format = dxgi.FORMAT.R8G8B8A8_UNORM
-    atlas_texture_descriptor.SampleDesc.Count = 1
-    atlas_texture_descriptor.Usage = d3d11.USAGE.IMMUTABLE
-    atlas_texture_descriptor.BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE}
-
-    sprite_sheet_resource.pSysMem = img_data
-    sprite_sheet_resource.SysMemPitch = img_pitch
-
-    device->CreateTexture2D(&atlas_texture_descriptor, &sprite_sheet_resource, &sprite_texture) // IO  BLOCK fun
-
-    device->CreateShaderResourceView(sprite_texture,nil,&sprite_texture_resource_view)
-
-
-
-	device->QueryInterface(dxgi.IDevice_UUID, (^rawptr)(&dxgi_device))
-	dxgi_device->GetAdapter(&dxgi_adapter)
-	dxgi_adapter->GetParent(dxgi.IFactory4_UUID, (^rawptr)(&dxgi_factory))
-
-    container.AUTO_FREE(dxgi_device)
-    container.AUTO_FREE(dxgi_adapter)
-    container.AUTO_FREE(dxgi_factory)
-
+    container.DX_CALL(
+        dxgi_adapter->GetParent(dxgi.IFactory4_UUID, (^rawptr)(&dxgi_factory)),
+        dxgi_factory,
+    )
 
     container.END_EVENT()
 
@@ -154,34 +171,28 @@ init_render_subsystem :: proc(winfo : rawptr){
         Flags = 0x0,
     }
     
-    dxgi_factory->CreateSwapChainForHwnd(device, native_win, &swapchain_descriptor, nil,nil,&swapchain )
-    
-    swapchain->GetDesc1(&swapchain_descriptor)
-
-    swapchain->GetBuffer(
-        0,
-        d3d11.ITexture2D_UUID,
-        (^rawptr)(&back_buffer),
+    container.DX_CALL(
+        dxgi_factory->CreateSwapChainForHwnd(device, native_win, &swapchain_descriptor, nil,nil,&swapchain ),
+        swapchain,
     )
+    
+    container.DX_CALL(swapchain->GetDesc1(&swapchain_descriptor), nil)
 
-    device->CreateRenderTargetView(back_buffer, nil, &back_render_target_view)
-    container.AUTO_FREE(back_render_target_view)
+    container.DX_CALL(
+        swapchain->GetBuffer(0,d3d11.ITexture2D_UUID,(^rawptr)(&back_buffer)),
+        nil,
+    )
+    
+    container.DX_CALL(
+        device->CreateRenderTargetView(back_buffer, nil, &back_render_target_view),
+         back_render_target_view,
+    )
 
     back_buffer->Release()
 
     container.END_EVENT()
 
-    vertices := [4]SpriteIndex{
-        {{0.0, 0.0}},
-        {{1, 0.0}},
-        {{1, 1}},
-        {{0, 1}},
-    }
-
-    indices := [6]u16{
-        0, 1, 2, 3, 0, 2,
-    }
-
+   
     viewport : d3d11.VIEWPORT
 
     viewport.Width = f32(swapchain_descriptor.Width)
@@ -190,17 +201,7 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.BEGIN_EVENT("CBuffer Construction")
 
-    cbuffer_1 : ^d3d11.IBuffer
-
-    global_constant_data : d3d11.SUBRESOURCE_DATA
-
-    global_cbuffer_data := GlobalDynamicConstantBuffer{
-        sprite_sheet_size = {0,0},
-        device_conversion = {2.0 / viewport.Width, -2.0 / viewport.Height},
-        viewport_size = {viewport.Width, viewport.Height},
-        time = 0,
-        delta_time = 0,
-    }
+    vs_cbuffer_0 : ^d3d11.IBuffer
 
     constant_buffer_descriptor := d3d11.BUFFER_DESC{
         ByteWidth = size_of(GlobalDynamicConstantBuffer),
@@ -209,17 +210,54 @@ init_render_subsystem :: proc(winfo : rawptr){
         CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{.WRITE},
     }
 
-    global_constant_data.pSysMem = (rawptr)(&global_cbuffer_data)
-
-    device->CreateBuffer(&constant_buffer_descriptor, &global_constant_data,&cbuffer_1)
+    container.DX_CALL(
+        device->CreateBuffer(&constant_buffer_descriptor, nil,&vs_cbuffer_0),
+         vs_cbuffer_0,
+    )
 
     container.END_EVENT()
 
     container.BEGIN_EVENT("Image Texture Construction")
-
     
+    //TODO: Khal this need working on not right
+    sprite_texture_resource_view : ^d3d11.IShaderResourceView
+    sprite_texture : ^d3d11.ITexture2D
+    sprite_sheet_resource : d3d11.SUBRESOURCE_DATA
+    atlas_texture_descriptor := d3d11.TEXTURE2D_DESC{}
 
-    //Sampler can stay the same
+    width : i32 = 0
+    height : i32 = 0
+    channel : i32 = 0
+    desired_channel : i32 = 4
+
+    for tex in ecs.get_component_list(&shared_data.ecs, container.SpriteCache){
+        img_data := image.load(tex.Val, &width, &height, &channel, desired_channel)
+    
+        img_pitch := u32(width * 4)
+        
+        atlas_texture_descriptor.Width = u32(width) //full sprite sheet width
+        atlas_texture_descriptor.Height = u32(height) //full sprite sheet height
+        atlas_texture_descriptor.MipLevels = 1
+        atlas_texture_descriptor.ArraySize = 1
+        atlas_texture_descriptor.Format = dxgi.FORMAT.R8G8B8A8_UNORM
+        atlas_texture_descriptor.SampleDesc.Count = 1
+        atlas_texture_descriptor.Usage = d3d11.USAGE.IMMUTABLE
+        atlas_texture_descriptor.BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE}
+    
+        sprite_sheet_resource.pSysMem = img_data
+        sprite_sheet_resource.SysMemPitch = img_pitch
+        
+        container.DX_CALL(
+            device->CreateTexture2D(&atlas_texture_descriptor, &sprite_sheet_resource, &sprite_texture),
+            nil,
+        ) // IO  BLOCK fun!
+    
+        container.DX_CALL(
+            device->CreateShaderResourceView(sprite_texture,nil,&sprite_texture_resource_view),
+            nil,
+        )
+    }
+  
     texture_sampler : ^d3d11.ISamplerState
 
     sampler_descriptor := d3d11.SAMPLER_DESC{}
@@ -227,37 +265,27 @@ init_render_subsystem :: proc(winfo : rawptr){
     sampler_descriptor.Filter = d3d11.FILTER.MIN_LINEAR_MAG_MIP_POINT
     sampler_descriptor.AddressU = d3d11.TEXTURE_ADDRESS_MODE.CLAMP
     sampler_descriptor.AddressV = d3d11.TEXTURE_ADDRESS_MODE.CLAMP
-    sampler_descriptor.ComparisonFunc = d3d11.COMPARISON_FUNC.ALWAYS
+    sampler_descriptor.AddressW = d3d11.TEXTURE_ADDRESS_MODE.CLAMP
+    sampler_descriptor.MipLODBias = 0
     sampler_descriptor.MaxAnisotropy = 1
+    sampler_descriptor.ComparisonFunc = d3d11.COMPARISON_FUNC.ALWAYS
+    sampler_descriptor.BorderColor[0] = 0
+    sampler_descriptor.BorderColor[1] = 0
+    sampler_descriptor.BorderColor[2] = 0
+    sampler_descriptor.BorderColor[3] = 0
+    sampler_descriptor.MinLOD = 0
     sampler_descriptor.MaxLOD = d3d11.FLOAT32_MAX
     
-    device->CreateSamplerState(&sampler_descriptor, &texture_sampler)
+    container.DX_CALL(
+        device->CreateSamplerState(&sampler_descriptor, &texture_sampler),
+        texture_sampler,
+    )
 
     container.END_EVENT()
     
     container.BEGIN_EVENT("Shader Construction")
 
-    vertex_shader : ^d3d11.IVertexShader
-    pixel_shader : ^d3d11.IPixelShader
-
-    vs_blob : ^d3d_compiler.ID3DBlob
-    ps_blob : ^d3d_compiler.ID3DBlob
-
-    shader_byte := #load("../shaders/sprite_instancing.hlsl")
-    shader_raw_data := raw_data(shader_byte)
-    shader_byte_len := len(shader_byte)
-
-
-    d3d_compiler.Compile(shader_raw_data, uint(shader_byte_len), "sprite_instancing.hlsl", nil, nil, "vs_main", "vs_5_0",0,0, &vs_blob, nil)
-    device->CreateVertexShader(vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), nil, &vertex_shader)
-
-    d3d_compiler.Compile(shader_raw_data, uint(shader_byte_len), "sprite_instancing.hlsl", nil, nil, "ps_main", "ps_5_0", 0, 0, &ps_blob, nil)
-    device->CreatePixelShader(ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(), nil, &pixel_shader)
-
-    //TODO add the INSTANCE_DATA MVP matrix, Color??? (Prob not), SRC Rect 
-    //TODO set vertex buffer count to 2
-    input_layout : ^d3d11.IInputLayout
-    input_layout_descriptor := [6]d3d11.INPUT_ELEMENT_DESC{
+    instance_layout_descriptor := [6]d3d11.INPUT_ELEMENT_DESC{
         {"QUAD_ID", 0, dxgi.FORMAT.R32G32_FLOAT, 0,0, d3d11.INPUT_CLASSIFICATION.VERTEX_DATA, 0},
 
         {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
@@ -267,10 +295,63 @@ init_render_subsystem :: proc(winfo : rawptr){
         {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
     }
 
-    device->CreateInputLayout(&input_layout_descriptor[0], len(input_layout_descriptor), vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), &input_layout)
+    shader_dir,match_err := filepath.glob(`shaders\*.hlsl`)
+
+    //TODO: khal we can optimize this.
+    for shader_path in shader_dir{
+
+        shader_dir, shader_file := filepath.split(shader_path)
+
+        c_shader_file : cstring = strings.clone_to_cstring(shader_file)
+
+        shader_path_byte, _ := os.read_entire_file_from_filename(shader_path)
+        
+        defer{
+            delete(shader_path_byte)
+            delete_cstring(c_shader_file)
+        }
+
+        shader_bytecode := raw_data(shader_path_byte)
+        shader_bytecode_length := uint(len(shader_path_byte))
+
+         shader : Shader
+
+         container.DX_CALL(
+            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length, c_shader_file, nil, nil, "vs_main", "vs_5_0",15,0,&shader.vertex_blob, nil),
+            nil,
+         )
+
+       container.DX_CALL(
+        d3d_compiler.Compile(shader_bytecode, shader_bytecode_length, c_shader_file, nil, nil, "ps_main", "ps_5_0",15,0,&shader.pixel_blob, nil),
+         nil,
+        )
+
+        container.DX_CALL(
+            device->CreateVertexShader(shader.vertex_blob->GetBufferPointer(),shader.vertex_blob->GetBufferSize(), nil, &shader.vertex_shader),
+            nil,
+        )
+
+        container.DX_CALL(
+            device->CreatePixelShader(shader.pixel_blob->GetBufferPointer(), shader.pixel_blob->GetBufferSize(), nil, &shader.pixel_shader),
+            nil,
+        )
+
+        cache_key := shader_file[0:len(shader_file) - 5]
+
+        layout : ^d3d11.IInputLayout
+        container.DX_CALL(
+            device->CreateInputLayout(&instance_layout_descriptor[0], len(instance_layout_descriptor), shader.vertex_blob->GetBufferPointer(), shader.vertex_blob->GetBufferSize(), &layout),
+            nil,
+        )
+
+        cached_layout[cache_key] = layout
+
+        if !(cache_key in cached_shaders){
+            cached_shaders[cache_key] = shader
+        }
+    }
 
     container.END_EVENT()
-
 
     container.BEGIN_EVENT("Buffer Creation")
    
@@ -285,7 +366,10 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     vertex_resource.pSysMem = (rawptr)(&vertices)
 
-    device->CreateBuffer(&vertex_buffer_descriptor, &vertex_resource, &vertex_buffer)
+    container.DX_CALL(
+        device->CreateBuffer(&vertex_buffer_descriptor, &vertex_resource, &vertex_buffer),
+        vertex_buffer,
+    )
 
     index_buffer : ^d3d11.IBuffer
     index_buffer_descriptor : d3d11.BUFFER_DESC
@@ -298,7 +382,10 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     index_resource.pSysMem = (rawptr)(&indices)
 
-    device->CreateBuffer(&index_buffer_descriptor, &index_resource, &index_buffer)
+    container.DX_CALL(
+        device->CreateBuffer(&index_buffer_descriptor, &index_resource, &index_buffer),
+        index_buffer,
+    )
 
     container.END_EVENT()
 
@@ -317,7 +404,10 @@ init_render_subsystem :: proc(winfo : rawptr){
         MultisampleEnable = true,
     }
     
-    device->CreateRasterizerState(&raterizer_descriptor,&raterizer_state)
+    container.DX_CALL(
+        device->CreateRasterizerState(&raterizer_descriptor,&raterizer_state),
+        raterizer_state,
+    )
 
     container.END_EVENT()
 
@@ -347,7 +437,10 @@ init_render_subsystem :: proc(winfo : rawptr){
         },
     }
 
-    device->CreateDepthStencilState(&stencil_depth_descriptor, &stencil_depth_state)
+    container.DX_CALL(
+        device->CreateDepthStencilState(&stencil_depth_descriptor, &stencil_depth_state),
+        stencil_depth_state,
+    )
 
     container.END_EVENT()
 
@@ -374,7 +467,10 @@ init_render_subsystem :: proc(winfo : rawptr){
         RenderTargetWriteMask = 15, //ALL
     }
 
-    device->CreateBlendState(&blend_descriptor, &blend_state)
+    container.DX_CALL(
+        device->CreateBlendState(&blend_descriptor, &blend_state),
+        blend_state,
+    )
 
     container.END_EVENT()
 
@@ -382,45 +478,75 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.BEGIN_EVENT("Binding")
 
-    device_context->IASetInputLayout(input_layout)
-    
     VERTEX_STRIDE : u32 = size_of(SpriteIndex) // size of Vertex
     VERTEX_OFFSET : u32 = 0
 
+    device_context->IASetPrimitiveTopology(d3d11.PRIMITIVE_TOPOLOGY.TRIANGLELIST)
     device_context->IASetVertexBuffers(0, 1, &vertex_buffer, &VERTEX_STRIDE, &VERTEX_OFFSET)
     device_context->IASetIndexBuffer(index_buffer, dxgi.FORMAT.R16_UINT, 0)
-    device_context->IASetPrimitiveTopology(d3d11.PRIMITIVE_TOPOLOGY.TRIANGLELIST)
-    
-    device_context->VSSetConstantBuffers(0,1,&cbuffer_1)
-    device_context->VSSetShader(vertex_shader, nil, 0)
-
-    device_context->RSSetViewports(1, &viewport)
-
-    device_context->PSSetShaderResources(0,1,&sprite_texture_resource_view)
-    device_context->PSSetSamplers(0,1, &texture_sampler)
-
-    device_context->PSSetShader(pixel_shader, nil, 0)
 
     device_context->RSSetState(raterizer_state)
-    
-    device_context->OMSetRenderTargets(1, &back_render_target_view, nil)
-    device_context->OMSetBlendState(blend_state, &{1.0, 1.0, 1.0, 1.0}, 0xFFFFFFFF)
 
+    device_context->OMSetRenderTargets(1, &back_render_target_view, nil)
     device_context->OMSetDepthStencilState(stencil_depth_state, 0)
+    device_context->OMSetBlendState(blend_state, &{1.0, 1.0, 1.0, 1.0}, 0xFFFFFFFF)
+    device_context->RSSetViewports(1, &viewport)
+
     container.END_EVENT()
 
     for (container.System.WindowSystem in shared_data.Systems){
 
+        // Set global constant buffer 
+        mapped_subresource : d3d11.MAPPED_SUBRESOURCE
+        
+        container.DX_CALL(
+            device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresource),
+            nil,
+        )
+
+        {
+            constants := (^GlobalDynamicConstantBuffer)(mapped_subresource.pData)
+
+            constants.sprite_sheet_size = {0,0}
+            constants.device_conversion = {2.0 / viewport.Width, -2.0 / viewport.Height}
+            constants.viewport_size = {viewport.Width, viewport.Height}
+            constants.time = u32(shared_data.time)
+            constants.delta_time = 0
+        }
+        device_context->Unmap(vs_cbuffer_0, 0)
 
         device_context->ClearRenderTargetView(back_render_target_view, &{0.0, 0.4, 0.5, 1.0})
-    
 
+        for render_entity_id in ecs.get_entities_with_components(&shared_data.ecs, {container.ShaderCache}){
+        container.BEGIN_EVENT("Draw Call")
+           
+            //TODO: Handle null check. passing null will result in the gpu to crash x.x
+            target_shader_cache_key := ecs.get_component_unchecked(&shared_data.ecs, render_entity_id, container.ShaderCache)
+            shader_cache, _ := cached_shaders[target_shader_cache_key.Val]
+            
+            device_context->IASetInputLayout(cached_layout[target_shader_cache_key.Val])
 
-       device_context->DrawIndexedInstanced(len(indices),1,0,0,0)
+            device_context->VSSetShader(shader_cache.vertex_shader, nil, 0)
+            device_context->PSSetShader(shader_cache.pixel_shader, nil, 0)
+            
+            device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
 
-        swapchain->Present(1,0)
+            device_context->PSSetShaderResources(0,1,&sprite_texture_resource_view)
+            device_context->PSSetSamplers(0,1, &texture_sampler)
 
+            device_context->DrawIndexed(len(indices),0,0)
+            //device_context->DrawIndexedInstanced(len(indices),1,0,0,0)
 
-        device_context->OMSetRenderTargets(1, &back_render_target_view, nil)
+            container.DX_CALL(
+                swapchain->Present(1,0),
+                nil,
+            )
+
+            device_context->OMSetRenderTargets(1, &back_render_target_view, nil)
+    container.END_EVENT()
+
+        }
+
     }
+
 }

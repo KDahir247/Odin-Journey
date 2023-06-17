@@ -1,11 +1,10 @@
 cbuffer VS_CONSTANT_BUFFER : register(b0){
     //vp matrix,
-    
     float2 spriteSize;
     float2 deviceConversion;
     float2 viewportSize;
-    float time;
-    float delta_time;
+    uint time;
+    uint delta_time;
 };
 
 struct VSIn{
@@ -37,8 +36,8 @@ VsOut vs_main(in VSIn vs_in)
     
     float2 scaled_quad = vs_in.quadid * float2(39, 41);
 
-    float2 position = scaled_quad * deviceConversion * 2 - float2(1.0, -1.0);
-    vso.position = float4(position.x, position.y, 0.0f,1.0f);
+    float2 position = scaled_quad * deviceConversion * 2  - float2(1.0, -1.0);
+    vso.position = float4(position.x, position.y, 0.0f,1.0f) ;
     vso.uv = scaled_quad;
 
     return vso;
