@@ -2,6 +2,7 @@ package main;
 
 import "vendor:sdl2"
 
+import "vendor:miniaudio"
 import "container"
 import "core:thread"
 import "core:sync"
@@ -22,6 +23,7 @@ init_prof_buffer :: proc(){
 
 main :: proc() {
 
+	
 	running := true
 
 	sdl2_event : sdl2.Event
@@ -74,7 +76,7 @@ main :: proc() {
 	}
 
 	container.END_EVENT()
-
+	
 
 	container.BEGIN_EVENT("Shared Data and Thread Creation")
 	
@@ -92,6 +94,8 @@ main :: proc() {
 
 	thread.run(system.init_game_subsystem, context)
 	thread.run_with_data(window_info,system.init_render_subsystem, context)
+	thread.run(system.init_audio_subsystem, context)
+	thread.run(system.init_ui_subsystem, context)
 
 	start_time := time.tick_now()._nsec
 
@@ -105,6 +109,8 @@ main :: proc() {
 			running = sdl2_event.type != sdl2.EventType.QUIT
 		}
 	}
+
+
 
 	excl(&shared_data.Systems, container.System.WindowSystem)
 	ecs.deinit_ecs(&shared_data.ecs)

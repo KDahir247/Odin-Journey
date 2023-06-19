@@ -15,7 +15,6 @@ import "core:os"
 // "loop" (should the animation loop?)
 // "carry_over" (if the animation continues over from the index to the next index what index is it carried over to and how much column does it take up.)
 // "animation_speed" (how the speed the animation should transition for this clip LOCAL only affect the current clip, the animator speed parameter is GLOBAL affect all the clip the same)
-// "order" (If the sprite sheet is horizontal the order will be 0 otherwise if the sprite sheet is 1 then it is vertical)
 
 create_animator :: proc(animation_speed : f32, clips : [$E]container.AnimationClip) -> uint{
 	ctx := cast(^Context) context.user_ptr

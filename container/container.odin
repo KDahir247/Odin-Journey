@@ -1,9 +1,9 @@
 package game_container
 
 import "vendor:sdl2"
-import "vendor:sdl2/image"
+import "vendor:directx/d3d_compiler"
 import "vendor:directx/d3d11"
-
+import "vendor:stb/image"
 
 import "core:sync"
 import "core:prof/spall"
@@ -15,6 +15,38 @@ import "core:fmt"
 import "../mathematics"
 import "../ecs"
 
+//////////////////// COMMAN MATH ///////////////////////
+
+
+IDENTITY : hlsl.float4x4 :  {
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 1.0,
+}
+
+
+//////////////////// COMMON PATH ///////////////////////
+
+
+DEFAULT_SPRITE_PATH :: "resource/sprite/*.png"
+
+DEFAULT_SHADER_PATH :: "resource/shader/*.hlsl"
+
+DEFAULT_LEVEL_PATH :: "resource/level/*.ldtk"
+
+//Quality 1, Size = 4
+DEFAULT_AUDIO_PATH_WAV :: "reosurce/audio/*.wav"
+
+//Quality 2, Size = 3
+DEFAULT_AUDIO_PATH_FLAC :: "resource/audio/*.flac"
+
+//Quality 3, Size = 2
+DEFAULT_AUDIO_PATH_OGG :: "resource/audio/*.ogg"
+
+//Quality 4, Size = 1
+DEFAULT_AUDIO_PATH_MP3 :: "resource/aduio/*.mp3"
+
 //////////////////// Utility FN ////////////////////////
  
 @(private)
@@ -23,7 +55,6 @@ DX11_ERR :: struct{
     description : string,
 }
 
-//TODO: khal add description to the HR ERROR CODE
 @(private)
 HR_ERR_MAP : map[int]DX11_ERR = {
     0x887C0002 = DX11_ERR{
@@ -190,14 +221,12 @@ CREATE_PROFILER :: proc(name : string){
     CREATE_PROFILER_BUFFER()
 }
 
-
 CREATE_PROFILER_BUFFER :: #force_inline proc(size : int = spall.BUFFER_DEFAULT_SIZE){
     when #config(PROFILE,true){
         profiler_backer := make([]u8, spall.BUFFER_DEFAULT_SIZE)
         profiler_buffer = spall.buffer_create(profiler_backer, u32(sync.current_thread_id()))
     }
 }
-
 
 FREE_PROFILER :: proc(){
     FREE_PROFILER_BUFFER()
@@ -229,6 +258,8 @@ END_EVENT :: #force_inline proc(){
 }
 
 //////////////////// CORE DATA /////////////////////////
+
+
 @(private) profiler_context : spall.Context
 @(private) @(thread_local) profiler_buffer : spall.Buffer
 
@@ -262,31 +293,73 @@ SystemInitFlags :: bit_set[System; u32]
 /////////////////////////////////////////////////////////
 
 /////////////////// RENDERER DATA ///////////////////////
-Vertex :: struct{
-    Vertex : [2]f32,
-    Uv : [2]f32,
+RenderParam :: struct {
+    vertex_shader : ^d3d11.IVertexShader,
+    vertex_blob : ^d3d_compiler.ID3DBlob,
+
+    pixel_shader : ^d3d11.IPixelShader,
+    pixel_blob : ^d3d_compiler.ID3DBlob,
+
+    layout_input : ^d3d11.IInputLayout,
+
+    texture_resource : ^d3d11.IShaderResourceView,
+
 }
 
-SpriteDetail :: struct{
-    Width : i32,
-    Height : i32,
+SpriteHandle :: struct{
+    batch_handle : uint,
+    sprite_handle : int,
 }
 
+SpriteBatch :: struct{
+    sprite_batch : [dynamic]SpriteInstanceData,
+    len : int,
 
-ShaderCache :: struct{
-    Val : string,
-}
-
-
-
-//TODO: change to string.
-SpriteCache :: struct{
-    Val : cstring,
+    //Shared
+    texture : rawptr,
+    width : i32,
+    height : i32,
+    shader_cache : u32,
 }
 
 SpriteInstanceData :: struct{
-    transform : hlsl.float3x3,
+    transform : hlsl.float4x4,
     src_rect : hlsl.float4,
+    hue_displacement : hlsl.float,
+    // We will be sorting by zdepth
+    z_depth : hlsl.uint,
+}
+
+
+sprite_batch_init :: proc(sb : ^$S/SpriteBatch, shader_cache : u32){
+   sb = container.SpriteBatch{
+        sprite_batch = make_dynamic_array_len_cap([dynamic]container.SpriteInstanceData,0, 2048),
+        shader_cache = 0,
+    }
+}
+
+@(optimization_mode="speed")
+sprite_batch_append :: proc(sprite_batch : ^SpriteBatch, data : SpriteInstanceData) -> int{
+
+    append(&sprite_batch.sprite_batch, data)
+    return len(sprite_batch.sprite_batch) - 1
+}
+
+@(optimization_mode="speed")
+sprite_batch_set :: proc(sprite_batch : ^SpriteBatch, handle : int, data : SpriteInstanceData){
+    #no_bounds_check{
+        sprite_batch.sprite_batch[handle] = data
+    }
+}
+
+@(optimization_mode="speed")
+sprite_batch_free :: proc(sprite_batch : ^SpriteBatch){
+    delete(sprite_batch.sprite_batch)
+
+    if sprite_batch.texture != nil{
+        image.image_free(sprite_batch.texture)
+        sprite_batch.texture = nil
+    }
 }
 
 ////////////////////////////////////////////////////////
@@ -295,7 +368,7 @@ SpriteInstanceData :: struct{
 /////////////////// GAME DATA /////////////////////////
 
 Position :: struct{
-    Value : [2]f32,
+    Value : hlsl.float2,
 }
 
 Rotation :: struct{
@@ -303,10 +376,8 @@ Rotation :: struct{
 }
 
 Scale :: struct {
-    Value : [2]f32,
+    Value : hlsl.float2,
 }
-
-
 
 ///////////////////////////////////////////////////////
 
@@ -329,16 +400,6 @@ TileMap :: struct{
 	dimension : mathematics.Vec2i,
 }
 
-GameConfig :: struct{
-    img_flags : image.InitFlags,
-    window_flags : sdl2.WindowFlags,
-    render_flags : sdl2.RendererFlags,
-
-    dimension : mathematics.Vec2i,
-    center : mathematics.Vec2i,
-    title : cstring,
-    clear_color : int,
-}
 
 
 PhysicsContact :: struct{
@@ -363,12 +424,10 @@ GameEntity :: struct{
 }
 
 DynamicResource :: struct{
- 
     // time
     elapsed_time : u32,
     delta_time : f32,
     current_physics_time : f32,
-
 }
 
 Animator :: struct{

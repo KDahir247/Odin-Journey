@@ -40,6 +40,16 @@ is_entity_valid :: proc(ctx: ^Context, entity: Entity) -> bool {
   return ctx.entities.entities[uint(entity)].is_valid
 }
 
+@(optimization_mode="speed")
+get_entities_with_single_component_fast :: #force_inline proc(ctx: ^Context, component: typeid) -> (entities: [dynamic]Entity) {
+  #no_bounds_check{
+    for entity, _ in ctx.component_map[component].entity_indices {
+      append_elem(&entities, entity)
+    }
+  }
+  return entities
+}
+
 // This is slow. 
 // This will be significantly faster when an archetype or sparse set ECS is implemented.
 get_entities_with_components :: proc(ctx: ^Context, components: []typeid) -> (entities: [dynamic]Entity) {

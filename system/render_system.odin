@@ -33,7 +33,6 @@ SpriteIndex :: struct{
     position : hlsl.float2, //UV has the same values as position.
 }
 
-
 GlobalDynamicConstantBuffer :: struct #align 16{
     sprite_sheet_size : hlsl.float2,
     device_conversion : hlsl.float2,
@@ -41,7 +40,6 @@ GlobalDynamicConstantBuffer :: struct #align 16{
     time : u32,
     delta_time : u32,
 }
-
 
 @(private)
 Shader :: struct{
@@ -52,7 +50,6 @@ Shader :: struct{
     pixel_blob : ^d3d_compiler.ID3DBlob,
 
 }
-
 
 @(optimization_mode="size")
 init_render_subsystem :: proc(winfo : rawptr){
@@ -91,32 +88,48 @@ init_render_subsystem :: proc(winfo : rawptr){
         0, 1, 2, 3, 0, 2,
     }
 
-    cached_shaders : map[string]Shader = make(map[string]Shader)
-    cached_layout : map[string]^d3d11.IInputLayout = make(map[string]^d3d11.IInputLayout)
 
-    //TODO: issue with defer something doesn't work or the thread exit early (get destroyed)........
     defer{
         container.FREE_PROFILER_BUFFER()
+        //TODO: khal this doesn't work cleaning render thread doesn't get printed
+
+        for render_param_entity in ecs.get_entities_with_single_component_fast(&shared_data.ecs, container.RenderParam){
+            render_param := ecs.get_component_unchecked(&shared_data.ecs, render_param_entity, container.RenderParam)
+
+            if render_param.vertex_shader != nil{
+                render_param.vertex_shader->Release()
+            }
+
+            if render_param.vertex_blob != nil{
+                render_param.vertex_blob->Release()
+            }
 
 
-        for _, cache in cached_shaders{
-            if cache.vertex_shader != nil do cache.vertex_shader->Release() 
-            if cache.vertex_blob != nil do cache.vertex_blob->Release()
-            if cache.pixel_shader != nil do cache.pixel_shader->Release()
-            if cache.pixel_blob != nil do cache.pixel_blob->Release()
+            if render_param.pixel_shader != nil{
+                render_param.pixel_shader->Release()
+            }
+
+            if render_param.pixel_blob != nil{
+                render_param.pixel_blob->Release()
+            }
+
+            if render_param.layout_input != nil{
+                render_param.layout_input->Release()
+            }
+
+
+            if render_param.texture_resource != nil{
+                render_param.texture_resource->Release()
+            }
+          
+            ecs.remove_component(&shared_data.ecs, render_param_entity, container.RenderParam)
+
         }
 
-
-        for _, cache in cached_layout{
-            if cache != nil do cache->Release()
-        }
-
-
-        delete_map(cached_layout)
-        delete_map(cached_shaders)
 
         free(native_win)
         excl(&shared_data.Systems, container.System.DX11System)
+        fmt.println("cleaning render thread")
 
     }
 
@@ -217,47 +230,132 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.END_EVENT()
 
-    container.BEGIN_EVENT("Image Texture Construction")
-    
-    //TODO: Khal this need working on not right
-    sprite_texture_resource_view : ^d3d11.IShaderResourceView
+    container.BEGIN_EVENT("Texture & Shader Construction")
+
     sprite_texture : ^d3d11.ITexture2D
-    sprite_sheet_resource : d3d11.SUBRESOURCE_DATA
-    atlas_texture_descriptor := d3d11.TEXTURE2D_DESC{}
+    texture_resource : d3d11.SUBRESOURCE_DATA
 
-    width : i32 = 0
-    height : i32 = 0
-    channel : i32 = 0
-    desired_channel : i32 = 4
+    instance_layout_descriptor := [7]d3d11.INPUT_ELEMENT_DESC{
+        {"QUAD_ID", 0, dxgi.FORMAT.R32G32_FLOAT, 0,0, d3d11.INPUT_CLASSIFICATION.VERTEX_DATA, 0},
 
-    for tex in ecs.get_component_list(&shared_data.ecs, container.SpriteCache){
-        img_data := image.load(tex.Val, &width, &height, &channel, desired_channel)
-    
-        img_pitch := u32(width * 4)
-        
-        atlas_texture_descriptor.Width = u32(width) //full sprite sheet width
-        atlas_texture_descriptor.Height = u32(height) //full sprite sheet height
-        atlas_texture_descriptor.MipLevels = 1
-        atlas_texture_descriptor.ArraySize = 1
-        atlas_texture_descriptor.Format = dxgi.FORMAT.R8G8B8A8_UNORM
-        atlas_texture_descriptor.SampleDesc.Count = 1
-        atlas_texture_descriptor.Usage = d3d11.USAGE.IMMUTABLE
-        atlas_texture_descriptor.BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE}
-    
-        sprite_sheet_resource.pSysMem = img_data
-        sprite_sheet_resource.SysMemPitch = img_pitch
-        
-        container.DX_CALL(
-            device->CreateTexture2D(&atlas_texture_descriptor, &sprite_sheet_resource, &sprite_texture),
-            nil,
-        ) // IO  BLOCK fun!
-    
-        container.DX_CALL(
-            device->CreateShaderResourceView(sprite_texture,nil,&sprite_texture_resource_view),
-            nil,
-        )
+        {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"TRANSFORM",1, dxgi.FORMAT.R32G32B32A32_FLOAT,1,16, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"TRANSFORM",2, dxgi.FORMAT.R32G32B32A32_FLOAT,1,32, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"TRANSFORM",3, dxgi.FORMAT.R32G32B32A32_FLOAT,1,48, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
+        {"COLOR", 0, dxgi.FORMAT.R32G32B32_FLOAT,1, 80, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
     }
-  
+
+    shader_dir,match_err := filepath.glob(container.DEFAULT_SHADER_PATH)
+
+    assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
+
+    for sprite_batch_entity in ecs.get_entities_with_single_component_fast(&shared_data.ecs, container.SpriteBatch){
+        sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, sprite_batch_entity, container.SpriteBatch)
+
+        //////////////////////////////// TEXTURE SETUP ////////////////////////////////
+
+        texture_descriptor := d3d11.TEXTURE2D_DESC{
+            Width = u32(sprite_batch.width),
+            Height = u32(sprite_batch.height),
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = dxgi.FORMAT.R8G8B8A8_UNORM,
+            SampleDesc = dxgi.SAMPLE_DESC{
+                Count = 1,
+                Quality = 0,
+            },
+            Usage = d3d11.USAGE.IMMUTABLE,
+            BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE},
+           }
+    
+           texture_pitch := 4 * texture_descriptor.Width
+    
+           texture_resource.pSysMem = sprite_batch.texture
+           texture_resource.SysMemPitch = texture_pitch
+    
+           container.DX_CALL(
+            device->CreateTexture2D(&texture_descriptor, &texture_resource, &sprite_texture),
+            sprite_texture,
+           )
+    
+           sprite_shader_resource_view : ^d3d11.IShaderResourceView
+           
+           container.DX_CALL(
+            device->CreateShaderResourceView(sprite_texture, nil, &sprite_shader_resource_view),
+            nil,
+           )
+
+           //////////////////////////// SHADER SETUP //////////////////////////////////
+           assert(u32(len(shader_dir) - 1) >= sprite_batch.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
+
+           target_shader_path := shader_dir[sprite_batch.shader_cache]
+
+           _, shader_file := filepath.split(target_shader_path)
+
+           shader_src_name : cstring = strings.clone_to_cstring(shader_file)
+   
+           shader_path_byte, _ := os.read_entire_file_from_filename(target_shader_path)
+           
+           defer{
+               delete(shader_path_byte)
+               delete_cstring(shader_src_name)
+           }
+   
+           shader_bytecode := raw_data(shader_path_byte)
+           shader_bytecode_length := uint(len(shader_path_byte))
+   
+           vertex_shader : ^d3d11.IVertexShader
+           pixel_shader : ^d3d11.IPixelShader
+
+           vertex_blob : ^d3d_compiler.ID3DBlob
+           pixel_blob : ^d3d_compiler.ID3DBlob
+
+           input_layout : ^d3d11.IInputLayout
+
+           container.DX_CALL(
+            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length, shader_src_name, nil, nil, "vs_main","vs_5_0",15,0, &vertex_blob, nil),
+            nil,
+           )
+
+           container.DX_CALL(
+            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length,shader_src_name, nil, nil, "ps_main", "ps_5_0", 15,0,&pixel_blob, nil),
+            nil,
+           )
+
+           container.DX_CALL(
+            device->CreateVertexShader(vertex_blob->GetBufferPointer(), vertex_blob->GetBufferSize(), nil, &vertex_shader),
+            nil,
+           )
+
+           container.DX_CALL(
+            device->CreatePixelShader(pixel_blob->GetBufferPointer(), pixel_blob->GetBufferSize(), nil, &pixel_shader),
+            nil,
+           )
+
+           container.DX_CALL(
+            device->CreateInputLayout(&instance_layout_descriptor[0], len(instance_layout_descriptor), vertex_blob->GetBufferPointer(), vertex_blob->GetBufferSize(),&input_layout),
+            nil,
+           )
+
+
+           ////////////////////////////////////////////////////////////////////////
+           render_param : container.RenderParam = container.RenderParam{
+            vertex_shader,
+            vertex_blob,
+            pixel_shader,
+            pixel_blob,
+            input_layout,
+            sprite_shader_resource_view,
+           }
+
+           render_param.texture_resource = sprite_shader_resource_view
+
+           ecs.add_component_unchecked(&shared_data.ecs, sprite_batch_entity, render_param)
+    }
+
+    delete(shader_dir)
+
     texture_sampler : ^d3d11.ISamplerState
 
     sampler_descriptor := d3d11.SAMPLER_DESC{}
@@ -283,75 +381,6 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.END_EVENT()
     
-    container.BEGIN_EVENT("Shader Construction")
-
-    instance_layout_descriptor := [6]d3d11.INPUT_ELEMENT_DESC{
-        {"QUAD_ID", 0, dxgi.FORMAT.R32G32_FLOAT, 0,0, d3d11.INPUT_CLASSIFICATION.VERTEX_DATA, 0},
-
-        {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
-        {"TRANSFORM",1, dxgi.FORMAT.R32G32B32A32_FLOAT,1,16, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
-        {"TRANSFORM",2, dxgi.FORMAT.R32G32B32A32_FLOAT,1,32, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
-        {"TRANSFORM",3, dxgi.FORMAT.R32G32B32A32_FLOAT,1,48, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
-        {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
-    }
-
-    shader_dir,match_err := filepath.glob(`shaders\*.hlsl`)
-
-    //TODO: khal we can optimize this.
-    for shader_path in shader_dir{
-
-        shader_dir, shader_file := filepath.split(shader_path)
-
-        c_shader_file : cstring = strings.clone_to_cstring(shader_file)
-
-        shader_path_byte, _ := os.read_entire_file_from_filename(shader_path)
-        
-        defer{
-            delete(shader_path_byte)
-            delete_cstring(c_shader_file)
-        }
-
-        shader_bytecode := raw_data(shader_path_byte)
-        shader_bytecode_length := uint(len(shader_path_byte))
-
-         shader : Shader
-
-         container.DX_CALL(
-            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length, c_shader_file, nil, nil, "vs_main", "vs_5_0",15,0,&shader.vertex_blob, nil),
-            nil,
-         )
-
-       container.DX_CALL(
-        d3d_compiler.Compile(shader_bytecode, shader_bytecode_length, c_shader_file, nil, nil, "ps_main", "ps_5_0",15,0,&shader.pixel_blob, nil),
-         nil,
-        )
-
-        container.DX_CALL(
-            device->CreateVertexShader(shader.vertex_blob->GetBufferPointer(),shader.vertex_blob->GetBufferSize(), nil, &shader.vertex_shader),
-            nil,
-        )
-
-        container.DX_CALL(
-            device->CreatePixelShader(shader.pixel_blob->GetBufferPointer(), shader.pixel_blob->GetBufferSize(), nil, &shader.pixel_shader),
-            nil,
-        )
-
-        cache_key := shader_file[0:len(shader_file) - 5]
-
-        layout : ^d3d11.IInputLayout
-        container.DX_CALL(
-            device->CreateInputLayout(&instance_layout_descriptor[0], len(instance_layout_descriptor), shader.vertex_blob->GetBufferPointer(), shader.vertex_blob->GetBufferSize(), &layout),
-            nil,
-        )
-
-        cached_layout[cache_key] = layout
-
-        if !(cache_key in cached_shaders){
-            cached_shaders[cache_key] = shader
-        }
-    }
-
-    container.END_EVENT()
 
     container.BEGIN_EVENT("Buffer Creation")
    
@@ -412,7 +441,7 @@ init_render_subsystem :: proc(winfo : rawptr){
     container.END_EVENT()
 
 
-    container.BEGIN_EVENT("Stencil Depth Creation")
+    container.BEGIN_EVENT("StencilDepth Creation")
 
     stencil_depth_state : ^d3d11.IDepthStencilState
 
@@ -495,8 +524,6 @@ init_render_subsystem :: proc(winfo : rawptr){
     container.END_EVENT()
 
     for (container.System.WindowSystem in shared_data.Systems){
-
-        // Set global constant buffer 
         mapped_subresource : d3d11.MAPPED_SUBRESOURCE
         
         container.DX_CALL(
@@ -513,38 +540,39 @@ init_render_subsystem :: proc(winfo : rawptr){
             constants.time = u32(shared_data.time)
             constants.delta_time = 0
         }
+
         device_context->Unmap(vs_cbuffer_0, 0)
 
         device_context->ClearRenderTargetView(back_render_target_view, &{0.0, 0.4, 0.5, 1.0})
 
-        for render_entity_id in ecs.get_entities_with_components(&shared_data.ecs, {container.ShaderCache}){
-        container.BEGIN_EVENT("Draw Call")
-           
-            //TODO: Handle null check. passing null will result in the gpu to crash x.x
-            target_shader_cache_key := ecs.get_component_unchecked(&shared_data.ecs, render_entity_id, container.ShaderCache)
-            shader_cache, _ := cached_shaders[target_shader_cache_key.Val]
-            
-            device_context->IASetInputLayout(cached_layout[target_shader_cache_key.Val])
+        for render_entity in ecs.get_entities_with_single_component_fast(&shared_data.ecs, container.RenderParam){
+            container.BEGIN_EVENT("Draw Call")
 
-            device_context->VSSetShader(shader_cache.vertex_shader, nil, 0)
-            device_context->PSSetShader(shader_cache.pixel_shader, nil, 0)
-            
+            render_param, sprite_batch := ecs.get_components_2_unchecked(&shared_data.ecs, render_entity, container.RenderParam, container.SpriteBatch)
+
+            device_context->IASetInputLayout(render_param.layout_input)
+
+            device_context->VSSetShader(render_param.vertex_shader, nil, 0)
+            device_context->PSSetShader(render_param.pixel_shader, nil, 0)
+
             device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
 
-            device_context->PSSetShaderResources(0,1,&sprite_texture_resource_view)
-            device_context->PSSetSamplers(0,1, &texture_sampler)
 
-            device_context->DrawIndexed(len(indices),0,0)
-            //device_context->DrawIndexedInstanced(len(indices),1,0,0,0)
+            device_context->PSSetShaderResources(0,1, &render_param.texture_resource)
+            device_context->PSSetSamplers(0,1,&texture_sampler)
+
+            device_context->DrawIndexedInstanced(6, u32(len(sprite_batch.sprite_batch)),0,0,0)
 
             container.DX_CALL(
                 swapchain->Present(1,0),
                 nil,
             )
 
-            device_context->OMSetRenderTargets(1, &back_render_target_view, nil)
-    container.END_EVENT()
+            device_context->OMSetRenderTargets(1, &back_render_target_view, nil) 
 
+
+            container.END_EVENT()
+           
         }
 
     }
