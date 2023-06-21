@@ -1,6 +1,5 @@
 package ecs
 
-import "core:runtime"
 import "core:container/queue"
 
 ECS_Error :: enum {
@@ -43,12 +42,12 @@ deinit_ecs :: proc(ctx: ^Context) {
   destroy_entities(ctx)
 
   destroy_component_map :: proc(ctx: ^Context) {
-    for key, value in ctx.component_map {
+    for _, value in ctx.component_map {
       free(value.data^.data)
       free(value.data)
     }
   
-    for key, value in ctx.component_map {
+    for _, value in ctx.component_map {
       delete(value.entity_indices)
     }
   

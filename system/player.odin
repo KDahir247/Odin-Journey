@@ -4,7 +4,6 @@ import "../container"
 import "../physics"
 import "../mathematics"
 
-import "core:fmt"
 import "core:math/linalg"
 
 move_player :: #force_inline proc(player_physics : ^container.Physics, direction : mathematics.Vec2, movement_speed : mathematics.Vec2){

@@ -90,7 +90,7 @@ get_entities_with_components :: proc(ctx: ^Context, components: []typeid) -> (en
 destroy_entity :: proc(ctx: ^Context, entity: Entity) {
   using ctx.entities
   
-  for T, component in &ctx.component_map {
+  for T, _ in &ctx.component_map {
     remove_component_with_typeid(ctx, entity, T)
   }
 

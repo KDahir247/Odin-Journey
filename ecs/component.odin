@@ -1,7 +1,6 @@
 package ecs
 
 import "core:runtime"
-import "core:container/queue"
 import "core:slice"
 
 Component_List :: struct {

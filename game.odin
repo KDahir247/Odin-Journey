@@ -1,29 +1,22 @@
 package main;
 
-import "vendor:sdl2"
-
-import "vendor:miniaudio"
-import "container"
 import "core:thread"
-import "core:sync"
-import "system"
-
-import "core:prof/spall"
-
-
-import "core:fmt"
 import "core:time"
 
+import "vendor:sdl2"
+
+import "container"
 import "ecs"
+import "system"
 
 @(init)
 init_prof_buffer :: proc(){
 	container.CREATE_PROFILER("ProfilerData.spall")
 }
 
+@(optimization_mode="size")
 main :: proc() {
 
-	
 	running := true
 
 	sdl2_event : sdl2.Event
@@ -77,7 +70,6 @@ main :: proc() {
 
 	container.END_EVENT()
 	
-
 	container.BEGIN_EVENT("Shared Data and Thread Creation")
 	
 	shared_data.Systems = container.SystemInitFlags{
@@ -93,13 +85,15 @@ main :: proc() {
 	context.user_ptr = shared_data
 
 	thread.run(system.init_game_subsystem, context)
-	thread.run_with_data(window_info,system.init_render_subsystem, context)
 	thread.run(system.init_audio_subsystem, context)
 	thread.run(system.init_ui_subsystem, context)
-
-	start_time := time.tick_now()._nsec
+	thread.run_with_poly_data(window_info,system.init_render_subsystem, context)
 
 	container.END_EVENT()
+
+	container.BEGIN_EVENT("Game loop")
+
+	start_time := time.tick_now()._nsec
 
 	for running{
 
@@ -110,9 +104,9 @@ main :: proc() {
 		}
 	}
 
-
-
 	excl(&shared_data.Systems, container.System.WindowSystem)
 	ecs.deinit_ecs(&shared_data.ecs)
+
+	container.END_EVENT()
 
 }

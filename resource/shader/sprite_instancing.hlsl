@@ -11,11 +11,14 @@ struct VSIn{
     float2 quadid : QUAD_ID;
     matrix transform : TRANSFORM;
     float4 src_rect : SRC_RECT;
+    float color : HUE_DISP;
+    float depth : Z_DEPTH;
     uint spriteid : SV_INSTANCEID;
     uint vertexid : SV_VERTEXID;
 };
 
 struct VsOut{
+    float color : COL;
     float4 position : SV_POSITION;
     float2 uv : UV;
 };
@@ -34,11 +37,13 @@ VsOut vs_main(in VSIn vs_in)
     // float2 position_device_space = position_screen_space / viewport_size
     // position_device_space *= device_conversion - float2(1.0, -1.0)
     
-    float2 scaled_quad = vs_in.quadid * float2(39, 41);
+    float4 scaled_quad = float4(vs_in.quadid * float2(39, 41), 0.0, 1.0);
 
-    float2 position = scaled_quad * deviceConversion * 2  - float2(1.0, -1.0);
+    float2 position = mul(scaled_quad, vs_in.transform).xy * deviceConversion * 2  - float2(1.0, -1.0) ;
+
     vso.position = float4(position.x, position.y, 0.0f,1.0f) ;
     vso.uv = scaled_quad;
+    vso.color = vs_in.color;
 
     return vso;
 }

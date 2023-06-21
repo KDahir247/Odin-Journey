@@ -4,33 +4,23 @@ import "vendor:sdl2"
 import "vendor:directx/d3d11"
 import "vendor:directx/dxgi"
 import "vendor:directx/d3d_compiler"
-import "vendor:directx/dxc"
-import "vendor:stb/image"
 
-import win32 "core:sys/windows"
 import "core:math/linalg/hlsl"
-import "core:thread"
-import "core:sync"
 import "core:c/libc"
-import "core:prof/spall"
 import "core:fmt"
 
 import "core:strings"
 import "core:os"
-import "core:unicode/utf16"
 import "core:path/filepath"
 
 import "../ecs"
 import "../container"
 
-//MAX_BATCH_SIZE :: 1024
-//SpriteData := [MAX_BATCH_SIZE]SpriteInstanceData{}
 
-
-
+//TODO: khal move the struct to container
 @(private)
 SpriteIndex :: struct{
-    position : hlsl.float2, //UV has the same values as position.
+    position : hlsl.float2,
 }
 
 GlobalDynamicConstantBuffer :: struct #align 16{
@@ -41,28 +31,18 @@ GlobalDynamicConstantBuffer :: struct #align 16{
     delta_time : u32,
 }
 
-@(private)
-Shader :: struct{
-    vertex_shader : ^d3d11.IVertexShader,
-    vertex_blob : ^d3d_compiler.ID3DBlob,
-
-    pixel_shader : ^d3d11.IPixelShader,
-    pixel_blob : ^d3d_compiler.ID3DBlob,
-
-}
 
 @(optimization_mode="size")
-init_render_subsystem :: proc(winfo : rawptr){
+init_render_subsystem :: proc(winfo : ^sdl2.SysWMinfo){
 
     shared_data := cast(^container.SharedContext)context.user_ptr
-    window_system_info := cast(^sdl2.SysWMinfo)winfo
     
     container.CREATE_PROFILER_BUFFER()
 
-    assert(window_system_info.subsystem == .WINDOWS)
+    assert(winfo.subsystem == .WINDOWS)
 
-	native_win := dxgi.HWND(window_system_info.info.win.window)
-
+	native_win := dxgi.HWND(winfo.info.win.window)
+    
     base_device : ^d3d11.IDevice
     base_device_context : ^d3d11.IDeviceContext
 
@@ -88,49 +68,27 @@ init_render_subsystem :: proc(winfo : rawptr){
         0, 1, 2, 3, 0, 2,
     }
 
-
     defer{
         container.FREE_PROFILER_BUFFER()
-        //TODO: khal this doesn't work cleaning render thread doesn't get printed
 
+        //TODO khal doesn't seem to print cleaning render thread, so there is a issue here
         for render_param_entity in ecs.get_entities_with_single_component_fast(&shared_data.ecs, container.RenderParam){
             render_param := ecs.get_component_unchecked(&shared_data.ecs, render_param_entity, container.RenderParam)
 
-            if render_param.vertex_shader != nil{
                 render_param.vertex_shader->Release()
-            }
-
-            if render_param.vertex_blob != nil{
                 render_param.vertex_blob->Release()
-            }
-
-
-            if render_param.pixel_shader != nil{
                 render_param.pixel_shader->Release()
-            }
-
-            if render_param.pixel_blob != nil{
                 render_param.pixel_blob->Release()
-            }
-
-            if render_param.layout_input != nil{
                 render_param.layout_input->Release()
-            }
-
-
-            if render_param.texture_resource != nil{
                 render_param.texture_resource->Release()
-            }
           
             ecs.remove_component(&shared_data.ecs, render_param_entity, container.RenderParam)
-
         }
-
 
         free(native_win)
         excl(&shared_data.Systems, container.System.DX11System)
-        fmt.println("cleaning render thread")
 
+        fmt.println("cleaning render thread")
     }
 
     container.BEGIN_EVENT("Device Construction & Query")
@@ -139,7 +97,6 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.DX_CALL(
         d3d11.CreateDevice(nil, d3d11.DRIVER_TYPE.HARDWARE, nil, d3d11.CREATE_DEVICE_FLAGS{.SINGLETHREADED},&d3d_feature_level[0],len(d3d_feature_level), d3d11.SDK_VERSION,&base_device, nil, &base_device_context),
-
         base_device,
     )
 
@@ -205,12 +162,12 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.END_EVENT()
 
-   
-    viewport : d3d11.VIEWPORT
-
-    viewport.Width = f32(swapchain_descriptor.Width)
-    viewport.Height = f32(swapchain_descriptor.Height)
-    viewport.MaxDepth = 1
+    //TODO: khal move this
+    viewport : d3d11.VIEWPORT = d3d11.VIEWPORT{
+        Width = f32(swapchain_descriptor.Width),
+        Height = f32(swapchain_descriptor.Height),
+        MaxDepth = 1,
+    }
 
     container.BEGIN_EVENT("CBuffer Construction")
 
@@ -230,12 +187,13 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.END_EVENT()
 
+
     container.BEGIN_EVENT("Texture & Shader Construction")
 
     sprite_texture : ^d3d11.ITexture2D
     texture_resource : d3d11.SUBRESOURCE_DATA
 
-    instance_layout_descriptor := [7]d3d11.INPUT_ELEMENT_DESC{
+    instance_layout_descriptor := [8]d3d11.INPUT_ELEMENT_DESC{
         {"QUAD_ID", 0, dxgi.FORMAT.R32G32_FLOAT, 0,0, d3d11.INPUT_CLASSIFICATION.VERTEX_DATA, 0},
 
         {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
@@ -243,13 +201,15 @@ init_render_subsystem :: proc(winfo : rawptr){
         {"TRANSFORM",2, dxgi.FORMAT.R32G32B32A32_FLOAT,1,32, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"TRANSFORM",3, dxgi.FORMAT.R32G32B32A32_FLOAT,1,48, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
-        {"COLOR", 0, dxgi.FORMAT.R32G32B32_FLOAT,1, 80, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
+        {"HUE_DISP", 0, dxgi.FORMAT.R32_FLOAT,1, 80, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
+        {"Z_DEPTH", 0, dxgi.FORMAT.R32_FLOAT, 1, 84, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
     }
 
     shader_dir,match_err := filepath.glob(container.DEFAULT_SHADER_PATH)
 
     assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
 
+    //TODO: khal optimize this
     for sprite_batch_entity in ecs.get_entities_with_single_component_fast(&shared_data.ecs, container.SpriteBatch){
         sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, sprite_batch_entity, container.SpriteBatch)
 
@@ -269,10 +229,8 @@ init_render_subsystem :: proc(winfo : rawptr){
             BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE},
            }
     
-           texture_pitch := 4 * texture_descriptor.Width
-    
            texture_resource.pSysMem = sprite_batch.texture
-           texture_resource.SysMemPitch = texture_pitch
+           texture_resource.SysMemPitch = texture_descriptor.Width << 2
     
            container.DX_CALL(
             device->CreateTexture2D(&texture_descriptor, &texture_resource, &sprite_texture),
@@ -298,7 +256,7 @@ init_render_subsystem :: proc(winfo : rawptr){
            shader_path_byte, _ := os.read_entire_file_from_filename(target_shader_path)
            
            defer{
-               delete(shader_path_byte)
+               delete_slice(shader_path_byte)
                delete_cstring(shader_src_name)
            }
    
@@ -338,7 +296,6 @@ init_render_subsystem :: proc(winfo : rawptr){
             nil,
            )
 
-
            ////////////////////////////////////////////////////////////////////////
            render_param : container.RenderParam = container.RenderParam{
             vertex_shader,
@@ -349,31 +306,26 @@ init_render_subsystem :: proc(winfo : rawptr){
             sprite_shader_resource_view,
            }
 
-           render_param.texture_resource = sprite_shader_resource_view
-
            ecs.add_component_unchecked(&shared_data.ecs, sprite_batch_entity, render_param)
     }
 
-    delete(shader_dir)
+    delete_slice(shader_dir)
 
     texture_sampler : ^d3d11.ISamplerState
 
-    sampler_descriptor := d3d11.SAMPLER_DESC{}
+    sampler_descriptor := d3d11.SAMPLER_DESC{
+        Filter = d3d11.FILTER.MIN_LINEAR_MAG_MIP_POINT,
+        AddressU = d3d11.TEXTURE_ADDRESS_MODE.CLAMP,
+        AddressV = d3d11.TEXTURE_ADDRESS_MODE.CLAMP,
+        AddressW = d3d11.TEXTURE_ADDRESS_MODE.CLAMP,
+        MipLODBias = 0,
+        MaxAnisotropy = 1,
+        ComparisonFunc = d3d11.COMPARISON_FUNC.ALWAYS,
+        BorderColor = {0.0, 0.0, 0.0, 0.0},
+        MinLOD = 0,
+        MaxLOD = d3d11.FLOAT32_MAX,
+    }
 
-    sampler_descriptor.Filter = d3d11.FILTER.MIN_LINEAR_MAG_MIP_POINT
-    sampler_descriptor.AddressU = d3d11.TEXTURE_ADDRESS_MODE.CLAMP
-    sampler_descriptor.AddressV = d3d11.TEXTURE_ADDRESS_MODE.CLAMP
-    sampler_descriptor.AddressW = d3d11.TEXTURE_ADDRESS_MODE.CLAMP
-    sampler_descriptor.MipLODBias = 0
-    sampler_descriptor.MaxAnisotropy = 1
-    sampler_descriptor.ComparisonFunc = d3d11.COMPARISON_FUNC.ALWAYS
-    sampler_descriptor.BorderColor[0] = 0
-    sampler_descriptor.BorderColor[1] = 0
-    sampler_descriptor.BorderColor[2] = 0
-    sampler_descriptor.BorderColor[3] = 0
-    sampler_descriptor.MinLOD = 0
-    sampler_descriptor.MaxLOD = d3d11.FLOAT32_MAX
-    
     container.DX_CALL(
         device->CreateSamplerState(&sampler_descriptor, &texture_sampler),
         texture_sampler,
@@ -385,20 +337,38 @@ init_render_subsystem :: proc(winfo : rawptr){
     container.BEGIN_EVENT("Buffer Creation")
    
     vertex_buffer : ^d3d11.IBuffer
-    vertex_buffer_descriptor : d3d11.BUFFER_DESC
-    vertex_resource : d3d11.SUBRESOURCE_DATA
+    instance_data_buffer : ^d3d11.IBuffer
+    
+    vertex_buffer_descriptor : d3d11.BUFFER_DESC = d3d11.BUFFER_DESC{
+        ByteWidth = size_of(vertices),
+        Usage = d3d11.USAGE.IMMUTABLE, 
+        BindFlags = d3d11.BIND_FLAGS{d3d11.BIND_FLAG.VERTEX_BUFFER},
+    }
+    
+    vertex_resource : d3d11.SUBRESOURCE_DATA = d3d11.SUBRESOURCE_DATA{
+        pSysMem = (rawptr)(&vertices),
+        SysMemPitch = 0,
+        SysMemSlicePitch = 0,
+    }
 
-    vertex_buffer_descriptor.ByteWidth = size_of(vertices)
-    vertex_buffer_descriptor.BindFlags = {.VERTEX_BUFFER}
-    vertex_buffer_descriptor.StructureByteStride = size_of(SpriteIndex)
-    vertex_buffer_descriptor.Usage = d3d11.USAGE.DEFAULT
-
-    vertex_resource.pSysMem = (rawptr)(&vertices)
+    instance_buffer_descriptor : d3d11.BUFFER_DESC = d3d11.BUFFER_DESC{
+        ByteWidth = container.INSTANCE_BYTE_WIDTH,
+        Usage = d3d11.USAGE.DYNAMIC,
+        BindFlags = d3d11.BIND_FLAGS{d3d11.BIND_FLAG.VERTEX_BUFFER},
+        CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{d3d11.CPU_ACCESS_FLAG.WRITE},
+    }
 
     container.DX_CALL(
         device->CreateBuffer(&vertex_buffer_descriptor, &vertex_resource, &vertex_buffer),
         vertex_buffer,
     )
+
+    container.DX_CALL(
+        device->CreateBuffer(&instance_buffer_descriptor, nil, &instance_data_buffer),
+        instance_data_buffer,
+    )
+
+    buffer :[2]^d3d11.IBuffer = {vertex_buffer, instance_data_buffer}
 
     index_buffer : ^d3d11.IBuffer
     index_buffer_descriptor : d3d11.BUFFER_DESC
@@ -507,11 +477,10 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.BEGIN_EVENT("Binding")
 
-    VERTEX_STRIDE : u32 = size_of(SpriteIndex) // size of Vertex
-    VERTEX_OFFSET : u32 = 0
+    VERTEX_STRIDE : [2]u32 = {size_of(SpriteIndex), size_of(container.SpriteInstanceData)} // size of Vertex
+    VERTEX_OFFSET : [2]u32 = {0,0}
 
     device_context->IASetPrimitiveTopology(d3d11.PRIMITIVE_TOPOLOGY.TRIANGLELIST)
-    device_context->IASetVertexBuffers(0, 1, &vertex_buffer, &VERTEX_STRIDE, &VERTEX_OFFSET)
     device_context->IASetIndexBuffer(index_buffer, dxgi.FORMAT.R16_UINT, 0)
 
     device_context->RSSetState(raterizer_state)
@@ -523,16 +492,19 @@ init_render_subsystem :: proc(winfo : rawptr){
 
     container.END_EVENT()
 
+    mapped_constant_subresource : d3d11.MAPPED_SUBRESOURCE
+    mapped_instance_subresource : d3d11.MAPPED_SUBRESOURCE
+
     for (container.System.WindowSystem in shared_data.Systems){
-        mapped_subresource : d3d11.MAPPED_SUBRESOURCE
         
         container.DX_CALL(
-            device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresource),
+            device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_constant_subresource),
             nil,
+            true,
         )
 
         {
-            constants := (^GlobalDynamicConstantBuffer)(mapped_subresource.pData)
+            constants := (^GlobalDynamicConstantBuffer)(mapped_constant_subresource.pData)
 
             constants.sprite_sheet_size = {0,0}
             constants.device_conversion = {2.0 / viewport.Width, -2.0 / viewport.Height}
@@ -555,6 +527,19 @@ init_render_subsystem :: proc(winfo : rawptr){
             device_context->VSSetShader(render_param.vertex_shader, nil, 0)
             device_context->PSSetShader(render_param.pixel_shader, nil, 0)
 
+
+            container.DX_CALL(
+                device_context->Map(instance_data_buffer, 0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_instance_subresource),
+                nil,
+                true,
+            )
+
+            libc.memcpy(mapped_instance_subresource.pData, &sprite_batch.sprite_batch[0], size_of(container.SpriteInstanceData) * len(sprite_batch.sprite_batch))
+
+            device_context->Unmap(instance_data_buffer, 0)
+
+            device_context->IASetVertexBuffers(0, 2, &buffer[0], &VERTEX_STRIDE[0], &VERTEX_OFFSET[0])
+
             device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
 
 
@@ -566,10 +551,10 @@ init_render_subsystem :: proc(winfo : rawptr){
             container.DX_CALL(
                 swapchain->Present(1,0),
                 nil,
+                true,
             )
 
             device_context->OMSetRenderTargets(1, &back_render_target_view, nil) 
-
 
             container.END_EVENT()
            

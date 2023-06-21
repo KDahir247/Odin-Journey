@@ -3,7 +3,6 @@ package physics
 import "../mathematics"
 import "../container"
 
-import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 

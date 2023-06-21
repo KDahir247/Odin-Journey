@@ -7,10 +7,8 @@ import "vendor:stb/image"
 
 import "core:sync"
 import "core:prof/spall"
-import "core:time"
 import "core:math/linalg/hlsl"
 
-import "core:fmt"
 
 import "../mathematics"
 import "../ecs"
@@ -19,7 +17,7 @@ import "../ecs"
 
 
 IDENTITY : hlsl.float4x4 :  {
-    1.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 0.0, 100.0,
     0.0, 1.0, 0.0, 0.0,
     0.0, 0.0, 1.0, 0.0,
     0.0, 0.0, 0.0, 1.0,
@@ -185,7 +183,8 @@ HR_ERR_MAP : map[int]DX11_ERR = {
 }
 
 @(deferred_in=DX_END)
-DX_CALL :: #force_inline proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, loc := #caller_location, panic_on_fail := false)  {
+@(optimization_mode="speed")
+DX_CALL :: #force_inline proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := false, loc := #caller_location)  {
     when ODIN_DEBUG{
         if hr != 0{
             hr_index := int(hr) & 0xFFFFFFFF
@@ -201,7 +200,8 @@ DX_CALL :: #force_inline proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, loc :=
 
 
 @(private)
-DX_END :: proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, loc := #caller_location, panic_on_fail := false) {
+@(optimization_mode="speed")
+DX_END :: #force_inline proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := false, loc := #caller_location) {
     if hr == 0 && auto_free_ptr != nil{
         unknown_ptr := cast(^d3d11.IUnknown)auto_free_ptr
 
@@ -213,6 +213,7 @@ DX_END :: proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, loc := #caller_locati
 
 
 //TODO got to look at this lol....
+@(optimization_mode="speed")
 CREATE_PROFILER :: proc(name : string){
     when #config(PROFILE,true){
         profiler_context = spall.context_create_with_sleep(name)
@@ -221,6 +222,7 @@ CREATE_PROFILER :: proc(name : string){
     CREATE_PROFILER_BUFFER()
 }
 
+@(optimization_mode="speed")
 CREATE_PROFILER_BUFFER :: #force_inline proc(size : int = spall.BUFFER_DEFAULT_SIZE){
     when #config(PROFILE,true){
         profiler_backer := make([]u8, spall.BUFFER_DEFAULT_SIZE)
@@ -228,29 +230,34 @@ CREATE_PROFILER_BUFFER :: #force_inline proc(size : int = spall.BUFFER_DEFAULT_S
     }
 }
 
+@(optimization_mode="speed")
 FREE_PROFILER :: proc(){
     FREE_PROFILER_BUFFER()
     FREE_PROFILER_CONTEXT()
 }
 
+@(optimization_mode="speed")
 FREE_PROFILER_BUFFER :: #force_inline proc(){
     when #config(PROFILE,true){
 		spall.buffer_destroy(&profiler_context, &profiler_buffer)
     }
 }
 
+@(optimization_mode="speed")
 FREE_PROFILER_CONTEXT :: #force_inline proc(){
     when #config(PROFILE,true){
 		spall.context_destroy(&profiler_context)
     }
 }
 
+@(optimization_mode="speed")
 BEGIN_EVENT :: #force_inline proc(name : string){
     when #config(PROFILER, true){
         spall._buffer_begin(&profiler_context, &profiler_buffer, name)
     }
 }
 
+@(optimization_mode="speed")
 END_EVENT :: #force_inline proc(){
     when #config(PROFILER, true){
         spall._buffer_end(&profiler_context, &profiler_buffer)
@@ -293,6 +300,10 @@ SystemInitFlags :: bit_set[System; u32]
 /////////////////////////////////////////////////////////
 
 /////////////////// RENDERER DATA ///////////////////////
+MAX_SPRITE_BATCH :: 2048
+
+INSTANCE_BYTE_WIDTH :: size_of(SpriteInstanceData) << 11
+
 RenderParam :: struct {
     vertex_shader : ^d3d11.IVertexShader,
     vertex_blob : ^d3d_compiler.ID3DBlob,
@@ -303,7 +314,6 @@ RenderParam :: struct {
     layout_input : ^d3d11.IInputLayout,
 
     texture_resource : ^d3d11.IShaderResourceView,
-
 }
 
 SpriteHandle :: struct{
@@ -313,7 +323,6 @@ SpriteHandle :: struct{
 
 SpriteBatch :: struct{
     sprite_batch : [dynamic]SpriteInstanceData,
-    len : int,
 
     //Shared
     texture : rawptr,
@@ -331,22 +340,15 @@ SpriteInstanceData :: struct{
 }
 
 
-sprite_batch_init :: proc(sb : ^$S/SpriteBatch, shader_cache : u32){
-   sb = container.SpriteBatch{
-        sprite_batch = make_dynamic_array_len_cap([dynamic]container.SpriteInstanceData,0, 2048),
-        shader_cache = 0,
-    }
-}
-
 @(optimization_mode="speed")
 sprite_batch_append :: proc(sprite_batch : ^SpriteBatch, data : SpriteInstanceData) -> int{
-
+    assert(len(sprite_batch.sprite_batch) < MAX_SPRITE_BATCH, "The sprite batcher has reach it maximum batch and is trying to append a batch maximum 2048")
     append(&sprite_batch.sprite_batch, data)
     return len(sprite_batch.sprite_batch) - 1
 }
 
 @(optimization_mode="speed")
-sprite_batch_set :: proc(sprite_batch : ^SpriteBatch, handle : int, data : SpriteInstanceData){
+sprite_batch_set :: #force_inline proc(sprite_batch : ^SpriteBatch, handle : int, data : SpriteInstanceData){
     #no_bounds_check{
         sprite_batch.sprite_batch[handle] = data
     }
@@ -373,10 +375,22 @@ Position :: struct{
 
 Rotation :: struct{
     Value : f32,
+    __Padding : f32,
 }
 
 Scale :: struct {
     Value : hlsl.float2,
+}
+
+Animation :: struct{
+    width : int, // (the sprite width for the animation clip)
+    height : int, // (the sprite height for the animation clip)
+    index : int, // (the row the animation strip is in)
+    len : int, // (how much column the animation has aka. the number of clips)
+    carry_over : int, // (if the animation continues over from the index to the next index what index is it carried over to and how much column does it take up. 0 mean no carry over 1 mean the it will take 1 column from the next row, etc...)
+    offset_slice : int, // (how much column should be be skipped in the sprite sheet)
+    animation_speed : int, // (the speed of the animation 1.0x mean normal, 2.0x mean 2 times etc...)
+    loop : int, // (looping animation clip. 1 is looping, 0 mean doesn't loop)
 }
 
 ///////////////////////////////////////////////////////

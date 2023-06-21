@@ -1,7 +1,7 @@
 package system
 
 import "../container"
-import "../physics"
+//import "../physics"
 import "../ecs"
 import "../mathematics"
 

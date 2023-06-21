@@ -14,7 +14,7 @@ init_audio_subsystem :: proc(){
 
     shared_data := cast(^container.SharedContext)context.user_ptr
 
-    container.BEGIN_EVENT("AUDIO Engine construction")
+    container.BEGIN_EVENT("Audio Engine construction")
 
     //TODO: khal we will perferably use the low level implementation rather then the high level.
     sound_engine : miniaudio.engine
