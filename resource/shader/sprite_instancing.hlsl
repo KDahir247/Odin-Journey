@@ -3,8 +3,8 @@ cbuffer VS_CONSTANT_BUFFER : register(b0){
     float2 spriteSize;
     float2 deviceConversion;
     float2 viewportSize;
-    uint time;
-    uint delta_time;
+    float time;
+    float delta_time;
 };
 
 struct VSIn{

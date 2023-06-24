@@ -38,6 +38,7 @@ get_components_5 :: proc(ctx: ^Context, entity: Entity, $A, $B, $C, $D, $E: type
   return a, b, c, d, e, {}
 }
 
+@(optimization_mode="speed")
 get_components_2_unchecked :: proc(ctx: ^Context, entity: Entity, $A, $B: typeid) -> (^A, ^B) {
   a := get_component_unchecked(ctx, entity, A)
   b := get_component_unchecked(ctx, entity, B)

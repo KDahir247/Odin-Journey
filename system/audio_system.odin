@@ -2,26 +2,30 @@ package system
 
 
 import "core:fmt"
+import "core:thread"
+import "core:mem"
 
 import "vendor:miniaudio"
 
-import "../container"
+import "../common"
 
 //Will require addition parameters.
 @(optimization_mode="size")
-init_audio_subsystem :: proc(){
-    container.CREATE_PROFILER_BUFFER()
+init_audio_subsystem :: proc(current_thread : ^thread.Thread){
+    shared_data := cast(^common.SharedContext)current_thread.data
 
-    shared_data := cast(^container.SharedContext)context.user_ptr
+    common.CREATE_PROFILER_BUFFER(current_thread.id)
 
-    container.BEGIN_EVENT("Audio Engine construction")
+    common.BEGIN_EVENT("Audio Engine construction")
 
     //TODO: khal we will perferably use the low level implementation rather then the high level.
     sound_engine : miniaudio.engine
     sound_config : miniaudio.engine_config = miniaudio.engine_config_init()
+
+    //TODO: khal pf
 	miniaudio.engine_init(&sound_config, &sound_engine)
 
-    container.END_EVENT()
+    common.END_EVENT()
 
 
     //TEST
@@ -29,18 +33,17 @@ init_audio_subsystem :: proc(){
 
 
     defer{
-
-        container.FREE_PROFILER_BUFFER()
-
         miniaudio.engine_uninit(&sound_engine)
 
-        fmt.println("cleaning audio thread")
+        //fmt.println("cleaning audio thread")
+
+        common.FREE_PROFILER_BUFFER()
     }
 
 
-    for (container.System.WindowSystem in shared_data.Systems){
+    for (common.System.WindowSystem in shared_data.Systems){
+        thread.yield() // temp
 
-
-
+        
     }
 }

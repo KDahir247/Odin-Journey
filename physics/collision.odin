@@ -1,7 +1,7 @@
 package physics
 
 import "../mathematics"
-import "../container"
+import "../common"
 
 import "core:math"
 import "core:math/linalg"
@@ -237,7 +237,7 @@ aabb_aabb_sweep :: proc (a : mathematics.AABB, b : mathematics.AABB, velocity : 
     return sweep
 }
 
-sweep_aabb :: proc(dyn_physic : ^container.Physics, static_col : [] container.Physics) -> (bool, CollisionSweep){
+sweep_aabb :: proc(dyn_physic : ^common.Physics, static_col : [] common.Physics) -> (bool, CollisionSweep){
     nearest : CollisionSweep
     nearest.time = 1
     res := false

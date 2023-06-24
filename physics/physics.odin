@@ -1,12 +1,12 @@
 package physics
 
 import "../mathematics"
-import "../container"
+import "../common"
 
 import "core:math"
 
 //Update physics interal data.
-integrate :: proc(physics : ^container.Physics, dt : f32){
+integrate :: proc(physics : ^common.Physics, dt : f32){
     if physics.inverse_mass == 0{
         return
     }
@@ -31,24 +31,24 @@ compute_direction :: #force_inline proc "contextless"(velocity : mathematics.Vec
     return velocity * rcp_speed
 }
 
-compute_seperation_velocity :: #force_inline proc(#no_alias physics, other : ^container.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
+compute_seperation_velocity :: #force_inline proc(#no_alias physics, other : ^common.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
     a := (physics.velocity - other.velocity)
     return (a.x * contact_normal.x) + (a.y * contact_normal.y)
 }
 
-compute_closing_velocity :: #force_inline proc(#no_alias physics, other : ^container.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
+compute_closing_velocity :: #force_inline proc(#no_alias physics, other : ^common.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
     a := -(physics.velocity - other.velocity)
     return (a.x * contact_normal.x) + (a.y * contact_normal.y)
 }
 
-add_impulse :: #force_inline proc(physics : ^container.Physics, impulse_factor : f32, impulse_direction : mathematics.Vec2){
+add_impulse :: #force_inline proc(physics : ^common.Physics, impulse_factor : f32, impulse_direction : mathematics.Vec2){
     mass := 1.0 / physics.inverse_mass
     impulse := impulse_direction * impulse_factor * mass
 
     physics.velocity += impulse * physics.inverse_mass
 }
 
-add_friction_force :: #force_inline proc(physics : ^container.Physics, friction_coefficient : f32){
+add_friction_force :: #force_inline proc(physics : ^common.Physics, friction_coefficient : f32){
 
     //N = m*g
     //if surface is inclined then the formula would be N = m * g *cos(theta)
@@ -60,7 +60,7 @@ add_friction_force :: #force_inline proc(physics : ^container.Physics, friction_
     add_force(physics, {friction_force, 0})
 }
 
-add_gravitation_force :: #force_inline proc(physics : ^container.Physics, gravity : mathematics.Vec2){
+add_gravitation_force :: #force_inline proc(physics : ^common.Physics, gravity : mathematics.Vec2){
     
     if physics.inverse_mass == 0{
         return //Handle infinite mass and prevent dividing by zero.
@@ -71,7 +71,7 @@ add_gravitation_force :: #force_inline proc(physics : ^container.Physics, gravit
     add_force(physics, gravity * physics_mass)
 }
 
-add_entity_spring :: #force_inline proc(#no_alias physics,other :^container.Physics ,rest_length : f32, spring_constraint : f32){
+add_entity_spring :: #force_inline proc(#no_alias physics,other :^common.Physics ,rest_length : f32, spring_constraint : f32){
     force := physics.position - other.position
     
     magnitude := abs(compute_length(force) - rest_length)
@@ -82,7 +82,7 @@ add_entity_spring :: #force_inline proc(#no_alias physics,other :^container.Phys
     add_force(physics,stiff_magnitude * force_direction)
 }
 
-add_bungee_spring :: #force_inline proc(#no_alias physics, other: ^container.Physics, rest_length : f32, spring_constraint : f32){
+add_bungee_spring :: #force_inline proc(#no_alias physics, other: ^common.Physics, rest_length : f32, spring_constraint : f32){
     force := physics.position - other.position
 
     force_length := compute_length(force)
@@ -99,7 +99,7 @@ add_bungee_spring :: #force_inline proc(#no_alias physics, other: ^container.Phy
     add_force(physics,force_direction * -stiff_magnitude)
 }
 
-add_buoyancy_force :: #force_inline proc(physics : ^container.Physics, max_depth : f32, volume : f32, water_height : f32, liquid_density : f32){
+add_buoyancy_force :: #force_inline proc(physics : ^common.Physics, max_depth : f32, volume : f32, water_height : f32, liquid_density : f32){
     depth := physics.position.y
 
     if (depth >= water_height + max_depth){
@@ -119,7 +119,7 @@ add_buoyancy_force :: #force_inline proc(physics : ^container.Physics, max_depth
     add_force(physics,force)
 }
 
-add_anchor_spring :: #force_inline proc(physics : ^container.Physics, anchor : mathematics.Vec2, rest_length : f32, spring_constrant : f32){
+add_anchor_spring :: #force_inline proc(physics : ^common.Physics, anchor : mathematics.Vec2, rest_length : f32, spring_constrant : f32){
     force := physics.position - anchor
 
     magnitude := rest_length - compute_length(force)
@@ -130,7 +130,7 @@ add_anchor_spring :: #force_inline proc(physics : ^container.Physics, anchor : m
     add_force(physics, stiff_magnitude * force_direction)
 }
 
-add_drag_force :: #force_inline proc(physics : ^container.Physics, velocity_drag_coef : f32, sqr_velocity_drag_coef : f32){
+add_drag_force :: #force_inline proc(physics : ^common.Physics, velocity_drag_coef : f32, sqr_velocity_drag_coef : f32){
     drag_coef := compute_length(physics.velocity)
     
     res := (velocity_drag_coef * drag_coef) + (sqr_velocity_drag_coef * drag_coef * drag_coef)
@@ -140,11 +140,11 @@ add_drag_force :: #force_inline proc(physics : ^container.Physics, velocity_drag
     add_force(physics,force_norm * -res)
 }
 
-add_force :: #force_inline proc(physics : ^container.Physics, force : mathematics.Vec2){
+add_force :: #force_inline proc(physics : ^common.Physics, force : mathematics.Vec2){
     physics.accumulated_force += force
 }
 
-compute_interpenetration :: proc(#no_alias collider, collided : ^container.Physics, penetration : f32, contact_normal : mathematics.Vec2 = {0,1}){
+compute_interpenetration :: proc(#no_alias collider, collided : ^common.Physics, penetration : f32, contact_normal : mathematics.Vec2 = {0,1}){
 
     total_inv_mass := collider.inverse_mass + collided.inverse_mass
     
@@ -163,7 +163,7 @@ compute_interpenetration :: proc(#no_alias collider, collided : ^container.Physi
 }
 
 
-compute_contact_velocity :: proc(#no_alias collider, collided : ^container.Physics, restitution : f32, contact_normal : mathematics.Vec2 = {0,1}, dt : f32){
+compute_contact_velocity :: proc(#no_alias collider, collided : ^common.Physics, restitution : f32, contact_normal : mathematics.Vec2 = {0,1}, dt : f32){
     displacement_velocity := collided.velocity - collider.velocity
 
     seperating_velocity := (displacement_velocity.x * contact_normal.x) + (displacement_velocity.y * contact_normal.y)
@@ -196,7 +196,7 @@ compute_contact_velocity :: proc(#no_alias collider, collided : ^container.Physi
     collided.velocity += impulse * collided.inverse_mass
 }
 
-resolve_contacts :: proc(iteration : int, contacts : [dynamic]container.PhysicsContact, dt : f32){
+resolve_contacts :: proc(iteration : int, contacts : [dynamic]common.PhysicsContact, dt : f32){
     iteration_used := 0
     contact_num := len(contacts)
     for iteration_used < iteration {

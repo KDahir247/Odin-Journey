@@ -43,6 +43,8 @@ is_entity_valid :: proc(ctx: ^Context, entity: Entity) -> bool {
 @(optimization_mode="speed")
 get_entities_with_single_component_fast :: #force_inline proc(ctx: ^Context, component: typeid) -> (entities: [dynamic]Entity) {
   #no_bounds_check{
+    entities = make([dynamic]Entity, context.temp_allocator)
+
     for entity, _ in ctx.component_map[component].entity_indices {
       append_elem(&entities, entity)
     }

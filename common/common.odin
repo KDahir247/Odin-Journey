@@ -1,15 +1,17 @@
-package game_container
+package common
 
 import "vendor:sdl2"
 import "vendor:directx/d3d_compiler"
 import "vendor:directx/d3d11"
 import "vendor:stb/image"
 
+import "core:sys/windows"
 import "core:sync"
 import "core:prof/spall"
 import "core:math/linalg/hlsl"
+import "core:fmt"
 
-
+//TODO:remove
 import "../mathematics"
 import "../ecs"
 
@@ -17,7 +19,7 @@ import "../ecs"
 
 
 IDENTITY : hlsl.float4x4 :  {
-    1.0, 0.0, 0.0, 100.0,
+    1.0, 0.0, 0.0, 0.0,
     0.0, 1.0, 0.0, 0.0,
     0.0, 0.0, 1.0, 0.0,
     0.0, 0.0, 0.0, 1.0,
@@ -214,25 +216,25 @@ DX_END :: #force_inline proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_o
 
 //TODO got to look at this lol....
 @(optimization_mode="speed")
-CREATE_PROFILER :: proc(name : string){
+CREATE_PROFILER :: proc(name : string,thread_id : int = 0){
     when #config(PROFILE,true){
         profiler_context = spall.context_create_with_sleep(name)
     }
 
-    CREATE_PROFILER_BUFFER()
+    CREATE_PROFILER_BUFFER(thread_id)
 }
 
 @(optimization_mode="speed")
-CREATE_PROFILER_BUFFER :: #force_inline proc(size : int = spall.BUFFER_DEFAULT_SIZE){
+CREATE_PROFILER_BUFFER :: #force_inline proc(thread_id : int){
     when #config(PROFILE,true){
-        profiler_backer := make([]u8, spall.BUFFER_DEFAULT_SIZE)
-        profiler_buffer = spall.buffer_create(profiler_backer, u32(sync.current_thread_id()))
+        profiler_backer = make([]u8, spall.BUFFER_DEFAULT_SIZE)
+        profiler_buffer = spall.buffer_create(profiler_backer, u32(thread_id), 0)
     }
 }
 
 @(optimization_mode="speed")
 FREE_PROFILER :: proc(){
-    FREE_PROFILER_BUFFER()
+    spall.buffer_destroy(&profiler_context, &profiler_buffer)
     FREE_PROFILER_CONTEXT()
 }
 
@@ -240,6 +242,7 @@ FREE_PROFILER :: proc(){
 FREE_PROFILER_BUFFER :: #force_inline proc(){
     when #config(PROFILE,true){
 		spall.buffer_destroy(&profiler_context, &profiler_buffer)
+            delete(profiler_backer)
     }
 }
 
@@ -269,31 +272,27 @@ END_EVENT :: #force_inline proc(){
 
 @(private) profiler_context : spall.Context
 @(private) @(thread_local) profiler_buffer : spall.Buffer
+@(private) @(thread_local) profiler_backer : []u8
 
-GRID_DESC :: struct{
-    GridWidth : i32,
-    GridHeight : i32,
-}
-
-WINDOWS_DESC :: struct{
-    GridDesc: GRID_DESC,
-    Flags : sdl2.InitFlags,
-    WinFlags : sdl2.WindowFlags,
+Window :: struct #align 64 {
+    handle : windows.HWND,
+    width : f32,
+    height : f32,
 }
 
 SharedContext :: struct #align 64 {
-    profiler : spall.Context,
 	Systems : SystemInitFlags,
 	Mutex : sync.Mutex,
 	Cond : sync.Cond,
-    time : i64,
+    time : f64,
     ecs : ecs.Context,
-    // add one more i16 or 8 bytew
 }
 System :: enum u8{
 	GameSystem,
 	WindowSystem,
 	DX11System,
+    AudioSystem,
+    UISystem,
 }
 
 SystemInitFlags :: bit_set[System; u32]
@@ -303,6 +302,18 @@ SystemInitFlags :: bit_set[System; u32]
 MAX_SPRITE_BATCH :: 2048
 
 INSTANCE_BYTE_WIDTH :: size_of(SpriteInstanceData) << 11
+
+SpriteIndex :: struct{
+    position : hlsl.float2,
+}
+
+GlobalDynamicConstantBuffer :: struct #align 16{
+    sprite_sheet_size : hlsl.float2,
+    device_conversion : hlsl.float2,
+    viewport_size : hlsl.float2,
+    time : f32,
+    delta_time : f32,
+}
 
 RenderParam :: struct {
     vertex_shader : ^d3d11.IVertexShader,
