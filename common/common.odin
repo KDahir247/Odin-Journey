@@ -281,10 +281,11 @@ Window :: struct #align 64 {
 }
 
 SharedContext :: struct #align 64 {
+    barrier : ^sync.Barrier,
 	Systems : SystemInitFlags,
 	Mutex : sync.Mutex,
 	Cond : sync.Cond,
-    time : f64,
+    time : f64, //TODO: remove
     ecs : ecs.Context,
 }
 System :: enum u8{
@@ -316,6 +317,8 @@ GlobalDynamicConstantBuffer :: struct #align 16{
 }
 
 RenderParam :: struct {
+    batch_id : ecs.Entity,
+
     vertex_shader : ^d3d11.IVertexShader,
     vertex_blob : ^d3d_compiler.ID3DBlob,
 
@@ -424,8 +427,6 @@ TileMap :: struct{
     texture : ^sdl2.Texture,
 	dimension : mathematics.Vec2i,
 }
-
-
 
 PhysicsContact :: struct{
     contacts : [2]Physics,

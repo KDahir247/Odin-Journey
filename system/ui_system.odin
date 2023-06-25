@@ -2,7 +2,7 @@ package system
 
 import "core:fmt"
 import "core:thread"
-
+import "core:sync"
 //import "vendor:microui"
 
 import "../common"
@@ -20,7 +20,6 @@ init_ui_subsystem :: proc(current_thread : ^thread.Thread){
 
         common.FREE_PROFILER_BUFFER()
     }
-
 
     for (common.System.WindowSystem in shared_data.Systems){
         thread.yield() //temp

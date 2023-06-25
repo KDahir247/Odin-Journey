@@ -4,6 +4,7 @@ package system
 import "core:fmt"
 import "core:thread"
 import "core:mem"
+import "core:sync"
 
 import "vendor:miniaudio"
 
@@ -28,8 +29,7 @@ init_audio_subsystem :: proc(current_thread : ^thread.Thread){
     common.END_EVENT()
 
 
-    //TEST
-	miniaudio.engine_play_sound(&sound_engine, "resource/audio/Dragon_level.mp3", nil)
+    //TODO: khal TEST remove
 
 
     defer{
@@ -40,6 +40,9 @@ init_audio_subsystem :: proc(current_thread : ^thread.Thread){
         common.FREE_PROFILER_BUFFER()
     }
 
+
+
+	miniaudio.engine_play_sound(&sound_engine, "resource/audio/Dragon_level.mp3", nil)
 
     for (common.System.WindowSystem in shared_data.Systems){
         thread.yield() // temp

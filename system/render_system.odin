@@ -2,9 +2,10 @@ package system
 
 
 import "core:math/linalg/hlsl"
-import "core:c/libc"
+import "core:c/libc" //TODO: khal remove and use core:intrinisic memcpy
 import "core:fmt"
 import "core:thread"
+import "core:sync"
 
 import "vendor:sdl2"
 import "vendor:directx/d3d11"
@@ -21,6 +22,7 @@ import "../common"
 @(optimization_mode="size")
 init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
+    render_params := make([dynamic]common.RenderParam)
     //
     shared_data := cast(^common.SharedContext)current_thread.data
 
@@ -29,8 +31,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     common.CREATE_PROFILER_BUFFER(current_thread.id)
 
     //
-
-    render_entities : [dynamic]ecs.Entity
 
     vertex_stride : [2]u32 = {size_of(common.SpriteIndex), size_of(common.SpriteInstanceData)} // size of Vertex
     vertex_offset : [2]u32 = {0,0}
@@ -219,8 +219,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     }
 
     defer{
-        for render_param_entity in render_entities{
-            render_param := ecs.get_component_unchecked(&shared_data.ecs, render_param_entity, common.RenderParam)
+        for render_param in render_params{
 
                 render_param.vertex_shader->Release()
                 render_param.vertex_blob->Release()
@@ -229,10 +228,9 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 render_param.layout_input->Release()
                 render_param.texture_resource->Release()
           
-            ecs.remove_component(&shared_data.ecs, render_param_entity, common.RenderParam)
         }
 
-        delete(render_entities)
+        delete(render_params)
         //fmt.println("cleaning render thread")
 
         common.FREE_PROFILER_BUFFER()
@@ -392,6 +390,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
         ////////////////////////////////////////////////////////////////////////
         render_param : common.RenderParam = common.RenderParam{
+            sprite_batch_entity,
             vertex_shader,
             vertex_blob,
             pixel_shader,
@@ -400,7 +399,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
             sprite_shader_resource_view,
         }
 
-        ecs.add_component_unchecked(&shared_data.ecs, sprite_batch_entity, render_param)
+        append(&render_params, render_param)
     }
 
     delete_slice(shader_dir)
@@ -493,7 +492,11 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     mapped_constant_subresource : d3d11.MAPPED_SUBRESOURCE
     mapped_instance_subresource : d3d11.MAPPED_SUBRESOURCE
 
+    sync.barrier_wait(shared_data.barrier)
+
     for (common.System.WindowSystem in shared_data.Systems){
+        
+        common.BEGIN_EVENT("Draw Call")
         
         common.DX_CALL(
             device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_constant_subresource),
@@ -515,13 +518,11 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
         device_context->ClearRenderTargetView(back_render_target_view, &{0.0, 0.4, 0.5, 1.0})
 
-        common.BEGIN_EVENT("Draw Call")
+       
 
-        render_entities = ecs.get_entities_with_single_component_fast(&shared_data.ecs, common.RenderParam)
+        for render_param in render_params {
 
-        for render_entity in render_entities {
-
-            render_param, sprite_batch := ecs.get_components_2_unchecked(&shared_data.ecs, render_entity, common.RenderParam, common.SpriteBatch)
+            sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, render_param.batch_id,  common.SpriteBatch)
 
             device_context->IASetInputLayout(render_param.layout_input)
 
@@ -543,12 +544,13 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
             device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
 
-
-            device_context->PSSetShaderResources(0,1, &render_param.texture_resource)
+            tex_res := render_param.texture_resource
+            device_context->PSSetShaderResources(0,1, &tex_res)
             device_context->PSSetSamplers(0,1,&texture_sampler)
 
             device_context->DrawIndexedInstanced(6, u32(len(sprite_batch.sprite_batch)),0,0,0)
 
+            //TODO: khal we maybe want to lock and unlock to use for the game loop, ideally we want the game loop to happen the same frame as the render loop and no greater, since it will introduce jitter.
             //TODO: khal pf
             common.DX_CALL(
                 swapchain->Present(1,0),

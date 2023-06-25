@@ -4,6 +4,7 @@ import "core:thread"
 import "core:sys/windows"
 import "core:fmt"
 import "core:mem"
+import "core:sync"
 
 import "vendor:sdl2"
 
@@ -24,6 +25,8 @@ init_game :: proc(){
 @(optimization_mode="size")
 main :: proc() {
 	window := new(common.Window)
+
+	barrier := &sync.Barrier{}
 
 	game_thread : ^thread.Thread
 	audio_thread : ^thread.Thread
@@ -77,13 +80,13 @@ main :: proc() {
 
 		thread.destroy(game_thread)
 		thread.destroy(render_thread)	
-		//thread.destroy(audio_thread)
+		thread.destroy(audio_thread)
 		thread.destroy(ui_thread)
 
 		ecs.deinit_ecs(&shared_data.ecs)
 
 		free(window)
-		
+
 		sdl2.DestroyWindow(sdl2_window)
 		sdl2.QuitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
 
@@ -100,6 +103,8 @@ main :: proc() {
 
 	common.BEGIN_EVENT("Shared Data and Thread Creation")
 	
+	sync.barrier_init(barrier, 2)
+
 	DEFAULT_SYS :: common.SystemInitFlags{
 		.DX11System,
 		.GameSystem,
@@ -110,11 +115,12 @@ main :: proc() {
 
 	shared_data.Systems = DEFAULT_SYS
 
+	shared_data.barrier = barrier
 	shared_data.Mutex = {}
 	shared_data.Cond = {}
 	shared_data.ecs = ecs_context
 	
-	game_thread = thread.create(system.init_game_subsystem)
+	game_thread = thread.create(system.init_game_subsystem, thread.Thread_Priority.High)
 	audio_thread = thread.create(system.init_audio_subsystem)
 	ui_thread = thread.create(system.init_ui_subsystem)
 	render_thread = thread.create(system.init_render_subsystem)
@@ -139,8 +145,7 @@ main :: proc() {
 
 	for running{
 		windows.QueryPerformanceCounter(&current_tick)
-		
-
+		//TODO: khal each thread will have thier own time. This doesn't make sense...
 		shared_data.time = f64(current_tick - start_tick) * rcp_freq
 
 		//TODO: khal we want to get delta time up and running 
