@@ -36,7 +36,8 @@ init_game_subsystem :: proc(current_thread : ^thread.Thread){
     fixed_timestep := 0.02 
     fixed_delta_time := 0.02 
     time_scale := 1.0
-    fixed_accumulator := 0
+    fixed_accumulator := 0.0
+    delta_time_vsync := 1.0 / f64(display_setting.dmDisplayFrequency)
 
     shared_data := cast(^common.SharedContext)current_thread.data
 
@@ -68,6 +69,7 @@ init_game_subsystem :: proc(current_thread : ^thread.Thread){
 
     common.BEGIN_EVENT("Player Entity Creation")
 
+    fmt.println(freq)
     ecs.add_component_unchecked(&shared_data.ecs, player_entity, common.SpriteHandle{
         //player sprite parameters
         sprite_handle = common.sprite_batch_append(player_batch,common.SpriteInstanceData{
@@ -104,7 +106,6 @@ init_game_subsystem :: proc(current_thread : ^thread.Thread){
     
     common.END_EVENT()
 
-
     windows.QueryPerformanceCounter(&previous_tick)
     
     sprite_handles := ecs.get_component_list(&shared_data.ecs, common.SpriteHandle)
@@ -112,42 +113,64 @@ init_game_subsystem :: proc(current_thread : ^thread.Thread){
     sync.barrier_wait(shared_data.barrier)
 
     for (common.System.WindowSystem in shared_data.Systems){
+
+        //TODO:khal get delta time working.
+        // previous_tick = current_tick 
+        // windows.QueryPerformanceCounter(&current_tick)
+        delta_time :=  delta_time_vsync //time_scale *f64(current_tick - previous_tick) * 1000.0  * rcp_freq
         
-        windows.QueryPerformanceCounter(&current_tick)
-        delta_time :=  min(time_scale *f64(current_tick - previous_tick)  * rcp_freq , maximum_delta_time)
-        previous_tick = current_tick 
+        // if delta_time > maximum_delta_time{
+        //     delta_time = maximum_delta_time
+        // }
+
+
 
         accumulator += delta_time 
 
         //TODO:khal this doesn't work
-        for accumulator >= fixed_timestep{
+        for accumulator > (fixed_accumulator + fixed_timestep) {
 
-            common.BEGIN_EVENT("Physics ECS Upate")
-            common.END_EVENT()
-
-            accumulator -= fixed_delta_time 
+            for  sprite in sprite_handles {
+                common.BEGIN_EVENT("Physics ECS Upate")
+    
+    
+                sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, ecs.Entity(sprite.batch_handle), common.SpriteBatch)
+                
+                move_x_matrix : hlsl.float4x4 = {
+                    0.0, 0.0, 0.0, (f32(keyboard_snapshot[sdl2.Scancode.D]) - f32(keyboard_snapshot[sdl2.Scancode.A])) * f32(delta_time) ,
+                    0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0,
+                }
+    
+                temp := sprite_batch.sprite_batch[sprite.sprite_handle].transform + move_x_matrix
+                common.END_EVENT()
+    
+            }            
+            
+            fixed_accumulator += fixed_delta_time 
             
         }
 
-        common.BEGIN_EVENT("Simple ECS Upate")
-        common.END_EVENT()
 
 
-        // for  sprite in sprite_handles {
+        for  sprite in sprite_handles {
+            common.BEGIN_EVENT("Simple ECS Upate")
 
 
-        //     sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, ecs.Entity(sprite.batch_handle), common.SpriteBatch)
+            sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, ecs.Entity(sprite.batch_handle), common.SpriteBatch)
             
-        //     move_x_matrix : hlsl.float4x4 = {
-        //         0.0, 0.0, 0.0, (f32(keyboard_snapshot[sdl2.Scancode.D]) - f32(keyboard_snapshot[sdl2.Scancode.A])) * 0.0001,
-        //         0.0, 0.0, 0.0, 0.0,
-        //         0.0, 0.0, 0.0, 0.0,
-        //         0.0, 0.0, 0.0, 0.0,
-        //     }
+            move_x_matrix : hlsl.float4x4 = {
+                0.0, 0.0, 0.0, (f32(keyboard_snapshot[sdl2.Scancode.D]) - f32(keyboard_snapshot[sdl2.Scancode.A])) * f32(delta_time) / 100 ,
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0,
+            }
 
-        //     sprite_batch.sprite_batch[sprite.sprite_handle].transform += move_x_matrix
+            sprite_batch.sprite_batch[sprite.sprite_handle].transform += move_x_matrix
+            common.END_EVENT()
 
-        // }            
+        }            
         
     }
 }
