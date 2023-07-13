@@ -1,3 +1,27 @@
+//  Shader assembly Legend
+//ALT I for build compile,
+//ALT O for run compile,
+//SHIFT ALT O for recompile
+
+/*
+BEGIN_SHADER_DECLARATIONS
+{
+    "Shaders": [
+        {
+            "ShaderName": "vs_main",
+            "ShaderCompiler": "dxc",
+            "ShaderType": "vs",
+            "ShaderModel": "5_0",
+            "EntryPoint": "vs_main",
+            "Defines": [],
+            "Optimization": "0",
+            "AdditionalArgs": []
+        }
+    ]
+}
+END_SHADER_DECLARATIONS
+*/
+
 cbuffer VS_CONSTANT_BUFFER : register(b0){
     //vp matrix,
     float2 spriteSize;
@@ -37,12 +61,12 @@ VsOut vs_main(in VSIn vs_in)
     // float2 position_device_space = position_screen_space / viewport_size
     // position_device_space *= device_conversion - float2(1.0, -1.0)
     
-    float4 scaled_quad = float4(vs_in.quadid * float2(39, 41), 0.0, 1.0);
+    float4 scaled_quad = float4(vs_in.quadid * vs_in.src_rect.wz, 0.0, 1.0);
 
     float2 position = mul(scaled_quad, vs_in.transform).xy * deviceConversion * 2  - float2(1.0, -1.0) ;
 
     vso.position = float4(position.x, position.y, 0.0f,1.0f) ;
-    vso.uv = scaled_quad;
+    vso.uv = scaled_quad.xy + vs_in.src_rect.xy;
     vso.color = vs_in.color;
 
     return vso;

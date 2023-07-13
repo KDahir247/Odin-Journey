@@ -9,12 +9,6 @@ Component_List :: struct {
   entity_indices: map[Entity]uint,
 }
 
-Known_Component_List :: struct($t : typeid){
-  type : typeid,
-  data : ^[dynamic]t,
-  entity_indices: map[Entity]uint,
-}
-
 @private
 register_component :: proc(ctx: ^Context, $T: typeid) -> ECS_Error {
   is_type_a_key := T in ctx.component_map
@@ -125,15 +119,20 @@ get_component :: proc(ctx: ^Context, entity: Entity, $T: typeid) -> (component: 
 }
 
 
-
-
-
 @(optimization_mode="speed")
 get_component_unchecked :: #force_inline proc  (ctx: ^Context, entity: Entity, $T: typeid) -> ^T{
   #no_bounds_check{
         array := cast(^[dynamic]T)ctx.component_map[T].data
         index, _ := ctx.component_map[T].entity_indices[entity]
         return &array[index]
+  }
+}
+
+
+@(optimization_mode="speed")
+get_component_map_from_id :: #force_inline proc(ctx : ^Context, $T : typeid)-> Component_List{
+  #no_bounds_check{
+    return ctx.component_map[T]
   }
 }
 

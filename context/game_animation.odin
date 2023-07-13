@@ -1,7 +1,7 @@
 package game_context
 import "../ecs"
 import "../mathematics"
-import "../container"
+import "../common"
 
 import "core:encoding/json"
 import "core:os"
@@ -32,7 +32,6 @@ create_animator :: proc(animation_speed : f32, clips : [$E]container.AnimationCl
 
     animator := container.Animator{
         "",
-        0,
         0,
         animation_speed,
         dyn_clips,

@@ -1,10 +1,7 @@
 package system
 
 
-import "core:fmt"
 import "core:thread"
-import "core:mem"
-import "core:sync"
 
 import "vendor:miniaudio"
 
@@ -13,9 +10,8 @@ import "../common"
 //Will require addition parameters.
 @(optimization_mode="size")
 init_audio_subsystem :: proc(current_thread : ^thread.Thread){
-    shared_data := cast(^common.SharedContext)current_thread.data
 
-    common.CREATE_PROFILER_BUFFER(current_thread.id)
+    common.CREATE_PROFILER_BUFFER(u32(current_thread.id))
 
     common.BEGIN_EVENT("Audio Engine construction")
 
@@ -35,7 +31,6 @@ init_audio_subsystem :: proc(current_thread : ^thread.Thread){
     defer{
         miniaudio.engine_uninit(&sound_engine)
 
-        //fmt.println("cleaning audio thread")
 
         common.FREE_PROFILER_BUFFER()
     }
@@ -44,9 +39,9 @@ init_audio_subsystem :: proc(current_thread : ^thread.Thread){
 
 	miniaudio.engine_play_sound(&sound_engine, "resource/audio/Dragon_level.mp3", nil)
 
-    for (common.System.WindowSystem in shared_data.Systems){
-        thread.yield() // temp
+    // for (common.System.WindowSystem in shared_data.Systems){
+    //     thread.yield() // temp
 
         
-    }
+    // }
 }

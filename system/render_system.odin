@@ -1,16 +1,14 @@
 package system
 
-
-import "core:math/linalg/hlsl"
-import "core:c/libc" //TODO: khal remove and use core:intrinisic memcpy
 import "core:fmt"
 import "core:thread"
 import "core:sync"
+import "core:intrinsics"
 
-import "vendor:sdl2"
 import "vendor:directx/d3d11"
 import "vendor:directx/dxgi"
 import "vendor:directx/d3d_compiler"
+import "core:sys/windows"
 
 import "core:strings"
 import "core:os"
@@ -22,15 +20,22 @@ import "../common"
 @(optimization_mode="size")
 init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
-    render_params := make([dynamic]common.RenderParam)
-    //
+    // TODO remove
     shared_data := cast(^common.SharedContext)current_thread.data
-
-    window := cast(^common.Window)current_thread.user_args[0]
-
-    common.CREATE_PROFILER_BUFFER(current_thread.id)
-
     //
+    //Use this
+    //render_batch_buffer := cast(^common.RenderBatchBuffer)current_thread.data
+    
+    window := windows.HWND(current_thread.user_args[0])
+
+    common.CREATE_PROFILER_BUFFER(u32(current_thread.id))
+    render_params := make([dynamic]common.RenderParam)
+
+    window_rect : windows.RECT
+    windows.GetWindowRect(window, &window_rect)
+
+    window_width := window_rect.right - window_rect.left
+    window_height := window_rect.bottom - window_rect.top
 
     vertex_stride : [2]u32 = {size_of(common.SpriteIndex), size_of(common.SpriteInstanceData)} // size of Vertex
     vertex_offset : [2]u32 = {0,0}
@@ -49,8 +54,8 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     }
 
     viewport : d3d11.VIEWPORT = d3d11.VIEWPORT{
-        Width = window.width,
-        Height = window.height,
+        Width = f32(window_width),
+        Height = f32(window_height),
         MaxDepth = 1,
     }
 
@@ -88,7 +93,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     blend_state : ^d3d11.IBlendState
 
     //
-
     swapchain_descriptor := dxgi.SWAP_CHAIN_DESC1{
         Width = 0,
         Height = 0,
@@ -231,7 +235,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         }
 
         delete(render_params)
-        //fmt.println("cleaning render thread")
 
         common.FREE_PROFILER_BUFFER()
     }
@@ -274,7 +277,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     common.BEGIN_EVENT("SwapChain Construction")
     
     common.DX_CALL(
-        dxgi_factory->CreateSwapChainForHwnd(device, window.handle, &swapchain_descriptor, nil,nil,&swapchain ),
+        dxgi_factory->CreateSwapChainForHwnd(device, window, &swapchain_descriptor, nil,nil,&swapchain ),
         swapchain,
     )
     
@@ -310,9 +313,9 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
 
-    sprite_batch_entities := ecs.get_entities_with_single_component_fast(&shared_data.ecs, common.SpriteBatch)
+    sprite_shared := ecs.get_component_list(&shared_data.ecs, common.SpriteBatchShared)
 
-    for sprite_batch_entity in sprite_batch_entities{
+    for shared in sprite_shared{
         sprite_shader_resource_view : ^d3d11.IShaderResourceView
         
         vertex_shader : ^d3d11.IVertexShader
@@ -323,20 +326,20 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
         input_layout : ^d3d11.IInputLayout
 
-        sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, sprite_batch_entity, common.SpriteBatch)
 
         //////////////////////////////// TEXTURE SETUP ////////////////////////////////
 
-        texture_descriptor.Width = u32(sprite_batch.width)
-        texture_descriptor.Height = u32(sprite_batch.height)
+        texture_descriptor.Width = u32(shared.width)
+        texture_descriptor.Height = u32(shared.height)
         
-        texture_resource.pSysMem = sprite_batch.texture
+        texture_resource.pSysMem = shared.texture
         texture_resource.SysMemPitch = texture_descriptor.Width << 2
     
         common.DX_CALL(
             device->CreateTexture2D(&texture_descriptor, &texture_resource, &sprite_texture),
             sprite_texture,
         )
+
            
         common.DX_CALL(
             device->CreateShaderResourceView(sprite_texture, nil, &sprite_shader_resource_view),
@@ -344,9 +347,9 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         )
 
         //////////////////////////// SHADER SETUP //////////////////////////////////
-        assert(u32(len(shader_dir) - 1) >= sprite_batch.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
+        assert(u32(len(shader_dir) - 1) >= shared.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
 
-        target_shader_path := shader_dir[sprite_batch.shader_cache]
+        target_shader_path := shader_dir[shared.shader_cache]
 
         shader_file := target_shader_path[16:]
 
@@ -390,13 +393,13 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
         ////////////////////////////////////////////////////////////////////////
         render_param : common.RenderParam = common.RenderParam{
-            sprite_batch_entity,
             vertex_shader,
             vertex_blob,
             pixel_shader,
             pixel_blob,
             input_layout,
             sprite_shader_resource_view,
+            ecs.Entity(shared.identifier),
         }
 
         append(&render_params, render_param)
@@ -494,8 +497,9 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     sync.barrier_wait(shared_data.barrier)
 
-    for (common.System.WindowSystem in shared_data.Systems){
-        
+    for (.Started in intrinsics.atomic_load_explicit(&current_thread.flags, sync.Atomic_Memory_Order.Acquire)){
+
+
         common.BEGIN_EVENT("Draw Call")
         
         common.DX_CALL(
@@ -510,7 +514,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
             constants.sprite_sheet_size = {0,0} //?
             constants.device_conversion = {2.0 / viewport.Width, -2.0 / viewport.Height}
             constants.viewport_size = {viewport.Width, viewport.Height}
-            constants.time = f32(shared_data.time)
+            constants.time = 0
             constants.delta_time = 0
         }
 
@@ -518,17 +522,14 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
         device_context->ClearRenderTargetView(back_render_target_view, &{0.0, 0.4, 0.5, 1.0})
 
-       
-
         for render_param in render_params {
 
-            sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, render_param.batch_id,  common.SpriteBatch)
+            sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, render_param.batch_handle, common.SpriteBatch)
 
             device_context->IASetInputLayout(render_param.layout_input)
 
             device_context->VSSetShader(render_param.vertex_shader, nil, 0)
             device_context->PSSetShader(render_param.pixel_shader, nil, 0)
-
 
             common.DX_CALL(
                 device_context->Map(instance_data_buffer, 0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_instance_subresource),
@@ -536,7 +537,8 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 true,
             )
 
-            libc.memcpy(mapped_instance_subresource.pData, &sprite_batch.sprite_batch[0], size_of(common.SpriteInstanceData) * len(sprite_batch.sprite_batch))
+
+            intrinsics.mem_copy_non_overlapping(mapped_instance_subresource.pData, &sprite_batch.sprite_batch[0], size_of(common.SpriteInstanceData) * len(sprite_batch.sprite_batch))
 
             device_context->Unmap(instance_data_buffer, 0)
 
@@ -562,7 +564,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
         }
         common.END_EVENT()
-
 
         free_all(context.temp_allocator)
     }
