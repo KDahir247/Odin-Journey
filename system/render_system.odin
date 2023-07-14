@@ -19,17 +19,17 @@ import "../common"
 
 @(optimization_mode="size")
 init_render_subsystem :: proc(current_thread : ^thread.Thread){
-
-    // TODO remove
-    shared_data := cast(^common.SharedContext)current_thread.data
-    //
-    //Use this
-    //render_batch_buffer := cast(^common.RenderBatchBuffer)current_thread.data
+    render_batch_buffer := cast(^common.RenderBatchBuffer)current_thread.data
+    batches : []common.SpriteBatch
     
     window := windows.HWND(current_thread.user_args[0])
+    barrier := (^sync.Barrier)(current_thread.user_args[1])
 
     common.CREATE_PROFILER_BUFFER(u32(current_thread.id))
-    render_params := make([dynamic]common.RenderParam)
+    render_params := make(map[u32]common.RenderParam)
+
+    shader_dir,match_err := filepath.glob(common.DEFAULT_SHADER_PATH)
+    assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
 
     window_rect : windows.RECT
     windows.GetWindowRect(window, &window_rect)
@@ -77,6 +77,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     vs_cbuffer_0 : ^d3d11.IBuffer
 
+    texture_resource : d3d11.SUBRESOURCE_DATA
     sprite_texture : ^d3d11.ITexture2D
 
     texture_sampler : ^d3d11.ISamplerState
@@ -223,7 +224,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     }
 
     defer{
-        for render_param in render_params{
+        for key, render_param in render_params{
 
                 render_param.vertex_shader->Release()
                 render_param.vertex_blob->Release()
@@ -233,6 +234,8 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 render_param.texture_resource->Release()
           
         }
+
+        delete_slice(shader_dir)
 
         delete(render_params)
 
@@ -306,106 +309,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     common.END_EVENT()
 
-    common.BEGIN_EVENT("Texture & Shader Construction")
-    texture_resource : d3d11.SUBRESOURCE_DATA
-
-    shader_dir,match_err := filepath.glob(common.DEFAULT_SHADER_PATH)
-
-    assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
-
-    sprite_shared := ecs.get_component_list(&shared_data.ecs, common.SpriteBatchShared)
-
-    for shared in sprite_shared{
-        sprite_shader_resource_view : ^d3d11.IShaderResourceView
-        
-        vertex_shader : ^d3d11.IVertexShader
-        pixel_shader : ^d3d11.IPixelShader
-
-        vertex_blob : ^d3d_compiler.ID3DBlob
-        pixel_blob : ^d3d_compiler.ID3DBlob
-
-        input_layout : ^d3d11.IInputLayout
-
-
-        //////////////////////////////// TEXTURE SETUP ////////////////////////////////
-
-        texture_descriptor.Width = u32(shared.width)
-        texture_descriptor.Height = u32(shared.height)
-        
-        texture_resource.pSysMem = shared.texture
-        texture_resource.SysMemPitch = texture_descriptor.Width << 2
-    
-        common.DX_CALL(
-            device->CreateTexture2D(&texture_descriptor, &texture_resource, &sprite_texture),
-            sprite_texture,
-        )
-
-           
-        common.DX_CALL(
-            device->CreateShaderResourceView(sprite_texture, nil, &sprite_shader_resource_view),
-            nil,
-        )
-
-        //////////////////////////// SHADER SETUP //////////////////////////////////
-        assert(u32(len(shader_dir) - 1) >= shared.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
-
-        target_shader_path := shader_dir[shared.shader_cache]
-
-        shader_file := target_shader_path[16:]
-
-        shader_src_name : cstring = strings.clone_to_cstring(shader_file)
-   
-        shader_path_byte, _ := os.read_entire_file_from_filename(target_shader_path)
-           
-        defer{
-            delete_slice(shader_path_byte)
-            delete_cstring(shader_src_name)
-            delete_string(target_shader_path)
-        }
-   
-        shader_bytecode := raw_data(shader_path_byte)
-        shader_bytecode_length := uint(len(shader_path_byte))
-
-        common.DX_CALL(
-            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length, shader_src_name, nil, nil, "vs_main","vs_5_0",15,0, &vertex_blob, nil),
-            nil,
-        )
-
-        common.DX_CALL(
-            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length,shader_src_name, nil, nil, "ps_main", "ps_5_0", 15,0,&pixel_blob, nil),
-            nil,
-        )
-
-        common.DX_CALL(
-            device->CreateVertexShader(vertex_blob->GetBufferPointer(), vertex_blob->GetBufferSize(), nil, &vertex_shader),
-            nil,
-        )
-
-        common.DX_CALL(
-            device->CreatePixelShader(pixel_blob->GetBufferPointer(), pixel_blob->GetBufferSize(), nil, &pixel_shader),
-            nil,
-        )
-
-        common.DX_CALL(
-            device->CreateInputLayout(&instance_layout_descriptor[0], len(instance_layout_descriptor), vertex_blob->GetBufferPointer(), vertex_blob->GetBufferSize(),&input_layout),
-            nil,
-        )
-
-        ////////////////////////////////////////////////////////////////////////
-        render_param : common.RenderParam = common.RenderParam{
-            vertex_shader,
-            vertex_blob,
-            pixel_shader,
-            pixel_blob,
-            input_layout,
-            sprite_shader_resource_view,
-            ecs.Entity(shared.identifier),
-        }
-
-        append(&render_params, render_param)
-    }
-
-    delete_slice(shader_dir)
+    common.BEGIN_EVENT("Sampler Construction")
 
     common.DX_CALL(
         device->CreateSamplerState(&sampler_descriptor, &texture_sampler),
@@ -495,10 +399,117 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     mapped_constant_subresource : d3d11.MAPPED_SUBRESOURCE
     mapped_instance_subresource : d3d11.MAPPED_SUBRESOURCE
 
-    sync.barrier_wait(shared_data.barrier)
+    sync.barrier_wait(barrier)
 
     for (.Started in intrinsics.atomic_load_explicit(&current_thread.flags, sync.Atomic_Memory_Order.Acquire)){
+        {
+        
 
+            if render_batch_buffer.modified && sync.try_lock(&render_batch_buffer.mutex){
+                render_batch_buffer.modified = false
+                
+                common.BEGIN_EVENT("Sync Render Data")
+
+                batches = render_batch_buffer.batches
+
+                for batch_shared in  render_batch_buffer.shared{
+                    if _, valid := render_params[batch_shared.identifier]; !valid{
+
+                        sprite_shader_resource_view : ^d3d11.IShaderResourceView
+        
+                        vertex_shader : ^d3d11.IVertexShader
+                        pixel_shader : ^d3d11.IPixelShader
+                
+                        vertex_blob : ^d3d_compiler.ID3DBlob
+                        pixel_blob : ^d3d_compiler.ID3DBlob
+                
+                        input_layout : ^d3d11.IInputLayout
+                
+                
+                        //////////////////////////////// TEXTURE SETUP ////////////////////////////////
+                
+                        texture_descriptor.Width = u32(batch_shared.width)
+                        texture_descriptor.Height = u32(batch_shared.height)
+                        
+                        texture_resource.pSysMem = batch_shared.texture
+                        texture_resource.SysMemPitch = texture_descriptor.Width << 2
+                    
+                        common.DX_CALL(
+                            device->CreateTexture2D(&texture_descriptor, &texture_resource, &sprite_texture),
+                            sprite_texture,
+                        )
+                
+                           
+                        common.DX_CALL(
+                            device->CreateShaderResourceView(sprite_texture, nil, &sprite_shader_resource_view),
+                            nil,
+                        )
+                
+                        //////////////////////////// SHADER SETUP //////////////////////////////////
+                        assert(u32(len(shader_dir) - 1) >= batch_shared.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
+                
+                        target_shader_path := shader_dir[batch_shared.shader_cache]
+                
+                        shader_file := target_shader_path[16:]
+                
+                        shader_src_name : cstring = strings.clone_to_cstring(shader_file)
+                   
+                        shader_path_byte, _ := os.read_entire_file_from_filename(target_shader_path)
+                           
+                        defer{
+                            delete_slice(shader_path_byte)
+                            delete_cstring(shader_src_name)
+                            delete_string(target_shader_path)
+                        }
+                   
+                        shader_bytecode := raw_data(shader_path_byte)
+                        shader_bytecode_length := uint(len(shader_path_byte))
+                
+                        common.DX_CALL(
+                            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length, shader_src_name, nil, nil, "vs_main","vs_5_0",15,0, &vertex_blob, nil),
+                            nil,
+                        )
+                
+                        common.DX_CALL(
+                            d3d_compiler.Compile(shader_bytecode, shader_bytecode_length,shader_src_name, nil, nil, "ps_main", "ps_5_0", 15,0,&pixel_blob, nil),
+                            nil,
+                        )
+                
+                        common.DX_CALL(
+                            device->CreateVertexShader(vertex_blob->GetBufferPointer(), vertex_blob->GetBufferSize(), nil, &vertex_shader),
+                            nil,
+                        )
+                
+                        common.DX_CALL(
+                            device->CreatePixelShader(pixel_blob->GetBufferPointer(), pixel_blob->GetBufferSize(), nil, &pixel_shader),
+                            nil,
+                        )
+                
+                        common.DX_CALL(
+                            device->CreateInputLayout(&instance_layout_descriptor[0], len(instance_layout_descriptor), vertex_blob->GetBufferPointer(), vertex_blob->GetBufferSize(),&input_layout),
+                            nil,
+                        )
+                
+                        ////////////////////////////////////////////////////////////////////////
+
+                        render_params[batch_shared.identifier] = common.RenderParam{
+                            vertex_shader,
+                            vertex_blob,
+                            pixel_shader,
+                            pixel_blob,
+                            input_layout,
+                            sprite_shader_resource_view,
+                        }
+                    }
+
+                }
+                //We need to update the render param
+
+                common.END_EVENT()
+
+            sync.unlock(&render_batch_buffer.mutex)
+            }
+        }
 
         common.BEGIN_EVENT("Draw Call")
         
@@ -521,10 +532,10 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         device_context->Unmap(vs_cbuffer_0, 0)
 
         device_context->ClearRenderTargetView(back_render_target_view, &{0.0, 0.4, 0.5, 1.0})
+        for key, render_param in render_params {
 
-        for render_param in render_params {
+            sprite_batch := batches[key]
 
-            sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, render_param.batch_handle, common.SpriteBatch)
 
             device_context->IASetInputLayout(render_param.layout_input)
 

@@ -217,7 +217,6 @@ RenderParam :: struct {
 
     texture_resource : ^d3d11.IShaderResourceView,
 
-    batch_handle : ecs.Entity,
 }
 
 // This will be sent to the render thread. The render thread will not have the
@@ -228,15 +227,13 @@ RenderBatchBuffer :: struct #align 64  {
     mutex : sync.Mutex,
     shared : []SpriteBatchShared,
     batches : []SpriteBatch,
+    modified : bool,
 }
-
 
 SpriteHandle :: struct{
     batch_handle : uint,
     sprite_handle : int,
 }
-
-
 
 SpriteBatchShared :: struct{
     texture : rawptr,
@@ -261,6 +258,7 @@ SpriteInstanceData :: struct{
 @(optimization_mode="size")
 create_sprite_batcher :: proc(ctx : ^ecs.Context, $tex_path : cstring, $shader_cache : u32) -> uint{
     @(static) target_channel :i32= 4
+
     sprite_batch_entity := ecs.create_entity(ctx)
     tex_width := 0
     tex_height := 0
@@ -269,11 +267,12 @@ create_sprite_batcher :: proc(ctx : ^ecs.Context, $tex_path : cstring, $shader_c
         sprite_batch = make_dynamic_array_len_cap([dynamic]SpriteInstanceData,0, 2048),
     })
     shared := ecs.add_component_unchecked(ctx, sprite_batch_entity, SpriteBatchShared{
-        identifier = u32(sprite_batch_entity),
+        identifier = u32(ctx.component_map[SpriteBatch].entity_indices[sprite_batch_entity]),
     })
 
     shared.texture = image.load(tex_path,&shared.width,&shared.height,nil,  target_channel)
     shared.shader_cache = shader_cache
+
 
     return uint(sprite_batch_entity)
 }

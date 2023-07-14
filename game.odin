@@ -98,22 +98,12 @@ main ::  proc()  {
 	//context.user_ptr = &ecs_context
 
 	render_thread : ^thread.Thread
-	render_batch_buffer : common.RenderBatchBuffer
+	render_batch_buffer := new(common.RenderBatchBuffer)
 	render_batch_buffer.mutex = sync.Mutex{}
 
-	///////////////////// TODO remove look at below ///////////////////// 
-	shared_data,_ := mem.new_aligned(common.SharedContext, 64)
+	barrier := &sync.Barrier{}
 
-	//There might only be a barrier to sync up initialization (we don't want to queue up input while the renderer isn't intialized this will create a quick movement in the start and slow down to the correct speed)
-	//Where should i move this to?
-	shared_data.barrier = &sync.Barrier{}
-
-	// TODO this will not be shared rather the render will have the compact version of the ecs data. Just the component and entity.
-	// It up to the main loop to lock and syncronize if the data is update.
-	// We will have a atomic dirty bit to signify to the renderer that it should update it internal interpetation of the data or we can do a push/pop mechanic 
-	///////////////////////////////////////////////////////////////////
-
-	sync.barrier_init(shared_data.barrier, 2)
+	sync.barrier_init(barrier, 2)
 	
 	sdl2.InitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
 
@@ -141,8 +131,6 @@ main ::  proc()  {
 
 		sdl2.DestroyWindow(sdl2_window)
 		sdl2.QuitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
-
-		free(shared_data)
 
 		common.FREE_PROFILER()
 	}
@@ -193,17 +181,15 @@ main ::  proc()  {
 
 	render_thread = thread.create(system.init_render_subsystem)
 
-	//TODO remove
-	shared_data.ecs = ecs_context
-	render_thread.data = shared_data
+	render_thread.data = render_batch_buffer
 
-	//
 
 	render_thread.user_args[0] = windows.HWND(window_info.info.win.window)
+	render_thread.user_args[1] = barrier
 
 	thread.start(render_thread) 
 
-    sync.barrier_wait(shared_data.barrier)
+    sync.barrier_wait(barrier)
 
 	for running{
 
@@ -237,24 +223,25 @@ main ::  proc()  {
 		//create_render_queue()
 
 		
+		sprite_batch_shared := ecs.get_component_list(&ecs_context, common.SpriteBatchShared)
+		sprite_batch := ecs.get_component_list(&ecs_context, common.SpriteBatch)
+
 		//Spin lock. Don't want the main thread to get blocked.
-		// if sync.try_lock(&render_batch_buffer.mutex){
+		if sync.try_lock(&render_batch_buffer.mutex){
 
-		// 	sprite_batch_shared := ecs.get_component_list(&ecs_context, common.SpriteBatchShared)
-		// 	sprite_batch := ecs.get_component_list(&ecs_context, common.SpriteBatch)
+			render_batch_buffer.modified = true
 
-		// 	render_batch_buffer.shared = sprite_batch_shared
-		// 	render_batch_buffer.batches = sprite_batch
+			render_batch_buffer.shared = sprite_batch_shared
+			render_batch_buffer.batches = sprite_batch
 
-		// 	// Thread render_data will be updated. Later i want a better data structure to 
-		// 	// update individual entry of the data structure rather then the whole.
-		// 	//render_thread.data 
+			render_thread.data = render_batch_buffer
 
+			// Thread render_data will be updated. Later i want a better data structure to 
+			// update individual entry of the data structure rather then the whole.
+			//render_thread.data 
 
-
-			
-		// 	sync.unlock(&render_batch_buffer.mutex)
-		// }
+			sync.unlock(&render_batch_buffer.mutex)
+		}
    
 	}
 
