@@ -45,6 +45,16 @@ DEFAULT_AUDIO_PATH_OGG :: "resource/audio/*.ogg"
 //Quality 4, Size = 1
 DEFAULT_AUDIO_PATH_MP3 :: "resource/aduio/*.mp3"
 
+//////////////////// COMMON VARIABLES //////////////////
+
+
+FIXED_DELTA_TIME : f64 : 0.02
+SCALED_FIXED_DELTA_TIME : f64 : FIXED_DELTA_TIME * TIME_SCALE
+TIME_SCALE : f64 :  1.0
+
+DELTA_TIME_VSYNC_144 : f64 : 0.00694444444444444444444444444444
+
+
 //////////////////// Utility FN ////////////////////////
  
 
@@ -228,6 +238,8 @@ RenderBatchBuffer :: struct #align 64  {
     shared : []SpriteBatchShared,
     batches : []SpriteBatch,
     modified : bool,
+    barrier : sync.Barrier,
+    condition_var : sync.Cond,
 }
 
 SpriteHandle :: struct{
@@ -257,22 +269,22 @@ SpriteInstanceData :: struct{
 
 @(optimization_mode="size")
 create_sprite_batcher :: proc(ctx : ^ecs.Context, $tex_path : cstring, $shader_cache : u32) -> uint{
-    @(static) target_channel :i32= 4
+    @(static) target_channel : i32 = 4
+    @(static) identifier_idx : u32 = 0
 
     sprite_batch_entity := ecs.create_entity(ctx)
-    tex_width := 0
-    tex_height := 0
 
     ecs.add_component_unchecked(ctx,sprite_batch_entity, SpriteBatch{
         sprite_batch = make_dynamic_array_len_cap([dynamic]SpriteInstanceData,0, 2048),
     })
     shared := ecs.add_component_unchecked(ctx, sprite_batch_entity, SpriteBatchShared{
-        identifier = u32(ctx.component_map[SpriteBatch].entity_indices[sprite_batch_entity]),
+        identifier = identifier_idx,
     })
 
     shared.texture = image.load(tex_path,&shared.width,&shared.height,nil,  target_channel)
     shared.shader_cache = shader_cache
 
+    identifier_idx += 1
 
     return uint(sprite_batch_entity)
 }

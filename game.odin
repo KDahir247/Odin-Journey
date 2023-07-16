@@ -5,11 +5,14 @@ import "core:mem"
 import "core:thread"
 import "core:sys/windows"
 import "core:sync"
-import "vendor:stb/image"
 import "core:intrinsics"
 import "core:math"
 import "core:math/linalg/hlsl"
 import "core:sys/llvm"
+import "core:time"
+
+
+import "vendor:stb/image"
 import "vendor:sdl2"
 
 //TODO: got to redo the ecs system it look like there alot of unessary work.. -.-'
@@ -25,27 +28,20 @@ init_game :: proc(){
 
 //TODO: we need to find a way to get the ecs system without passing it as argument. for both fixed update and update.
 
-
 @(optimization_mode="size")
-fixed_update :: proc(elapsed_time : f64, delta_time : f64){
-    fixed_timestep :f64= 0.02 
-    fixed_delta_time :f64= 0.02 
-    fixed_time :f64= 0.0
-
-	for elapsed_time > (fixed_time + fixed_timestep) {
-
-		//Fixed Update Logic
+fixed_update :: proc(fixed_time : f64, elapsed_time : f64, delta_time : f64){
+	common.BEGIN_EVENT("Physics Update")
 
 
-		fixed_time += fixed_delta_time 
-	}
-
-
+	common.END_EVENT()
 }
 
 @(optimization_mode="size")
 update :: proc(elapsed_time : f64, delta_time : f64){
 
+	common.BEGIN_EVENT("Update")
+
+	
 	// for  sprite in sprite_handles {
 
 	// 	sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, ecs.Entity(sprite.batch_handle), common.SpriteBatch)
@@ -57,6 +53,8 @@ update :: proc(elapsed_time : f64, delta_time : f64){
 	// 	sprite_batch.sprite_batch[sprite.sprite_handle].src_rect = hlsl.float4{39.0 * animation_index, 41.0 * 4, 39.0, 41.0}
 
 	// }  
+
+	common.END_EVENT()
 }
 
 @(optimization_mode="size")
@@ -75,35 +73,39 @@ create_render_queue :: proc(){
 @(optimization_mode="size")
 main ::  proc()  {
 
+	frequency :: 1.0 / 10000000.0
+
+	display_setting : windows.DEVMODEW
+
+	windows.EnumDisplaySettingsW(nil,windows.ENUM_CURRENT_SETTINGS, &display_setting)
+
 
 	//TODO: remove this.
 	running := true
+	min_delta_time := 1.0 /  f64(display_setting.dmDisplayFrequency)
 
-    previous_tick : i64 = 0
-	current_tick : i64 = 0
+    previous_tick : windows.LARGE_INTEGER
+	current_tick : windows.LARGE_INTEGER
 
-	maximum_delta_time : f64= 0.333
-    time :f64= 0.0 
-   
-    time_scale : f64 = 1.0
-    delta_time_vsync : f64 = 1.0 / 144 //Hardcoded going to change this 
-
-	input_encoded : u64
-
+	time_carryover : f64 = 0.0
+    elapsed_time :f64= 0.0 
+	fixed_time : f64 = 0.0
+	accumulator : f64 = 0.0
+	//input_encoded : u64
 
 	sdl2_event : sdl2.Event
 	window_info : sdl2.SysWMinfo 
 	
 	ecs_context := ecs.init_ecs()
-	//context.user_ptr = &ecs_context
+	context.user_ptr = &ecs_context
 
 	render_thread : ^thread.Thread
 	render_batch_buffer := new(common.RenderBatchBuffer)
 	render_batch_buffer.mutex = sync.Mutex{}
+	render_batch_buffer.barrier = sync.Barrier{}
+	render_batch_buffer.condition_var = sync.Cond{}
 
-	barrier := &sync.Barrier{}
-
-	sync.barrier_init(barrier, 2)
+	sync.barrier_init(&render_batch_buffer.barrier, 2)
 	
 	sdl2.InitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
 
@@ -119,8 +121,8 @@ main ::  proc()  {
 			sdl2.WindowFlag.ALLOW_HIGHDPI,
 		},
 	)
-	sdl2.GetWindowWMInfo(sdl2_window, &window_info)
 
+	sdl2.GetWindowWMInfo(sdl2_window, &window_info)
 
 	defer{	
         common.sprite_batch_free(&ecs_context)
@@ -128,6 +130,7 @@ main ::  proc()  {
 		thread.destroy(render_thread)	
 
 		ecs.deinit_ecs(&ecs_context)
+		context.user_ptr = nil
 
 		sdl2.DestroyWindow(sdl2_window)
 		sdl2.QuitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
@@ -135,11 +138,10 @@ main ::  proc()  {
 		common.FREE_PROFILER()
 	}
 
-
     player_entity := ecs.create_entity(&ecs_context)
-    player_entity_1 := ecs.create_entity(&ecs_context) //TODO: remove for testing
 
 	player_batcher_id := common.create_sprite_batcher(&ecs_context,"resource/sprite/padawan/pad.png", 0)
+
 	player_batch, player_batch_shared:= ecs.get_components_2_unchecked(&ecs_context,ecs.Entity(player_batcher_id), common.SpriteBatch, common.SpriteBatchShared)
 
     ecs.add_component_unchecked(&ecs_context, player_entity, common.SpriteHandle{
@@ -159,75 +161,60 @@ main ::  proc()  {
         batch_handle = player_batcher_id,
     })
 
-    ecs.add_component_unchecked(&ecs_context, player_entity_1, common.SpriteHandle{
-        //player sprite parameters
-        sprite_handle = common.sprite_batch_append(player_batch,common.SpriteInstanceData{
-            transform = {
-                1.0, 0.0, 0.0, 300.0,
-                0.0, 1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
-            },
-            hue_displacement = 1,
-            src_rect = {0.0,0.0, f32(player_batch_shared.width), f32(player_batch_shared.height)},
-        }),
-
-        //Batch entity which has the player parameters
-        batch_handle = player_batcher_id,
-    })
-    
-
-	sprite_handles := ecs.get_component_list(&ecs_context, common.SpriteHandle)
-
 	render_thread = thread.create(system.init_render_subsystem)
 
 	render_thread.data = render_batch_buffer
 
-
 	render_thread.user_args[0] = windows.HWND(window_info.info.win.window)
-	render_thread.user_args[1] = barrier
 
 	thread.start(render_thread) 
 
-    sync.barrier_wait(barrier)
+    sync.barrier_wait(&render_batch_buffer.barrier)
+
+	windows.QueryPerformanceCounter(&current_tick)
 
 	for running{
-
+		windows.QueryPerformanceCounter(&current_tick)
+     
+		delta_time := clamp(common.TIME_SCALE * f64(current_tick - previous_tick) * frequency,min_delta_time, 0.333)
+        
 		previous_tick = current_tick
-        current_tick = intrinsics.read_cycle_counter()
-       
-        delta_time :=  min(
-			time_scale * f64(current_tick - previous_tick) * 1e6  * delta_time_vsync, //delta_time_vsync //time_scale *f64(current_tick - previous_tick) * 1000.0  * rcp_freq
-			maximum_delta_time, 
-		)
-
-        time += delta_time 
 
 		for sdl2.PollEvent(&sdl2_event){
 			running = sdl2_event.type != sdl2.EventType.QUIT
 
-			scan_code_index := u64(sdl2_event.key.keysym.scancode)
-			if sdl2_event.key.type != sdl2.EventType.TEXTINPUT && scan_code_index > 0 && scan_code_index <= 512{
-				input_encoded = 0
-				input_encoded = scan_code_index << 4 | u64(sdl2_event.key.repeat << 2) | u64(sdl2_event.key.state)
-			}
+			// scan_code_index := u64(sdl2_event.key.keysym.scancode)
+			// if sdl2_event.key.type != sdl2.EventType.TEXTINPUT && scan_code_index > 0 && scan_code_index <= 512{
+			// 	input_encoded = scan_code_index << 4 | u64(sdl2_event.key.repeat << 2) | u64(sdl2_event.key.state)
+			// }
 		}
 
-		fixed_update(time, delta_time)
-		update(time, delta_time)
-		on_animation(time, delta_time)
+        elapsed_time += delta_time 
+		accumulator += delta_time + time_carryover
 
-		//Send to thread.. function.
-		// The Sprite batch will always be clear prior to setting
-		//This will batch position, rotation, scale, src_rect, hue_disp, z_depth and send thread
-		//create_render_queue()
+		for accumulator >= common.SCALED_FIXED_DELTA_TIME {
 
-		
-		sprite_batch_shared := ecs.get_component_list(&ecs_context, common.SpriteBatchShared)
-		sprite_batch := ecs.get_component_list(&ecs_context, common.SpriteBatch)
+			fixed_update(fixed_time,elapsed_time, delta_time)
+	
+			fixed_time += common.SCALED_FIXED_DELTA_TIME 
+			accumulator -= common.SCALED_FIXED_DELTA_TIME
+		}
 
-		//Spin lock. Don't want the main thread to get blocked.
+		update(elapsed_time, delta_time)
+		//TODO: khal we don't delta time to be scaled here.
+		on_animation(elapsed_time, delta_time)
+
+		time_carryover = accumulator
+
+
+		//Spin lock. Don't want the main thread to get blocked, but don't want to call this every frame.....
 		if sync.try_lock(&render_batch_buffer.mutex){
+			common.BEGIN_EVENT("Retrieving Sprite batches")
+			sprite_batch_shared := ecs.get_component_list(&ecs_context, common.SpriteBatchShared)
+			sprite_batch := ecs.get_component_list(&ecs_context, common.SpriteBatch)
+			common.END_EVENT()
+	
+			common.BEGIN_EVENT("Syncing Render data")
 
 			render_batch_buffer.modified = true
 
@@ -241,8 +228,12 @@ main ::  proc()  {
 			//render_thread.data 
 
 			sync.unlock(&render_batch_buffer.mutex)
+			common.END_EVENT()
+
 		}
-   
+		
+
+
 	}
 
 	sync.atomic_store_explicit(&render_thread.flags, {.Done},sync.Atomic_Memory_Order.Release)

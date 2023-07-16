@@ -23,7 +23,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     batches : []common.SpriteBatch
     
     window := windows.HWND(current_thread.user_args[0])
-    barrier := (^sync.Barrier)(current_thread.user_args[1])
 
     common.CREATE_PROFILER_BUFFER(u32(current_thread.id))
     render_params := make(map[u32]common.RenderParam)
@@ -399,17 +398,19 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     mapped_constant_subresource : d3d11.MAPPED_SUBRESOURCE
     mapped_instance_subresource : d3d11.MAPPED_SUBRESOURCE
 
-    sync.barrier_wait(barrier)
+    sync.barrier_wait(&render_batch_buffer.barrier)
 
     for (.Started in intrinsics.atomic_load_explicit(&current_thread.flags, sync.Atomic_Memory_Order.Acquire)){
         {
-        
-
+            //TODO: khal if we add another batch shared we might want to use a blocking lock. since this operation will take a while.
+            // and we don't want to calculate the position and other properties, since this will add a fast stutter movement because
+            // the update loop and fixed update loop get called more.
             if render_batch_buffer.modified && sync.try_lock(&render_batch_buffer.mutex){
+                common.BEGIN_EVENT("Applying Sync Render data")
+
                 render_batch_buffer.modified = false
                 
-                common.BEGIN_EVENT("Sync Render Data")
-
+                //TODO: need a way to check prior if this has been modfied.
                 batches = render_batch_buffer.batches
 
                 for batch_shared in  render_batch_buffer.shared{
@@ -424,7 +425,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                         pixel_blob : ^d3d_compiler.ID3DBlob
                 
                         input_layout : ^d3d11.IInputLayout
-                
                 
                         //////////////////////////////// TEXTURE SETUP ////////////////////////////////
                 
@@ -501,13 +501,11 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                             sprite_shader_resource_view,
                         }
                     }
-
                 }
-                //We need to update the render param
-
-                common.END_EVENT()
-
             sync.unlock(&render_batch_buffer.mutex)
+
+            common.END_EVENT()
+
             }
         }
 
@@ -547,7 +545,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 nil,
                 true,
             )
-
 
             intrinsics.mem_copy_non_overlapping(mapped_instance_subresource.pData, &sprite_batch.sprite_batch[0], size_of(common.SpriteInstanceData) * len(sprite_batch.sprite_batch))
 
