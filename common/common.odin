@@ -239,7 +239,6 @@ RenderBatchBuffer :: struct #align 64  {
     batches : []SpriteBatch,
     modified : bool,
     barrier : sync.Barrier,
-    condition_var : sync.Cond,
 }
 
 SpriteHandle :: struct{

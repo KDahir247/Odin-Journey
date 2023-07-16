@@ -1,15 +1,10 @@
 package main;
 import "core:fmt"
 
-import "core:mem"
 import "core:thread"
 import "core:sys/windows"
 import "core:sync"
 import "core:intrinsics"
-import "core:math"
-import "core:math/linalg/hlsl"
-import "core:sys/llvm"
-import "core:time"
 
 
 import "vendor:stb/image"
@@ -72,26 +67,27 @@ create_render_queue :: proc(){
 
 @(optimization_mode="size")
 main ::  proc()  {
-
-	frequency :: 1.0 / 10000000.0
-
 	display_setting : windows.DEVMODEW
 
 	windows.EnumDisplaySettingsW(nil,windows.ENUM_CURRENT_SETTINGS, &display_setting)
 
+	//TODO: khal. not sure if this is right. Want to get cpu frequency
+ 	eax,ebx,ecx,edx := intrinsics.x86_cpuid(0x80000002, 0x0)
+	freq :=(eax + ebx) + (ecx + edx)
+
+	rcp_freq := 1.0 / f64(freq)
+	min_delta_time := 1.0 /  f64(display_setting.dmDisplayFrequency)
+
+	previous :i64 = 0
+	current : i64 = 0
 
 	//TODO: remove this.
 	running := true
-	min_delta_time := 1.0 /  f64(display_setting.dmDisplayFrequency)
-
-    previous_tick : windows.LARGE_INTEGER
-	current_tick : windows.LARGE_INTEGER
 
 	time_carryover : f64 = 0.0
     elapsed_time :f64= 0.0 
 	fixed_time : f64 = 0.0
 	accumulator : f64 = 0.0
-	//input_encoded : u64
 
 	sdl2_event : sdl2.Event
 	window_info : sdl2.SysWMinfo 
@@ -103,7 +99,6 @@ main ::  proc()  {
 	render_batch_buffer := new(common.RenderBatchBuffer)
 	render_batch_buffer.mutex = sync.Mutex{}
 	render_batch_buffer.barrier = sync.Barrier{}
-	render_batch_buffer.condition_var = sync.Cond{}
 
 	sync.barrier_init(&render_batch_buffer.barrier, 2)
 	
@@ -165,20 +160,20 @@ main ::  proc()  {
 
 	render_thread.data = render_batch_buffer
 
-	render_thread.user_args[0] = windows.HWND(window_info.info.win.window)
+	render_thread.user_args[0] = window_info.info.win.window
 
 	thread.start(render_thread) 
 
     sync.barrier_wait(&render_batch_buffer.barrier)
 
-	windows.QueryPerformanceCounter(&current_tick)
+	current = intrinsics.read_cycle_counter()
 
 	for running{
-		windows.QueryPerformanceCounter(&current_tick)
+		current = intrinsics.read_cycle_counter()
      
-		delta_time := clamp(common.TIME_SCALE * f64(current_tick - previous_tick) * frequency,min_delta_time, 0.333)
+		delta_time := clamp(common.TIME_SCALE * (f64(current) - f64(previous)) * rcp_freq,min_delta_time, 0.333)
         
-		previous_tick = current_tick
+		previous = current
 
 		for sdl2.PollEvent(&sdl2_event){
 			running = sdl2_event.type != sdl2.EventType.QUIT
