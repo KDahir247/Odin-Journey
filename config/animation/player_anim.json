@@ -1,0 +1,20 @@
+{
+    "clips": [
+            {
+                    "width": 39.0,
+                    "height": 43.0,
+                    "index": 0,
+                    "len": 7
+            },
+            {
+                    "width": 39.0,
+                    "height": 41.0,
+                    "index": 1,
+                    "len": 8
+            }
+    ],
+    "animation_speed": 2.00000000,
+    "current_clip" : 1,
+    "previous_frame": 0,
+    "animation_time" : 0
+}

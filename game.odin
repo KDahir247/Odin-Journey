@@ -1,13 +1,12 @@
 package main;
 import "core:fmt"
-
 import "core:thread"
 import "core:sys/windows"
 import "core:sync"
 import "core:intrinsics"
+import "core:os"
+import "core:math/linalg"
 
-
-import "vendor:stb/image"
 import "vendor:sdl2"
 
 //TODO: got to redo the ecs system it look like there alot of unessary work.. -.-'
@@ -15,14 +14,9 @@ import "ecs"
 import "system"
 import "common"
 
-@(private)
-@(init)
-init_game :: proc(){
-	common.CREATE_PROFILER("ProfilerData.spall")
-}
+import "core:encoding/json"
 
 //TODO: we need to find a way to get the ecs system without passing it as argument. for both fixed update and update.
-
 @(optimization_mode="size")
 fixed_update :: proc(fixed_time : f64, elapsed_time : f64, delta_time : f64){
 	common.BEGIN_EVENT("Physics Update")
@@ -33,78 +27,94 @@ fixed_update :: proc(fixed_time : f64, elapsed_time : f64, delta_time : f64){
 
 @(optimization_mode="size")
 update :: proc(elapsed_time : f64, delta_time : f64){
-
 	common.BEGIN_EVENT("Update")
 
 	
-	// for  sprite in sprite_handles {
-
-	// 	sprite_batch := ecs.get_component_unchecked(&shared_data.ecs, ecs.Entity(sprite.batch_handle), common.SpriteBatch)
-
-
-	// 	animation_index += 1
-		
-	// 	animation_index = animation_index - llvm.floor_f32(animation_index * 0.14285714285714285714285714285714) * 7
-	// 	sprite_batch.sprite_batch[sprite.sprite_handle].src_rect = hlsl.float4{39.0 * animation_index, 41.0 * 4, 39.0, 41.0}
-
-	// }  
 
 	common.END_EVENT()
 }
 
 @(optimization_mode="size")
-on_animation :: proc(elapsed_time : f64, delta_time : f64){
+on_animation :: proc(elapsed_time : f64){
+	ecs_context := cast(^ecs.Context)context.user_ptr
+	
+	animator_entities := ecs.get_entities_with_single_component_fast(ecs_context, common.Animator)
 
+	for entity in animator_entities{
+		common.BEGIN_EVENT("Animation Loop")
+
+		//TODO: khal don't like all the get components here
+		animator := ecs.get_component_unchecked(ecs_context, entity, common.Animator)
+		sprite_handle := ecs.get_component_unchecked(ecs_context,entity, common.SpriteHandle)
+		sprite_batch := ecs.get_component_unchecked(ecs_context, ecs.Entity(sprite_handle.batch_handle), common.SpriteBatch)
+
+		current_clip := animator.clips[animator.current_clip]
+
+		animation_delta_time := (elapsed_time - animator.animation_time) * 0.001
+
+		frame_to_update := linalg.floor(animation_delta_time *animator.animation_speed)
+
+		update_mask := frame_to_update > 0 ? 1.0 : 0.0
+
+		next_frame := animator.previous_frame + int(frame_to_update)
+		rcp_update_mask := 1 - update_mask
+
+		animator.previous_frame = next_frame
+		animator.previous_frame %= current_clip.len
+
+		animator.animation_time = (elapsed_time * update_mask) + (animator.animation_time * rcp_update_mask)
+		y :=current_clip.index * current_clip.height
+		x := animator.previous_frame * current_clip.width
+
+		sprite_batch.sprite_batch[sprite_handle.sprite_handle].src_rect = {
+			f32(x), f32(y), f32(current_clip.width), f32(current_clip.height),
+		}
+
+		common.END_EVENT()
+	}
 }
-
-
-@(optimization_mode="size")
-create_render_queue :: proc(){
-
-
-}
-
 
 @(optimization_mode="size")
 main ::  proc()  {
-	display_setting : windows.DEVMODEW
+	common.CREATE_PROFILER("ProfilerData.spall") //
 
+	ecs_context := ecs.init_ecs()
+	context.user_ptr = &ecs_context
+	
+	sdl2_event : sdl2.Event
+	window_info : sdl2.SysWMinfo 
+
+	display_setting : windows.DEVMODEW
 	windows.EnumDisplaySettingsW(nil,windows.ENUM_CURRENT_SETTINGS, &display_setting)
+	min_delta_time := common.TIME_SCALE /  f64(display_setting.dmDisplayFrequency)
+
+	running := true
 
 	//TODO: khal. not sure if this is right. Want to get cpu frequency
- 	eax,ebx,ecx,edx := intrinsics.x86_cpuid(0x80000002, 0x0)
-	freq :=(eax + ebx) + (ecx + edx)
+	eax,ebx,ecx,edx := intrinsics.x86_cpuid(0x80000002, 0x0)
 
-	rcp_freq := 1.0 / f64(freq)
-	min_delta_time := 1.0 /  f64(display_setting.dmDisplayFrequency)
+	rcp_freq := common.TIME_SCALE / f64((eax + ebx) + (ecx + edx)) 
 
-	previous :i64 = 0
-	current : i64 = 0
-
-	//TODO: remove this.
-	running := true
+	current : f64 = 0
+	previous :f64 = 0
 
 	time_carryover : f64 = 0.0
     elapsed_time :f64= 0.0 
 	fixed_time : f64 = 0.0
 	accumulator : f64 = 0.0
 
-	sdl2_event : sdl2.Event
-	window_info : sdl2.SysWMinfo 
-	
-	ecs_context := ecs.init_ecs()
-	context.user_ptr = &ecs_context
-
 	render_thread : ^thread.Thread
-	render_batch_buffer := new(common.RenderBatchBuffer)
-	render_batch_buffer.mutex = sync.Mutex{}
-	render_batch_buffer.barrier = sync.Barrier{}
 
-	sync.barrier_init(&render_batch_buffer.barrier, 2)
+	barrier :=  &sync.Barrier{}
+	sync.barrier_init(barrier, 2)
+
+	window : ^sdl2.Window
+
+	render_batch_buffer : common.RenderBatchBuffer
 	
 	sdl2.InitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
 
-	sdl2_window := sdl2.CreateWindow(
+	window = sdl2.CreateWindow(
 		"MyGame",
 		sdl2.WINDOWPOS_CENTERED, 
 		sdl2.WINDOWPOS_CENTERED,
@@ -117,7 +127,7 @@ main ::  proc()  {
 		},
 	)
 
-	sdl2.GetWindowWMInfo(sdl2_window, &window_info)
+	sdl2.GetWindowWMInfo(window, &window_info)
 
 	defer{	
         common.sprite_batch_free(&ecs_context)
@@ -127,108 +137,104 @@ main ::  proc()  {
 		ecs.deinit_ecs(&ecs_context)
 		context.user_ptr = nil
 
-		sdl2.DestroyWindow(sdl2_window)
-		sdl2.QuitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
+		sdl2.DestroyWindow(window)
+		sdl2.Quit()
 
 		common.FREE_PROFILER()
 	}
 
-    player_entity := ecs.create_entity(&ecs_context)
-
 	player_batcher_id := common.create_sprite_batcher(&ecs_context,"resource/sprite/padawan/pad.png", 0)
 
+	// Sprite Batch creation
+	// mem_hi 
 	player_batch, player_batch_shared:= ecs.get_components_2_unchecked(&ecs_context,ecs.Entity(player_batcher_id), common.SpriteBatch, common.SpriteBatchShared)
 
-    ecs.add_component_unchecked(&ecs_context, player_entity, common.SpriteHandle{
-        //player sprite parameters
-        sprite_handle = common.sprite_batch_append(player_batch,common.SpriteInstanceData{
-            transform = {
-                1.0, 0.0, 0.0, 200.0,
-                0.0, 1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
-            },
-            hue_displacement = 1,
-            src_rect = {0.0,0.0, f32(player_batch_shared.width), f32(player_batch_shared.height)},
-        }),
-
-        //Batch entity which has the player parameters
-        batch_handle = player_batcher_id,
-    })
+	sprite_handle_id :=  common.sprite_batch_append(player_batch,common.SpriteInstanceData{
+		transform = {
+			1.0, 0.0, 0.0, 200.0,
+			0.0, 1.0, 0.0, 0.0,
+			0.0, 0.0, 1.0, 0.0,
+			0.0, 0.0, 0.0, 1.0,
+		},
+		hue_displacement = 1,
+		src_rect = {0.0,0.0, f32(player_batch_shared.width), f32(player_batch_shared.height)},
+	})
+	//
 
 	render_thread = thread.create(system.init_render_subsystem)
-
-	render_thread.data = render_batch_buffer
-
+	
+	render_thread.data = &render_batch_buffer
 	render_thread.user_args[0] = window_info.info.win.window
+	render_thread.user_args[1] = barrier
 
 	thread.start(render_thread) 
 
-    sync.barrier_wait(&render_batch_buffer.barrier)
+	sync.barrier_wait(barrier)
 
-	current = intrinsics.read_cycle_counter()
+
+	//Sprite Creation
+	player_entity := ecs.create_entity(&ecs_context)
+
+    ecs.add_component_unchecked(&ecs_context, player_entity, common.SpriteHandle{
+        sprite_handle = sprite_handle_id,
+        batch_handle = player_batcher_id,
+    })
+
+	data,_ := os.read_entire_file_from_filename("config/animation/player_anim.json")
+	
+	player_anim : common.Animator
+	json.unmarshal(data, &player_anim)
+	ecs.add_component_unchecked(&ecs_context, player_entity, player_anim)
+	//
 
 	for running{
-		current = intrinsics.read_cycle_counter()
+		current = f64(intrinsics.read_cycle_counter())
      
-		delta_time := clamp(common.TIME_SCALE * (f64(current) - f64(previous)) * rcp_freq,min_delta_time, 0.333)
+		delta_time := clamp((current - previous) * rcp_freq,min_delta_time, common.MAX_DELTA_TIME)
         
 		previous = current
 
 		for sdl2.PollEvent(&sdl2_event){
 			running = sdl2_event.type != sdl2.EventType.QUIT
-
-			// scan_code_index := u64(sdl2_event.key.keysym.scancode)
-			// if sdl2_event.key.type != sdl2.EventType.TEXTINPUT && scan_code_index > 0 && scan_code_index <= 512{
-			// 	input_encoded = scan_code_index << 4 | u64(sdl2_event.key.repeat << 2) | u64(sdl2_event.key.state)
-			// }
 		}
 
-        elapsed_time += delta_time 
-		accumulator += delta_time + time_carryover
+		if !sync.atomic_load_explicit(&render_batch_buffer.changed_flag, sync.Atomic_Memory_Order.Consume){
 
-		for accumulator >= common.SCALED_FIXED_DELTA_TIME {
-
-			fixed_update(fixed_time,elapsed_time, delta_time)
+			elapsed_time += delta_time 
+			accumulator += delta_time + time_carryover
 	
-			fixed_time += common.SCALED_FIXED_DELTA_TIME 
-			accumulator -= common.SCALED_FIXED_DELTA_TIME
-		}
-
-		update(elapsed_time, delta_time)
-		//TODO: khal we don't delta time to be scaled here.
-		on_animation(elapsed_time, delta_time)
-
-		time_carryover = accumulator
-
-
-		//Spin lock. Don't want the main thread to get blocked, but don't want to call this every frame.....
-		if sync.try_lock(&render_batch_buffer.mutex){
-			common.BEGIN_EVENT("Retrieving Sprite batches")
-			sprite_batch_shared := ecs.get_component_list(&ecs_context, common.SpriteBatchShared)
-			sprite_batch := ecs.get_component_list(&ecs_context, common.SpriteBatch)
-			common.END_EVENT()
-	
-			common.BEGIN_EVENT("Syncing Render data")
-
-			render_batch_buffer.modified = true
-
-			render_batch_buffer.shared = sprite_batch_shared
-			render_batch_buffer.batches = sprite_batch
-
-			render_thread.data = render_batch_buffer
-
-			// Thread render_data will be updated. Later i want a better data structure to 
-			// update individual entry of the data structure rather then the whole.
-			//render_thread.data 
-
-			sync.unlock(&render_batch_buffer.mutex)
-			common.END_EVENT()
-
-		}
+			for accumulator >= common.SCALED_FIXED_DELTA_TIME {
+				fixed_update(fixed_time,elapsed_time, delta_time)
 		
+				fixed_time += common.SCALED_FIXED_DELTA_TIME 
+				accumulator -= common.SCALED_FIXED_DELTA_TIME
+			}
+	
+			update(elapsed_time, delta_time)
+			on_animation(elapsed_time)
+	
+			time_carryover = accumulator
+	
+			common.BEGIN_EVENT("Syncing Render Data")
+			
+			{
+				batch_shared := ecs_context.component_map[common.SpriteBatchShared].data
+				batch := ecs_context.component_map[common.SpriteBatch].data
+	
+				changed := len(render_batch_buffer.batches) != batch.len || len(render_batch_buffer.shared) != batch_shared.len
+	
+				render_batch_buffer.shared = (cast(^[dynamic]common.SpriteBatchShared)batch_shared)[:]
+				render_batch_buffer.batches = (cast(^[dynamic]common.SpriteBatch)batch)[:]
+				
+				render_thread.data = &render_batch_buffer
+	
+				sync.atomic_store_explicit(&render_batch_buffer.changed_flag, changed, sync.Atomic_Memory_Order.Relaxed)
+			}
 
+			common.END_EVENT()
+		}
 
+		free_all(context.temp_allocator)
 	}
 
 	sync.atomic_store_explicit(&render_thread.flags, {.Done},sync.Atomic_Memory_Order.Release)

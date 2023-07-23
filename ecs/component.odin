@@ -43,7 +43,7 @@ add_component :: proc(ctx: ^Context, entity: Entity, component: $T) -> (^T, ECS_
   return &array[comp_map.entity_indices[entity]], .NO_ERROR
 }
 
-@(optimization_mode="speed")
+@(optimization_mode="size")
 add_component_unchecked :: proc(ctx: ^Context, entity: Entity, component: $T) -> ^T{
   register_component(ctx, T)
 
@@ -138,7 +138,7 @@ get_component_map_from_id :: #force_inline proc(ctx : ^Context, $T : typeid)-> C
 
 
 @(optimization_mode="speed")
-get_component_list :: #force_inline proc(ctx: ^Context, $T: typeid) -> []T {
+get_component_list :: proc(ctx: ^Context, $T: typeid) -> []T {
   #no_bounds_check{
     array := cast(^[dynamic]T)ctx.component_map[T].data
 

@@ -17,17 +17,10 @@ Context :: struct {
 }
 
 init_ecs :: proc() -> (ctx: Context) {
-  create_entities :: proc(ctx: ^Context) {
-    ctx.entities.entities = make([dynamic]Entity_And_Some_Info)
-    queue.init(&ctx.entities.available_slots)
-  }
-  create_entities(&ctx)
-
-  create_component_map :: proc(ctx: ^Context) {
-    ctx.component_map = make(map[typeid]Component_List)
-  }
-
-  create_component_map(&ctx)
+  
+  ctx.entities.entities = make([dynamic]Entity_And_Some_Info)
+  queue.init(&ctx.entities.available_slots)
+  ctx.component_map = make(map[typeid]Component_List)
 
   return ctx
 }

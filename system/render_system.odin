@@ -12,23 +12,27 @@ import "core:sys/windows"
 
 import "core:strings"
 import "core:os"
-import "core:path/filepath"
 
 import "../ecs"
 import "../common"
 
+
 @(optimization_mode="size")
 init_render_subsystem :: proc(current_thread : ^thread.Thread){
     render_batch_buffer := cast(^common.RenderBatchBuffer)current_thread.data
+
     batches : []common.SpriteBatch
     
-    window := windows.HWND(current_thread.user_args[0])
-
     common.CREATE_PROFILER_BUFFER(u32(current_thread.id))
-    render_params := make(map[u32]common.RenderParam)
 
-    shader_dir,match_err := filepath.glob(common.DEFAULT_SHADER_PATH)
-    assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
+    barrier := cast(^sync.Barrier)(current_thread.user_args[1])
+    window := windows.HWND(current_thread.user_args[0])
+    
+    render_params := make(map[int]common.RenderParam)
+
+    //mem_hi os.read_dir()
+    //shader_dir,match_err := filepath.glob(common.DEFAULT_SHADER_PATH)
+    //assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
 
     window_rect : windows.RECT
     windows.GetWindowRect(window, &window_rect)
@@ -57,7 +61,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         Height = f32(window_height),
         MaxDepth = 1,
     }
-
     //
 
     base_device : ^d3d11.IDevice
@@ -81,6 +84,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     texture_sampler : ^d3d11.ISamplerState
 
+    staging_buffer : ^d3d11.IBuffer
     vertex_buffer : ^d3d11.IBuffer
     instance_data_buffer : ^d3d11.IBuffer
 
@@ -137,6 +141,12 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         BorderColor = {0.0, 0.0, 0.0, 0.0},
         MinLOD = 0,
         MaxLOD = d3d11.FLOAT32_MAX,
+    }
+
+    staging_buffer_descriptor : d3d11.BUFFER_DESC = d3d11.BUFFER_DESC{
+        ByteWidth = common.INSTANCE_BYTE_WIDTH,
+        Usage = d3d11.USAGE.STAGING,
+        CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{d3d11.CPU_ACCESS_FLAG.WRITE, d3d11.CPU_ACCESS_FLAG.READ},
     }
 
     vertex_buffer_descriptor : d3d11.BUFFER_DESC = d3d11.BUFFER_DESC{
@@ -230,20 +240,20 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 render_param.pixel_shader->Release()
                 render_param.pixel_blob->Release()
                 render_param.layout_input->Release()
-                render_param.texture_resource->Release()
+                render_param.texture_resource^->Release()
           
         }
 
-        delete_slice(shader_dir)
+        //delete_slice(shader_dir)
 
         delete(render_params)
 
+        //TODO: khal seem like a leak on the back buffer
         common.FREE_PROFILER_BUFFER()
     }
 
     common.BEGIN_EVENT("Device Construction & Query")
 
-    //TODO: khal pf
     common.DX_CALL(
         d3d11.CreateDevice(nil, d3d11.DRIVER_TYPE.HARDWARE, nil, d3d11.CREATE_DEVICE_FLAGS{},&d3d_feature_level[0],len(d3d_feature_level), d3d11.SDK_VERSION,&base_device, nil, &base_device_context),
         base_device,
@@ -320,6 +330,11 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     common.BEGIN_EVENT("Buffer Creation")
    
+    common.DX_CALL(
+        device->CreateBuffer(&staging_buffer_descriptor, nil, &staging_buffer),
+        staging_buffer,
+    )
+
     vertex_resource : d3d11.SUBRESOURCE_DATA = d3d11.SUBRESOURCE_DATA{
         pSysMem = (rawptr)(&vertices),
         SysMemPitch = 0,
@@ -395,27 +410,26 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     buffer :[2]^d3d11.IBuffer = {vertex_buffer, instance_data_buffer}
 
-    mapped_constant_subresource : d3d11.MAPPED_SUBRESOURCE
-    mapped_instance_subresource : d3d11.MAPPED_SUBRESOURCE
-
-    sync.barrier_wait(&render_batch_buffer.barrier)
+    mapped_subresources := [2]d3d11.MAPPED_SUBRESOURCE{}
+    
+    sync.barrier_wait(barrier)
 
     for (.Started in intrinsics.atomic_load_explicit(&current_thread.flags, sync.Atomic_Memory_Order.Acquire)){
         {
-            //TODO: khal if we add another batch shared we might want to use a blocking lock. since this operation will take a while.
-            // and we don't want to calculate the position and other properties, since this will add a fast stutter movement because
-            // the update loop and fixed update loop get called more.
-            if render_batch_buffer.modified && sync.try_lock(&render_batch_buffer.mutex){
-                common.BEGIN_EVENT("Applying Sync Render data")
+            //TODO: not fairness
+            if sync.atomic_load_explicit(&render_batch_buffer.changed_flag, sync.Atomic_Memory_Order.Acquire){
 
-                render_batch_buffer.modified = false
-                
-                //TODO: need a way to check prior if this has been modfied.
                 batches = render_batch_buffer.batches
 
-                for batch_shared in  render_batch_buffer.shared{
-                    if _, valid := render_params[batch_shared.identifier]; !valid{
+                common.BEGIN_EVENT("Updating Shared Render Data")
 
+                render_param_len := len(render_params)
+                shared_len := len(render_batch_buffer.shared)
+
+                if render_param_len < shared_len{
+                    difference :=  shared_len - render_param_len 
+
+                    for index in render_param_len..<difference{
                         sprite_shader_resource_view : ^d3d11.IShaderResourceView
         
                         vertex_shader : ^d3d11.IVertexShader
@@ -425,6 +439,8 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                         pixel_blob : ^d3d_compiler.ID3DBlob
                 
                         input_layout : ^d3d11.IInputLayout
+
+                        batch_shared := render_batch_buffer.shared[index]
                 
                         //////////////////////////////// TEXTURE SETUP ////////////////////////////////
                 
@@ -439,16 +455,15 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                             sprite_texture,
                         )
                 
-                           
                         common.DX_CALL(
                             device->CreateShaderResourceView(sprite_texture, nil, &sprite_shader_resource_view),
                             nil,
                         )
                 
                         //////////////////////////// SHADER SETUP //////////////////////////////////
-                        assert(u32(len(shader_dir) - 1) >= batch_shared.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
+                        assert(u32(len(common.CACHED_SHARED_PATH) - 1) >= batch_shared.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
                 
-                        target_shader_path := shader_dir[batch_shared.shader_cache]
+                        target_shader_path := common.CACHED_SHARED_PATH[batch_shared.shader_cache]
                 
                         shader_file := target_shader_path[16:]
                 
@@ -459,7 +474,6 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                         defer{
                             delete_slice(shader_path_byte)
                             delete_cstring(shader_src_name)
-                            delete_string(target_shader_path)
                         }
                    
                         shader_bytecode := raw_data(shader_path_byte)
@@ -492,36 +506,37 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 
                         ////////////////////////////////////////////////////////////////////////
 
-                        render_params[batch_shared.identifier] = common.RenderParam{
+                        render_params[index] = common.RenderParam{
                             vertex_shader,
                             vertex_blob,
                             pixel_shader,
                             pixel_blob,
                             input_layout,
-                            sprite_shader_resource_view,
+                            &sprite_shader_resource_view,
                         }
                     }
+                }else if render_param_len > shared_len{
+                    // TODO: we removed some shared batch in the game loop.
                 }
-            sync.unlock(&render_batch_buffer.mutex)
 
-            common.END_EVENT()
 
+                sync.atomic_store_explicit(&render_batch_buffer.changed_flag, false, sync.Atomic_Memory_Order.Relaxed)
+            
+                common.END_EVENT()
             }
         }
 
         common.BEGIN_EVENT("Draw Call")
         
         common.DX_CALL(
-            device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_constant_subresource),
+            device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresources[1]),
             nil,
             true,
         )
 
+        //TODO: khal update dt and time.
         {
-            constants := (^common.GlobalDynamicConstantBuffer)(mapped_constant_subresource.pData)
-
-            constants.sprite_sheet_size = {0,0} //?
-            constants.device_conversion = {2.0 / viewport.Width, -2.0 / viewport.Height}
+            constants := (^common.GlobalDynamicConstantBuffer)(mapped_subresources[1].pData)
             constants.viewport_size = {viewport.Width, viewport.Height}
             constants.time = 0
             constants.delta_time = 0
@@ -530,10 +545,10 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         device_context->Unmap(vs_cbuffer_0, 0)
 
         device_context->ClearRenderTargetView(back_render_target_view, &{0.0, 0.4, 0.5, 1.0})
+
         for key, render_param in render_params {
 
-            sprite_batch := batches[key]
-
+            current_batch := batches[key]
 
             device_context->IASetInputLayout(render_param.layout_input)
 
@@ -541,27 +556,26 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
             device_context->PSSetShader(render_param.pixel_shader, nil, 0)
 
             common.DX_CALL(
-                device_context->Map(instance_data_buffer, 0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_instance_subresource),
+                device_context->Map(staging_buffer, 0, d3d11.MAP.WRITE, {}, &mapped_subresources[0]),
                 nil,
                 true,
             )
 
-            intrinsics.mem_copy_non_overlapping(mapped_instance_subresource.pData, &sprite_batch.sprite_batch[0], size_of(common.SpriteInstanceData) * len(sprite_batch.sprite_batch))
+            intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.sprite_batch[0], size_of(common.SpriteInstanceData) * len(current_batch.sprite_batch))
 
-            device_context->Unmap(instance_data_buffer, 0)
+            device_context->Unmap(staging_buffer, 0)
+
+            device_context->CopyResource(instance_data_buffer, staging_buffer)
 
             device_context->IASetVertexBuffers(0, 2, &buffer[0], &vertex_stride[0], &vertex_offset[0])
 
             device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
 
-            tex_res := render_param.texture_resource
-            device_context->PSSetShaderResources(0,1, &tex_res)
+            device_context->PSSetShaderResources(0,1, render_param.texture_resource)
             device_context->PSSetSamplers(0,1,&texture_sampler)
 
-            device_context->DrawIndexedInstanced(6, u32(len(sprite_batch.sprite_batch)),0,0,0)
+            device_context->DrawIndexedInstanced(6, u32(len(current_batch.sprite_batch)),0,0,0)
 
-            //TODO: khal we maybe want to lock and unlock to use for the game loop, ideally we want the game loop to happen the same frame as the render loop and no greater, since it will introduce jitter.
-            //TODO: khal pf
             common.DX_CALL(
                 swapchain->Present(1,0),
                 nil,

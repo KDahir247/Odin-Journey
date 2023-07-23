@@ -16,6 +16,7 @@ Entities :: struct {
   available_slots: queue.Queue(uint),
 }
 
+@(optimization_mode="size")
 create_entity :: proc(ctx: ^Context) -> Entity {
   using ctx.entities
 

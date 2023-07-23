@@ -23,9 +23,6 @@ END_SHADER_DECLARATIONS
 */
 
 cbuffer VS_CONSTANT_BUFFER : register(b0){
-    //vp matrix,
-    float2 spriteSize;
-    float2 deviceConversion;
     float2 viewportSize;
     float time;
     float delta_time;
@@ -63,7 +60,8 @@ VsOut vs_main(in VSIn vs_in)
     
     float4 scaled_quad = float4(vs_in.quadid * vs_in.src_rect.wz, 0.0, 1.0);
 
-    float2 position = mul(scaled_quad, vs_in.transform).xy * deviceConversion * 2  - float2(1.0, -1.0) ;
+    float2 device_conversion = float2(2.0, -2.0) / viewportSize;
+    float2 position = mul(scaled_quad, vs_in.transform).xy * device_conversion * 2  - float2(1.0, -1.0) ;
 
     vso.position = float4(position.x, position.y, 0.0f,1.0f) ;
     vso.uv = scaled_quad.xy + vs_in.src_rect.xy;
