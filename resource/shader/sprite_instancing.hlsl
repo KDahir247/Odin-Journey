@@ -53,6 +53,7 @@ VsOut vs_main(in VSIn vs_in)
     
     float4 scaled_quad = float4(vs_in.quadid * vs_in.src_rect.zw, 0.0, 1.0);
 
+    
     float2 device_conversion = float2(4.0, -4.0) / viewportSize;
     float2 position = mul(scaled_quad, vs_in.transform).xy * device_conversion - float2(1.0, -1.0);
 
@@ -64,7 +65,12 @@ VsOut vs_main(in VSIn vs_in)
 }
 
 float4 ps_main(in VsOut vs_out) : SV_TARGET{
-    float2 target_uv = vs_out.uv  * float2(1.0 / 663, 1.0 / 400); //TODO: khal don't hardcode the rcp sprite sheet size 
+    float width = 0;
+    float height = 0;
+
+    SpriteTexture.GetDimensions(width,height);
+
+    float2 target_uv = vs_out.uv  * float2(1.0 / width, 1.0 / height); //TODO: khal don't hardcode the rcp sprite sheet size 
     float4 color = SpriteTexture.Sample(SpriteSampler, target_uv);
     return color;
 

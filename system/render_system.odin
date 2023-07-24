@@ -28,7 +28,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     barrier := cast(^sync.Barrier)(current_thread.user_args[1])
     window := windows.HWND(current_thread.user_args[0])
     
-    render_params := make(map[int]common.RenderParam)
+    render_params := make([dynamic]common.RenderParam)
 
     //mem_hi os.read_dir()
     //shader_dir,match_err := filepath.glob(common.DEFAULT_SHADER_PATH)
@@ -40,6 +40,9 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     window_width := window_rect.right - window_rect.left
     window_height := window_rect.bottom - window_rect.top
 
+
+    current_buffer_index := 0
+    current_batch_index := 0
     vertex_stride : [2]u32 = {size_of(common.SpriteIndex), size_of(common.SpriteInstanceData)} // size of Vertex
     vertex_offset : [2]u32 = {0,0}
 
@@ -70,8 +73,8 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     device_context : ^d3d11.IDeviceContext
 
     swapchain : ^dxgi.ISwapChain1
-    back_buffer : ^d3d11.ITexture2D 
-    back_render_target_view : ^d3d11.IRenderTargetView
+    back_buffer : [2]^d3d11.ITexture2D
+    back_render_target_view : [2]^d3d11.IRenderTargetView
 
     dxgi_device: ^dxgi.IDevice
 	dxgi_adapter: ^dxgi.IAdapter
@@ -79,8 +82,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     vs_cbuffer_0 : ^d3d11.IBuffer
 
-    texture_resource : d3d11.SUBRESOURCE_DATA
-    sprite_texture : ^d3d11.ITexture2D
+   
 
     texture_sampler : ^d3d11.ISamplerState
 
@@ -104,7 +106,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         SampleDesc = {1, 0},
         BufferUsage = dxgi.USAGE{.RENDER_TARGET_OUTPUT},
         SwapEffect = dxgi.SWAP_EFFECT.FLIP_DISCARD,
-        BufferCount = 2,
+        BufferCount = 3,
         Stereo = false,
         Flags = 0x0,
     }
@@ -116,19 +118,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
         CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{.WRITE},
     }
 
-    texture_descriptor := d3d11.TEXTURE2D_DESC{
-        Width = 0,
-        Height = 0,
-        MipLevels = 1,
-        ArraySize = 1,
-        Format = dxgi.FORMAT.R8G8B8A8_UNORM,
-        SampleDesc = dxgi.SAMPLE_DESC{
-            Count = 1,
-            Quality = 0,
-        },
-        Usage = d3d11.USAGE.IMMUTABLE,
-        BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE},
-    }
+   
        
     sampler_descriptor := d3d11.SAMPLER_DESC{
         Filter = d3d11.FILTER.MIN_LINEAR_MAG_MIP_POINT,
@@ -233,7 +223,7 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     }
 
     defer{
-        for key, render_param in render_params{
+        for  render_param in render_params{
 
                 render_param.vertex_shader->Release()
                 render_param.vertex_blob->Release()
@@ -296,16 +286,25 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
     common.DX_CALL(swapchain->GetDesc1(&swapchain_descriptor), nil)
 
     common.DX_CALL(
-        swapchain->GetBuffer(0,d3d11.ITexture2D_UUID,(^rawptr)(&back_buffer)),
-        nil,
+        swapchain->GetBuffer(0,d3d11.ITexture2D_UUID,(^rawptr)(&back_buffer[0])),
+        back_buffer[0],
+    )
+
+    common.DX_CALL(
+        swapchain->GetBuffer(0,d3d11.ITexture2D_UUID,(^rawptr)(&back_buffer[1])),
+        back_buffer[1],
     )
     
     common.DX_CALL(
-        device->CreateRenderTargetView(back_buffer, nil, &back_render_target_view),
-         back_render_target_view,
+        device->CreateRenderTargetView(back_buffer[0], nil, &back_render_target_view[0]),
+         back_render_target_view[0],
     )
 
-    back_buffer->Release()
+    common.DX_CALL(
+        device->CreateRenderTargetView(back_buffer[1], nil, &back_render_target_view[1]),
+        back_render_target_view[1],
+        )
+
 
     common.END_EVENT()
 
@@ -396,7 +395,9 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
     device_context->RSSetState(raterizer_state)
 
-    device_context->OMSetRenderTargets(1, &back_render_target_view, nil)
+    device_context->PSSetSamplers(0,1,&texture_sampler)
+
+
     device_context->OMSetDepthStencilState(stencil_depth_state, 0)
     device_context->OMSetBlendState(blend_state, &{1.0, 1.0, 1.0, 1.0}, 0xFFFFFFFF)
     device_context->RSSetViewports(1, &viewport)
@@ -426,10 +427,10 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 render_param_len := len(render_params)
                 shared_len := len(render_batch_buffer.shared)
 
-                if render_param_len < shared_len{
-                    difference :=  shared_len - render_param_len 
+                // if render_param_len < shared_len{
+                //     difference :=  shared_len - render_param_len 
 
-                    for index in render_param_len..<difference{
+                    for index in 0..<shared_len{
                         sprite_shader_resource_view : ^d3d11.IShaderResourceView
         
                         vertex_shader : ^d3d11.IVertexShader
@@ -439,6 +440,23 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                         pixel_blob : ^d3d_compiler.ID3DBlob
                 
                         input_layout : ^d3d11.IInputLayout
+
+                        texture_resource : d3d11.SUBRESOURCE_DATA
+                        sprite_texture : ^d3d11.ITexture2D
+
+                        texture_descriptor := d3d11.TEXTURE2D_DESC{
+                            Width = 0,
+                            Height = 0,
+                            MipLevels = 1,
+                            ArraySize = 1,
+                            Format = dxgi.FORMAT.R8G8B8A8_UNORM,
+                            SampleDesc = dxgi.SAMPLE_DESC{
+                                Count = 1,
+                                Quality = 0,
+                            },
+                            Usage = d3d11.USAGE.IMMUTABLE,
+                            BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE},
+                        }
 
                         batch_shared := render_batch_buffer.shared[index]
                 
@@ -506,19 +524,18 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
                 
                         ////////////////////////////////////////////////////////////////////////
 
-                        render_params[index] = common.RenderParam{
+                        append(&render_params,common.RenderParam{
                             vertex_shader,
                             vertex_blob,
                             pixel_shader,
                             pixel_blob,
                             input_layout,
-                            &sprite_shader_resource_view,
-                        }
+                            sprite_shader_resource_view,
+                        })
                     }
-                }else if render_param_len > shared_len{
-                    // TODO: we removed some shared batch in the game loop.
-                }
-
+                // }else if render_param_len > shared_len{
+                //     // TODO: we removed some shared batch in the game loop.
+                // }
 
                 sync.atomic_store_explicit(&render_batch_buffer.changed_flag, false, sync.Atomic_Memory_Order.Relaxed)
             
@@ -544,47 +561,53 @@ init_render_subsystem :: proc(current_thread : ^thread.Thread){
 
         device_context->Unmap(vs_cbuffer_0, 0)
 
-        device_context->ClearRenderTargetView(back_render_target_view, &{0.0, 0.4, 0.5, 1.0})
+        device_context->ClearRenderTargetView(back_render_target_view[current_buffer_index], &{0.0, 0.4, 0.5, 1.0})
+        device_context->OMSetRenderTargets(1, &back_render_target_view[current_buffer_index], nil) 
 
-        for key, render_param in render_params {
+        for index in 0..<len(render_params){
+            current_batch := batches[index]
+            render_param := render_params[index]
 
-            current_batch := batches[key]
-
+            if len(current_batch.sprite_batch) <= 0 {
+                //TODO: khal there is no batches we might want to filter out zero entity in batch in the game loop rather then
+                // check it in the render loop. 
+                break
+            }
+    
             device_context->IASetInputLayout(render_param.layout_input)
-
+    
             device_context->VSSetShader(render_param.vertex_shader, nil, 0)
             device_context->PSSetShader(render_param.pixel_shader, nil, 0)
-
+    
             common.DX_CALL(
                 device_context->Map(staging_buffer, 0, d3d11.MAP.WRITE, {}, &mapped_subresources[0]),
                 nil,
                 true,
             )
-
+    
             intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.sprite_batch[0], size_of(common.SpriteInstanceData) * len(current_batch.sprite_batch))
-
+    
             device_context->Unmap(staging_buffer, 0)
-
+    
             device_context->CopyResource(instance_data_buffer, staging_buffer)
-
+    
             device_context->IASetVertexBuffers(0, 2, &buffer[0], &vertex_stride[0], &vertex_offset[0])
-
+    
             device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
-
-            device_context->PSSetShaderResources(0,1, render_param.texture_resource)
-            device_context->PSSetSamplers(0,1,&texture_sampler)
-
+    
+            device_context->PSSetShaderResources(0,1, &render_param.texture_resource)
+    
             device_context->DrawIndexedInstanced(6, u32(len(current_batch.sprite_batch)),0,0,0)
-
-            common.DX_CALL(
-                swapchain->Present(1,0),
-                nil,
-                true,
-            )
-
-            device_context->OMSetRenderTargets(1, &back_render_target_view, nil) 
-
         }
+
+        current_buffer_index = (current_buffer_index + 1) % 2;
+
+        common.DX_CALL(
+            swapchain->Present(0,0),
+            nil,
+            true,
+        )
+
         common.END_EVENT()
 
         free_all(context.temp_allocator)

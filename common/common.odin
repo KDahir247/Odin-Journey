@@ -107,7 +107,7 @@ DX_CALL ::  proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := fa
         if hr != 0{
             hr_index := int(hr) & 0xFFFFFFFF
             //err_code := HR_ERR_MAP[hr_index]
-            fmt.printf("RAW ERROR ID : %v\n look RAW ERROR ID description at https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-returnvalues or https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-error\nLOCATION : %v", hr_index, loc)
+            fmt.printf("RAW ERROR ID : %x\n look RAW ERROR ID description at https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-returnvalues or https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-error\nLOCATION : %v", hr_index, loc)
 
             if panic_on_fail{
                 panic("DX11 Initialization Failed", loc)
@@ -232,7 +232,7 @@ RenderParam :: struct {
 
     layout_input : ^d3d11.IInputLayout,
 
-    texture_resource : ^^d3d11.IShaderResourceView,
+    texture_resource : ^d3d11.IShaderResourceView,
 
 }
 
@@ -271,23 +271,40 @@ SpriteInstanceData :: struct{
 }
 
 @(optimization_mode="size")
-create_sprite_batcher :: proc(ctx : ^ecs.Context, $tex_path : cstring, $shader_cache : u32) -> uint{
-    @(static) identifier_idx : u32 = 0 //TODO: khal don't like this.
+create_game_entity :: proc(batch_handle : uint, instance_data : SpriteInstanceData) -> ecs.Entity{
+    ecs_context := cast(^ecs.Context)context.user_ptr
+    target_batch := ecs.get_component_unchecked(ecs_context, ecs.Entity(batch_handle), SpriteBatch)
 
-    sprite_batch_entity := ecs.create_entity(ctx)
+    game_sprite_handle := sprite_batch_append(target_batch, instance_data)
 
-    ecs.add_component_unchecked(ctx,sprite_batch_entity, SpriteBatch{
+    game_entity := ecs.create_entity(ecs_context)
+
+    ecs.add_component_unchecked(ecs_context, game_entity, SpriteHandle{
+        sprite_handle = game_sprite_handle,
+        batch_handle = batch_handle,
+    })
+
+    return game_entity
+}
+
+@(optimization_mode="size")
+create_sprite_batcher :: proc($tex_path : cstring, $shader_cache : u32) -> uint{
+    ecs_context := cast(^ecs.Context)context.user_ptr
+    
+    identifier_idx := u32(len(ecs_context.component_map[SpriteBatchShared].entity_indices))
+
+    sprite_batch_entity := ecs.create_entity(ecs_context)
+
+    batch := ecs.add_component_unchecked(ecs_context,sprite_batch_entity, SpriteBatch{
         sprite_batch = make_dynamic_array_len_cap([dynamic]SpriteInstanceData,0, DEFAULT_BATCH_SIZE),
     })
-    shared := ecs.add_component_unchecked(ctx, sprite_batch_entity, SpriteBatchShared{
+    shared := ecs.add_component_unchecked(ecs_context, sprite_batch_entity, SpriteBatchShared{
         identifier = identifier_idx,
     })
 
     shared.texture = image.load(tex_path,&shared.width,&shared.height,nil,  4)
     shared.shader_cache = shader_cache
-
-    identifier_idx += 1
-
+    
     return uint(sprite_batch_entity)
 }
 
@@ -306,20 +323,21 @@ sprite_batch_set :: #force_inline proc(sprite_batch : ^SpriteBatch, handle : int
 }
 
 @(optimization_mode="speed")
-sprite_batch_free :: proc(ctx : ^ecs.Context){
+sprite_batch_free :: proc(){
+    ecs_context := cast(^ecs.Context)context.user_ptr
     
-    batcher_entity := ecs.get_entities_with_single_component_fast(ctx, SpriteBatch)
+    batcher_entity := ecs.get_entities_with_single_component_fast(ecs_context, SpriteBatch)
 
     for entity in batcher_entity{
-        batcher, shared := ecs.get_components_2_unchecked(ctx, entity, SpriteBatch, SpriteBatchShared)
+        batcher, shared := ecs.get_components_2_unchecked(ecs_context, entity, SpriteBatch, SpriteBatchShared)
 
         image.image_free(shared.texture)
         shared.texture = nil
 
         delete(batcher.sprite_batch)
 
-        ecs.remove_component(ctx, entity, SpriteBatch)
-        ecs.remove_component(ctx, entity, SpriteBatchShared)
+        ecs.remove_component(ecs_context, entity, SpriteBatch)
+        ecs.remove_component(ecs_context, entity, SpriteBatchShared)
     }
 }
 
@@ -402,30 +420,3 @@ Animation :: struct{
 //     render_direction : sdl2.RendererFlip,
 // }
 
-// DynamicResource :: struct{
-//     // time
-//     elapsed_time : u32,
-//     delta_time : f32,
-//     current_physics_time : f32,
-// }
-
-// Animators :: struct{
-//     current_animation : string,
-//     previous_frame : int,
-//     animation_speed : f32,
-//     clips : map[string]AnimationClip, 
-// }
-
-// AnimationClip :: struct{
-//     name : string, //TODO: khal we can remove this since we are using a map with a string as a key.
-//     dimension : mathematics.Vec2i, //width and height
-//     pos : int, // represent the vertical column of sprite sheet
-//     len : int, // represent the horizontal column of sprite sheet 
-//     loopable : bool, 
-// }
-
-
-// TextureAsset :: struct{
-// 	texture : ^sdl2.Texture,
-// 	dimension : mathematics.Vec2,
-// }

@@ -130,7 +130,7 @@ main ::  proc()  {
 	sdl2.GetWindowWMInfo(window, &window_info)
 
 	defer{	
-        common.sprite_batch_free(&ecs_context)
+        common.sprite_batch_free()
 
 		thread.destroy(render_thread)	
 
@@ -143,23 +143,10 @@ main ::  proc()  {
 		common.FREE_PROFILER()
 	}
 
-	player_batcher_id := common.create_sprite_batcher(&ecs_context,"resource/sprite/padawan/pad.png", 0)
+	player_batcher_id := common.create_sprite_batcher("resource/sprite/padawan/pad.png", 0)
 
-	// Sprite Batch creation
-	// mem_hi 
-	player_batch, player_batch_shared:= ecs.get_components_2_unchecked(&ecs_context,ecs.Entity(player_batcher_id), common.SpriteBatch, common.SpriteBatchShared)
+	player_batcher_id1 := common.create_sprite_batcher("resource/sprite/dark/Temple Guardian/attack 1 with VFX.png", 0)
 
-	sprite_handle_id :=  common.sprite_batch_append(player_batch,common.SpriteInstanceData{
-		transform = {
-			1.0, 0.0, 0.0, 200.0,
-			0.0, 1.0, 0.0, 0.0,
-			0.0, 0.0, 1.0, 0.0,
-			0.0, 0.0, 0.0, 1.0,
-		},
-		hue_displacement = 1,
-		src_rect = {0.0,0.0, f32(player_batch_shared.width), f32(player_batch_shared.height)},
-	})
-	//
 
 	render_thread = thread.create(system.init_render_subsystem)
 	
@@ -171,20 +158,34 @@ main ::  proc()  {
 
 	sync.barrier_wait(barrier)
 
+	player_entity_1 := common.create_game_entity(player_batcher_id, {
+		transform = {
+			1.0, 0.0, 0.0, 200.0,
+			0.0, 1.0, 0.0, 0.0,
+			0.0, 0.0, 1.0, 0.0,
+			0.0, 0.0, 0.0, 1.0,
+		},
+	})
 
-	//Sprite Creation
-	player_entity := ecs.create_entity(&ecs_context)
-
-    ecs.add_component_unchecked(&ecs_context, player_entity, common.SpriteHandle{
-        sprite_handle = sprite_handle_id,
-        batch_handle = player_batcher_id,
-    })
-
+	player_entity_2 := common.create_game_entity(player_batcher_id1, {
+		transform = {
+			1.0, 0.0, 0.0, 400.0,
+			0.0, 1.0, 0.0, 0.0,
+			0.0, 0.0, 1.0, 0.0,
+			0.0, 0.0, 0.0, 1.0,
+		},
+	})
 	data,_ := os.read_entire_file_from_filename("config/animation/player_anim.json")
-	
 	player_anim : common.Animator
 	json.unmarshal(data, &player_anim)
-	ecs.add_component_unchecked(&ecs_context, player_entity, player_anim)
+
+	data1,_ := os.read_entire_file_from_filename("config/animation/single_anim.json")
+	player_anim1 : common.Animator
+	json.unmarshal(data1, &player_anim1)
+	ecs.add_component_unchecked(&ecs_context, player_entity_1, player_anim)
+
+	ecs.add_component_unchecked(&ecs_context, player_entity_2, player_anim1)
+
 	//
 
 	for running{
