@@ -159,9 +159,13 @@ RenderBatchBuffer :: struct #align 64  {
     shared : []SpriteBatchShared,
 }
 
+SpriteBatch :: struct{
+    sprite_batch : [dynamic]SpriteInstanceData,
+}
+
 SpriteHandle :: struct{
     batch_handle : uint,
-    sprite_handle : int,
+    sprite_handle : uint,
 }
 
 SpriteBatchShared :: struct{
@@ -172,13 +176,9 @@ SpriteBatchShared :: struct{
     identifier : u32,
 }
 
-SpriteBatch :: struct{
-    sprite_batch : [dynamic]SpriteInstanceData,
-}
-
 SpriteInstanceData :: struct{
     transform : matrix[4,4]f32,
-    src_rect : [4]f32,
+    src_rect : Rect,
     hue_displacement : f32,
     // We will be sorting by zdepth
     z_depth : u32,
@@ -189,16 +189,18 @@ SpriteInstanceData :: struct{
 /////////////////// GAME DATA /////////////////////////
 
 Position :: struct{
-    Value : [2]f32,
+    x : f32,
+    y : f32,
 }
 
 Rotation :: struct{
-    Value : f32,
-    __Padding : f32,
+    z : f32,
+    __padding : f32,
 }
 
 Scale :: struct {
-    Value : [2]f32,
+    x : f32,
+    y : f32,
 }
 
 Animator :: struct{
@@ -233,11 +235,8 @@ KeyResource :: struct{
 }
 
 GameResource :: struct{
-
     key : KeyResource,
 }
-
-
 
 ///////////////////////////////////////////////////////
 

@@ -58,10 +58,10 @@ create_sprite_batcher :: proc($tex_path : cstring, $shader_cache : u32) -> uint{
 }
 
 @(optimization_mode="size")
-sprite_batch_append :: proc(sprite_batch : ^journey.SpriteBatch, data : journey.SpriteInstanceData) -> int{
+sprite_batch_append :: proc(sprite_batch : ^journey.SpriteBatch, data : journey.SpriteInstanceData) -> uint{
     assert(len(sprite_batch.sprite_batch) < journey.MAX_SPRITE_BATCH, "The sprite batcher has reach it maximum batch and is trying to append a batch maximum 2048")
     append(&sprite_batch.sprite_batch, data)
-    return len(sprite_batch.sprite_batch) - 1
+    return uint(len(sprite_batch.sprite_batch) - 1)
 }
 
 @(optimization_mode="speed")
@@ -143,7 +143,7 @@ on_animation :: proc(elapsed_time : f64){
 
 		animation_delta_time := (elapsed_time - animator.animation_time) * 0.001
 
-		frame_to_update := linalg.floor(animation_delta_time *animator.animation_speed)
+		frame_to_update := linalg.floor(animation_delta_time * animator.animation_speed)
 
 		update_mask := frame_to_update > 0 ? 1.0 : 0.0
 
@@ -167,7 +167,7 @@ on_animation :: proc(elapsed_time : f64){
 
 @(optimization_mode="size")
 main ::  proc()  {
-	journey.CREATE_PROFILER("profiling/ProfilerData.spall") //
+	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
 
 	ecs_context := ecs.init_ecs()
 	context.user_ptr = &ecs_context
@@ -227,14 +227,14 @@ main ::  proc()  {
 		journey.FREE_PROFILER()
 	}
 
-	sync.barrier_wait(journey.run_renderer(journey.RenderBackend.DX11,window_info.info.win.window, &render_batch_buffer))
+	render_thread := journey.run_renderer(journey.RenderBackend.DX11,window_info.info.win.window, &render_batch_buffer)
 
+	//TODO: don't like this.
 	resource_entity := ecs.create_entity(&ecs_context)
-
 	context.user_index = int(resource_entity)
-
 	resource_component := ecs.add_component_unchecked(&ecs_context, resource_entity, journey.GameResource{})
 
+	//
 	player_batcher_id := create_sprite_batcher("resource/sprite/padawan/pad.png", 0)
 
 	player_batcher_id1 := create_sprite_batcher("resource/sprite/dark/Temple Guardian/attack 1 with VFX.png", 0)
@@ -276,8 +276,8 @@ main ::  proc()  {
         
 		previous = current
 
+		//TODO: don't like this.
 		for sdl2.PollEvent(&sdl2_event){
-			
 			#partial switch sdl2_event.key.keysym.scancode {
 			case sdl2.Scancode.A, sdl2.Scancode.LEFT:
 				{
@@ -343,5 +343,5 @@ main ::  proc()  {
 
 		free_all(context.temp_allocator)
 	}
-	journey.stop_renderer()
+	journey.stop_renderer(render_thread)
 }

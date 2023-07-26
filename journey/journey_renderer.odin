@@ -4,14 +4,14 @@ import "core:fmt"
 import "core:thread"
 import "core:sync"
 import "core:intrinsics"
+import "core:sys/windows"
+import "core:strings"
+import "core:os"
+import "core:math/linalg/hlsl"
 
 import "vendor:directx/d3d11"
 import "vendor:directx/dxgi"
 import "vendor:directx/d3d_compiler"
-import "core:sys/windows"
-
-import "core:strings"
-import "core:os"
 
 RenderBackend :: enum int{
     DX11 = 0,
@@ -21,30 +21,29 @@ RenderBackend :: enum int{
     OPENGL,
 }
 
-run_renderer :: proc(backend : RenderBackend, render_window : rawptr, render_buffer : ^RenderBatchBuffer) -> ^sync.Barrier {
-    //Create a barrier and return a barrier.
+run_renderer :: proc(backend : RenderBackend, render_window : rawptr, render_buffer : ^RenderBatchBuffer) -> ^thread.Thread {
+      //TODO: khal remove using barrier we can probably get away with the Thread_OS_Specific struct for a 
+    // simple barrier using condition variable and a mutex.
     barrier :=  &sync.Barrier{}
 	sync.barrier_init(barrier, 2)
 
-    render_thread = thread.create(_render_backend_proc[backend])
+    render_thread := thread.create(_render_backend_proc[backend])
     render_thread.data = render_buffer
     render_thread.user_args[0] = render_window
     render_thread.user_args[1] = barrier
 
     thread.start(render_thread)
 
-    return barrier
-    //defer thread.destroy(render_thread)
+    sync.barrier_wait(barrier)
+    return render_thread
 }
 
 
-stop_renderer :: proc(){
+stop_renderer :: proc(render_thread : ^thread.Thread){
 	sync.atomic_store_explicit(&render_thread.flags, {.Done},sync.Atomic_Memory_Order.Release)
     thread.destroy(render_thread)
 }
 
-@(private)
-render_thread : ^thread.Thread
 
 @(private)
 backend_proc :: #type proc(current_thread : ^thread.Thread)
@@ -75,6 +74,9 @@ init_render_backend :: proc(){
     when ODIN_OS_STRING == "windows"{
         _render_backend_proc[RenderBackend.DX11] = init_render_dx11_subsystem
         _render_backend_proc[RenderBackend.DX12] = init_render_dx12_subsystem
+        _render_backend_proc[RenderBackend.VULKAN] = init_render_vulkan_subsystem
+        _render_backend_proc[RenderBackend.OPENGL] = init_render_opengl_subsystem
+
     }else when ODIN_OS_STRING == "linux"{
         _render_backend_proc[RenderBackend.VULKAN] = init_render_vulkan_subsystem
         _render_backend_proc[RenderBackend.OPENGL] = init_render_vulkan_subsystem
@@ -207,20 +209,44 @@ init_render_dx12_subsystem ::  proc(current_thread : ^thread.Thread){
 @(private)
 @(optimization_mode="size")
 init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
+    //TODO: DATA NEED ALIGNMENT TO 16 BOTH STRUCT AND PTR.
+    
+    batches : []SpriteBatch
+
+    current_buffer_index := 0
+
+    //TODO: remove
+    mapped_subresources := [2]d3d11.MAPPED_SUBRESOURCE{}
+    
+    //TODO: khal the size will change when we introduce other thing to render such as tilemapping
+    
+    //vertex buffer, instance_data_buffer
+    vertex_buffers : [2]^d3d11.IBuffer
+
+    vertex_buffer_stride : [2]u32 = {size_of(hlsl.float2), size_of(SpriteInstanceData)} // size of Vertex
+    vertex_buffer_offset : [2]u32 = {0,0}
+
+    vertices := [4]hlsl.float2{
+        {0.0, 0.0},
+        {1, 0.0},
+        {1, 1},
+        {0, 1},
+    }
+
+    indices := [6]u16{
+        0, 1, 2, 3, 0, 2,
+    }
+
     render_batch_buffer := cast(^RenderBatchBuffer)current_thread.data
 
-    batches : []SpriteBatch
-    
     CREATE_PROFILER_BUFFER(u32(current_thread.id))
 
+    //TODO: khal remove using barrier we can probably get away with the Thread_OS_Specific struct for a 
+    // simple barrier using condition variable and a mutex.
     barrier := cast(^sync.Barrier)(current_thread.user_args[1])
     window := windows.HWND(current_thread.user_args[0])
     
     render_params := make([dynamic]RenderParam)
-
-    //mem_hi os.read_dir()
-    //shader_dir,match_err := filepath.glob(common.DEFAULT_SHADER_PATH)
-    //assert(match_err == filepath.Match_Error.None, "Failed to load shader directory")
 
     window_rect : windows.RECT
     windows.GetWindowRect(window, &window_rect)
@@ -228,30 +254,13 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     window_width := window_rect.right - window_rect.left
     window_height := window_rect.bottom - window_rect.top
 
-
-    current_buffer_index := 0
-    vertex_stride : [2]u32 = {size_of(SpriteIndex), size_of(SpriteInstanceData)} // size of Vertex
-    vertex_offset : [2]u32 = {0,0}
-
     d3d_feature_level := [2]d3d11.FEATURE_LEVEL{d3d11.FEATURE_LEVEL._11_0, d3d11.FEATURE_LEVEL._11_1}
-
-    vertices := [4]SpriteIndex{
-        {{0.0, 0.0}},
-        {{1, 0.0}},
-        {{1, 1}},
-        {{0, 1}},
-    }
-
-    indices := [6]u16{
-        0, 1, 2, 3, 0, 2,
-    }
 
     viewport : d3d11.VIEWPORT = d3d11.VIEWPORT{
         Width = f32(window_width),
         Height = f32(window_height),
         MaxDepth = 1,
     }
-    //
 
     base_device : ^d3d11.IDevice
     base_device_context : ^d3d11.IDeviceContext
@@ -259,9 +268,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     device : ^d3d11.IDevice
     device_context : ^d3d11.IDeviceContext
 
-    swapchain : ^dxgi.ISwapChain1
     back_buffer : [2]^d3d11.ITexture2D
     back_render_target_view : [2]^d3d11.IRenderTargetView
+    swapchain : ^dxgi.ISwapChain1
 
     dxgi_device: ^dxgi.IDevice
 	dxgi_adapter: ^dxgi.IAdapter
@@ -272,8 +281,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     texture_sampler : ^d3d11.ISamplerState
 
     staging_buffer : ^d3d11.IBuffer
-    vertex_buffer : ^d3d11.IBuffer
-    instance_data_buffer : ^d3d11.IBuffer
+   
 
     index_buffer : ^d3d11.IBuffer
 
@@ -283,7 +291,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     blend_state : ^d3d11.IBlendState
 
-    //
     swapchain_descriptor := dxgi.SWAP_CHAIN_DESC1{
         Width = 0,
         Height = 0,
@@ -302,8 +309,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         BindFlags = d3d11.BIND_FLAGS{d3d11.BIND_FLAG.CONSTANT_BUFFER},
         CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{.WRITE},
     }
-
-   
        
     sampler_descriptor := d3d11.SAMPLER_DESC{
         Filter = d3d11.FILTER.MIN_LINEAR_MAG_MIP_POINT,
@@ -390,7 +395,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     blend_descriptor := d3d11.BLEND_DESC{
         AlphaToCoverageEnable = false,
-        IndependentBlendEnable = false, // use only render_target[0]
+        IndependentBlendEnable = false, 
     }
 
     blend_descriptor.RenderTarget[0] = d3d11.RENDER_TARGET_BLEND_DESC{
@@ -404,7 +409,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         BlendOp = d3d11.BLEND_OP.ADD,
         BlendOpAlpha = d3d11.BLEND_OP.ADD,
 
-        RenderTargetWriteMask = 15, //ALL
+        RenderTargetWriteMask = 15,
     }
 
     defer{
@@ -418,8 +423,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 render_param.texture_resource^->Release()
           
         }
-
-        //delete_slice(shader_dir)
 
         delete(render_params)
 
@@ -529,13 +532,13 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     }
    
     DX_CALL(
-        device->CreateBuffer(&vertex_buffer_descriptor, &vertex_resource, &vertex_buffer),
-        vertex_buffer,
+        device->CreateBuffer(&vertex_buffer_descriptor, &vertex_resource, &vertex_buffers[0]),
+        vertex_buffers[0],
     )
 
     DX_CALL(
-        device->CreateBuffer(&instance_buffer_descriptor, nil, &instance_data_buffer),
-        instance_data_buffer,
+        device->CreateBuffer(&instance_buffer_descriptor, nil, &vertex_buffers[1]),
+        vertex_buffers[1],
     )
 
     index_resource := d3d11.SUBRESOURCE_DATA{
@@ -597,15 +600,10 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     END_EVENT()
 
-    buffer :[2]^d3d11.IBuffer = {vertex_buffer, instance_data_buffer}
-
-    mapped_subresources := [2]d3d11.MAPPED_SUBRESOURCE{}
-    
     sync.barrier_wait(barrier)
 
     for (.Started in intrinsics.atomic_load_explicit(&current_thread.flags, sync.Atomic_Memory_Order.Acquire)){
         {
-            //TODO: not fairness
             if sync.atomic_load_explicit(&render_batch_buffer.changed_flag, sync.Atomic_Memory_Order.Acquire){
 
                 batches = render_batch_buffer.batches
@@ -616,6 +614,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 shared_len := len(render_batch_buffer.shared)
 
                 for index in 0..<shared_len{
+                    batch_shared := render_batch_buffer.shared[index]
+
+                    //TODO: khal
                     sprite_shader_resource_view : ^d3d11.IShaderResourceView
     
                     vertex_shader : ^d3d11.IVertexShader
@@ -626,12 +627,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             
                     input_layout : ^d3d11.IInputLayout
 
-                    texture_resource : d3d11.SUBRESOURCE_DATA
-                    sprite_texture : ^d3d11.ITexture2D
-
                     texture_descriptor := d3d11.TEXTURE2D_DESC{
-                        Width = 0,
-                        Height = 0,
+                        Width = u32(batch_shared.width),
+                        Height = u32(batch_shared.height),
                         MipLevels = 1,
                         ArraySize = 1,
                         Format = dxgi.FORMAT.R8G8B8A8_UNORM,
@@ -643,16 +641,15 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                         BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE},
                     }
 
-                    batch_shared := render_batch_buffer.shared[index]
-            
+                    texture_resource := d3d11.SUBRESOURCE_DATA{
+                        pSysMem = batch_shared.texture,
+                        SysMemPitch = texture_descriptor.Width << 2,    
+                    }
+
+                    sprite_texture : ^d3d11.ITexture2D
+
                     //////////////////////////////// TEXTURE SETUP ////////////////////////////////
             
-                    texture_descriptor.Width = u32(batch_shared.width)
-                    texture_descriptor.Height = u32(batch_shared.height)
-                    
-                    texture_resource.pSysMem = batch_shared.texture
-                    texture_resource.SysMemPitch = texture_descriptor.Width << 2
-                
                     DX_CALL(
                         device->CreateTexture2D(&texture_descriptor, &texture_resource, &sprite_texture),
                         sprite_texture,
@@ -726,7 +723,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         }
 
         BEGIN_EVENT("Draw Call")
-        
+
         DX_CALL(
             device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresources[1]),
             nil,
@@ -770,10 +767,10 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.sprite_batch[0], size_of(SpriteInstanceData) * len(current_batch.sprite_batch))
     
             device_context->Unmap(staging_buffer, 0)
+   
+            device_context->CopyResource(vertex_buffers[1], staging_buffer)
     
-            device_context->CopyResource(instance_data_buffer, staging_buffer)
-    
-            device_context->IASetVertexBuffers(0, 2, &buffer[0], &vertex_stride[0], &vertex_offset[0])
+            device_context->IASetVertexBuffers(0, 2, &vertex_buffers[0], &vertex_buffer_stride[0], &vertex_buffer_offset[0])
     
             device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
     
@@ -785,7 +782,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         current_buffer_index = (current_buffer_index + 1) % 2;
 
         DX_CALL(
-            swapchain->Present(0,0),
+            swapchain->Present(1,0),
             nil,
             true,
         )

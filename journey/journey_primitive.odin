@@ -26,6 +26,13 @@ AABB :: struct{
     half : [2]f32,
 }
 
+Rect :: struct{
+    x : f32,
+    y : f32,
+    width : f32,
+    height : f32,
+}
+
 
 cross_vector :: proc(v, v1 : [2]f32) -> f32{
     return (v.x * v1.y) - (v.y * v1.x)

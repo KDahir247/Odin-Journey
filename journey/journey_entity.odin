@@ -4,8 +4,6 @@
 //  May also hold tilemapping?.
 
 
-
-
 //TODO: khal this is legacy code need re-work below.
 
 // create_game_entity ::proc($path : cstring, animator : uint, translation : [2]f32, rotation:f64, scale: [2]f32, player : bool) -> int{
