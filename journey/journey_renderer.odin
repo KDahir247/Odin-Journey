@@ -21,20 +21,26 @@ RenderBackend :: enum int{
     OPENGL,
 }
 
+//TODO: khal this look like it is specific for DX
+// we need sdl2.Vulkan_CreateSurface(....) to pass to the render thread
+// DX11 need window's HWND DX12 can possible also use HWND handle not 100 percent sure haven't check.
+// Not sure of Metal (Don't have mac_os) 
+// Not sure of OpenGL, but can figure out relatively easily.
 run_renderer :: proc(backend : RenderBackend, render_window : rawptr, render_buffer : ^RenderBatchBuffer) -> ^thread.Thread {
-      //TODO: khal remove using barrier we can probably get away with the Thread_OS_Specific struct for a 
-    // simple barrier using condition variable and a mutex.
-    barrier :=  &sync.Barrier{}
-	sync.barrier_init(barrier, 2)
+    conditional_variable :=  &sync.Cond{}
 
     render_thread := thread.create(_render_backend_proc[backend])
     render_thread.data = render_buffer
     render_thread.user_args[0] = render_window
-    render_thread.user_args[1] = barrier
+    render_thread.user_args[1] = conditional_variable
 
     thread.start(render_thread)
 
-    sync.barrier_wait(barrier)
+    {
+        sync.guard(&render_thread.mutex)
+        sync.cond_wait(conditional_variable, &render_thread.mutex)
+    }
+    
     return render_thread
 }
 
@@ -135,48 +141,10 @@ init_render_opengl_subsystem ::  proc(current_thread : ^thread.Thread){
 @(optimization_mode="speed")
 DX_CALL ::  proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := false, loc := #caller_location)  {
     when ODIN_DEBUG{
-
-        // Eat a bit of memory x.x
-        //TODO: khal we need to free this..
-        // @(static) HR_ERR_MAP : map[int]string 
-        // HR_ERR_MAP = {
-        //     0x887C0002 =  "DX11 ERROR CODE : D3D11_ERROR_FILE_NOT_FOUND\nDESCRIPTION : The file was not found",
-        //     0x887C0001 = "DX11 ERROR CODE : D3D11_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS\nDESCRIPTION : There are too many unique instances of a particular type of state object",
-        //     0x887C0003 = "DX11 ERROR CODE : D3D11_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS\nDESCRIPTION : There are too many unique instances of a particular type of view object", 
-        //     0x887C0004 = "DX11 ERROR CODE : D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD\nDESCRIPTION : The first call to ID3D11DeviceContext::Map after either ID3D11Device::CreateDeferredContext or ID3D11DeviceContext::FinishCommandList per Resource was not D3D11_MAP_WRITE_DISCARD", 
-        //     0x80004005 = "DX11 ERROR CODE : E_FAIL\nDESCRIPTION : Attempted to create a device with the debug layer enabled and the layer is not installed",
-        //     0x80070057 = "DX11 ERROR CODE : E_INVALIDARG\nnDESCRIPTION : An invalid parameter was passed to the returning function",
-        //     0x8007000E = "DX11 ERROR CODE : E_OUTOFMEMORY\nDESCRIPTION : Direct3D could not allocate sufficient memory to complete the call",
-        //     0x80004001 = "DX11 ERROR CODE : E_NOTIMPL\nDESCRIPTION : The method call isn't implemented with the passed parameter combination", 
-        //     0x1 = "DX11 ERROR CODE : S_FALSE\nDESCRIPTION : Alternate success value, indicating a successful but nonstandard completion (the precise meaning depends on context)", 
-        //     0x887A002B = "DX11 ERROR CODE : DXGI_ERROR_ACCESS_DENIED\nDESCRIPTION : You tried to use a resource to which you did not have the required access privileges. This error is most typically caused when you write to a shared resource with read-only access",
-        //     0x887A0026 = "DX11 ERROR CODE : DXGI_ERROR_ACCESS_LOST\nDESCRIPTION : The desktop duplication interface is invalid. The desktop duplication interface typically becomes invalid when a different type of image is displayed on the desktop",
-        //     0x887A0036 = "DX11 ERROR CODE : DXGI_ERROR_ALREADY_EXISTS\nDESCRIPTION : The desired element already exists. This is returned by DXGIDeclareAdapterRemovalSupport if it is not the first time that the function is called",
-        //     0x887A002A = "DX11 ERROR CODE : DXGI_ERROR_CANNOT_PROTECT_CONTENT\nDESCRIPTION : DXGI can't provide content protection on the swap chain. This error is typically caused by an older driver, or when you use a swap chain that is incompatible with content protection",
-        //     0x887A0006 = "DX11 ERROR CODE : DXGI_ERROR_DEVICE_HUNG\nDESCRIPTION : The application's device failed due to badly formed commands sent by the application. This is an design-time issue that should be investigated and fixed",
-        //     0x887A0005 = "DX11 ERROR_CODE : DXGI_ERROR_DEVICE_REMOVED\nDESCRIPTION : The video card has been physically removed from the system, or a driver upgrade for the video card has occurred. The application should destroy and recreate the device. For help debugging the problem, call ID3DXXDevice::GetDeviceRemovedReason",
-        //     0x887A0007 = "DX11 ERROR CODE : DXGI_ERROR_DEVICE_RESET\nDESCRIPTION : The device failed due to a badly formed command. This is a run-time issue; The application should destroy and recreate the device",
-        //     0x887A0020 = "DX11 ERROR CODE : DXGI_ERROR_DRIVER_INTERNAL_ERROR\nDESCRIPTION : The driver encountered a problem and was put into the device removed state",
-        //     0x887A000B = "DX11 ERROR CODE : DXGI_ERROR_FRAME_STATISTICS_DISJOINT\nDESCRIPTION : An event (for example, a power cycle) interrupted the gathering of presentation statistics",
-        //     0x887A000C = "DX11 ERROR CODE : DXGI_ERROR_GRAPHICS_VIDPN_SOURCE_IN_USE\nDESCRIPTION : The application attempted to acquire exclusive ownership of an output, but failed because some other application (or device within the application) already acquired ownership",
-        //     0x887A0001 = "DX11 ERROR CODE : DXGI_ERROR_INVALID_CALL\nDESCRIPTION : The application provided invalid parameter data; this must be debugged and fixed before the application is released",
-        //     0x887A0003 = "DX11 ERROR CODE : DXGI_ERROR_MORE_DATA\nDESCRIPTION : The buffer supplied by the application is not big enough to hold the requested data",
-        //     0x887A002C = "DX11 ERROR CODE : DXGI_ERROR_NAME_ALREADY_EXISTS\nDESCRIPTION : The supplied name of a resource in a call to IDXGIResource1::CreateSharedHandle is already associated with some other resource",
-        //     0x887A0021 = "DX11 ERROR CODE : DXGI_ERROR_NONEXCLUSIVE\nDESCRIPTION : A global counter resource is in use, and the Direct3D device can't currently use the counter resource",
-        //     0x887A0022 = "DX11 ERROR CODE : DXGI_ERROR_NOT_CURRENTLY_AVAILABLE\nDESCRIPTION : The resource or request is not currently available, but it might become available later",
-        //     0x887A0002 = "DX11 ERROR CODE : DXGI_ERROR_NOT_FOUND\nDESCRIPTION : When calling IDXGIObject::GetPrivateData, the GUID passed in is not recognized as one previously passed to IDXGIObject::SetPrivateData or IDXGIObject::SetPrivateDataInterface. When calling IDXGIFactory::EnumAdapters or IDXGIAdapter::EnumOutputs, the enumerated ordinal is out of range", 
-        //     0x887A0029 = "DX11 ERROR CODE : DXGI_ERROR_RESTRICT_TO_OUTPUT_STALE\nDESCRIPTION : The DXGI output (monitor) to which the swap chain content was restricted is now disconnected or changed",
-        //     0x887A002D = "DX11 ERROR CODE : DXGI_ERROR_SDK_COMPONENT_MISSING\nDESCRIPTION : The operation depends on an SDK component that is missing or mismatched", 
-        //     0x887A0028 = "DX11 ERROR CODE : DXGI_ERROR_SESSION_DISCONNECTED\nDESCRIPTION : The Remote Desktop Services session is currently disconnected",
-        //     0x887A0004 = "DX11 ERROR CODE : DXGI_ERROR_UNSUPPORTED\nDESCRIPTION : The requested functionality is not supported by the device or the driver",
-        //     0x887A0027 = "DX11 ERROR CODE : DXGI_ERROR_WAIT_TIMEOUT\nDESCRIPTION : The time-out interval elapsed before the next desktop frame was available",
-        //     0x887A000A = "DX11 ERROR CODE : DXGI_ERROR_WAS_STILL_DRAWING\nDESCRIPTION : The GPU was busy at the moment when a call was made to perform an operation, and did not execute or schedule the operation",
-        // }
-
         if hr != 0{
             hr_index := int(hr) & 0xFFFFFFFF
             //err_code := HR_ERR_MAP[hr_index]
-            fmt.printf("RAW ERROR ID : %x\n look RAW ERROR ID description at https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-returnvalues or https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-error\nLOCATION : %v", hr_index, loc)
+            fmt.printf("RAW ERROR ID : %x\n look description in the resource/debug : %v", hr_index, loc)
 
             if panic_on_fail{
                 panic("DX11 Initialization Failed", loc)
@@ -206,22 +174,22 @@ init_render_dx12_subsystem ::  proc(current_thread : ^thread.Thread){
 }
 
 
+//TODO:khal we need to handle window resize
 @(private)
 @(optimization_mode="size")
 init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     //TODO: DATA NEED ALIGNMENT TO 16 BOTH STRUCT AND PTR.
-    
+
+    vs_buffer_data := new(GlobalDynamicVSConstantBuffer)
+    defer free(vs_buffer_data)
+
     batches : []SpriteBatch
 
     current_buffer_index := 0
 
-    //TODO: remove
-    mapped_subresources := [2]d3d11.MAPPED_SUBRESOURCE{}
-    
     //TODO: khal the size will change when we introduce other thing to render such as tilemapping
-    
-    //vertex buffer, instance_data_buffer
     vertex_buffers : [2]^d3d11.IBuffer
+    mapped_subresources := [2]d3d11.MAPPED_SUBRESOURCE{}
 
     vertex_buffer_stride : [2]u32 = {size_of(hlsl.float2), size_of(SpriteInstanceData)} // size of Vertex
     vertex_buffer_offset : [2]u32 = {0,0}
@@ -241,9 +209,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     CREATE_PROFILER_BUFFER(u32(current_thread.id))
 
-    //TODO: khal remove using barrier we can probably get away with the Thread_OS_Specific struct for a 
-    // simple barrier using condition variable and a mutex.
-    barrier := cast(^sync.Barrier)(current_thread.user_args[1])
     window := windows.HWND(current_thread.user_args[0])
     
     render_params := make([dynamic]RenderParam)
@@ -262,6 +227,11 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         MaxDepth = 1,
     }
 
+    vs_buffer_data.viewport_x = viewport.TopLeftX
+    vs_buffer_data.viewport_y = viewport.TopLeftY
+    vs_buffer_data.viewport_width = viewport.Width
+    vs_buffer_data.viewport_height = viewport.Height
+
     base_device : ^d3d11.IDevice
     base_device_context : ^d3d11.IDeviceContext
 
@@ -276,12 +246,11 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 	dxgi_adapter: ^dxgi.IAdapter
     dxgi_factory : ^dxgi.IFactory4
 
-    vs_cbuffer_0 : ^d3d11.IBuffer
+    vs_global_cbuffer : ^d3d11.IBuffer
 
+    sprite_texture : ^d3d11.ITexture2D
+    
     texture_sampler : ^d3d11.ISamplerState
-
-    staging_buffer : ^d3d11.IBuffer
-   
 
     index_buffer : ^d3d11.IBuffer
 
@@ -298,16 +267,30 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         SampleDesc = {1, 0},
         BufferUsage = dxgi.USAGE{.RENDER_TARGET_OUTPUT},
         SwapEffect = dxgi.SWAP_EFFECT.FLIP_DISCARD,
-        BufferCount = 3,
+        BufferCount = 2,
         Stereo = false,
         Flags = 0x0,
     }
 
-    constant_buffer_descriptor := d3d11.BUFFER_DESC{
-        ByteWidth = size_of(GlobalDynamicConstantBuffer),
+    vs_constant_buffer_descriptor := d3d11.BUFFER_DESC{
+        ByteWidth = size_of(GlobalDynamicVSConstantBuffer),
         Usage = d3d11.USAGE.DYNAMIC,
         BindFlags = d3d11.BIND_FLAGS{d3d11.BIND_FLAG.CONSTANT_BUFFER},
         CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{.WRITE},
+    }
+
+    sprite_texture_descriptor := d3d11.TEXTURE2D_DESC{
+        Width = 0,
+        Height = 0,
+        MipLevels = 1,
+        ArraySize = 1,
+        Format = dxgi.FORMAT.R8G8B8A8_UNORM,
+        SampleDesc = dxgi.SAMPLE_DESC{
+            Count = 1,
+            Quality = 0,
+        },
+        Usage = d3d11.USAGE.IMMUTABLE,
+        BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE},
     }
        
     sampler_descriptor := d3d11.SAMPLER_DESC{
@@ -321,12 +304,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         BorderColor = {0.0, 0.0, 0.0, 0.0},
         MinLOD = 0,
         MaxLOD = d3d11.FLOAT32_MAX,
-    }
-
-    staging_buffer_descriptor : d3d11.BUFFER_DESC = d3d11.BUFFER_DESC{
-        ByteWidth = INSTANCE_BYTE_WIDTH,
-        Usage = d3d11.USAGE.STAGING,
-        CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{d3d11.CPU_ACCESS_FLAG.WRITE, d3d11.CPU_ACCESS_FLAG.READ},
     }
 
     vertex_buffer_descriptor : d3d11.BUFFER_DESC = d3d11.BUFFER_DESC{
@@ -502,8 +479,8 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     BEGIN_EVENT("CBuffer Construction")
 
     DX_CALL(
-        device->CreateBuffer(&constant_buffer_descriptor, nil,&vs_cbuffer_0),
-         vs_cbuffer_0,
+        device->CreateBuffer(&vs_constant_buffer_descriptor, nil,&vs_global_cbuffer),
+        vs_global_cbuffer,
     )
 
     END_EVENT()
@@ -519,11 +496,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
 
     BEGIN_EVENT("Buffer Creation")
-   
-    DX_CALL(
-        device->CreateBuffer(&staging_buffer_descriptor, nil, &staging_buffer),
-        staging_buffer,
-    )
 
     vertex_resource : d3d11.SUBRESOURCE_DATA = d3d11.SUBRESOURCE_DATA{
         pSysMem = (rawptr)(&vertices),
@@ -600,23 +572,26 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     END_EVENT()
 
-    sync.barrier_wait(barrier)
+    {
+        sync.guard(&current_thread.mutex)
+        sync.signal((^sync.Cond)(current_thread.user_args[1]))
+
+    }
 
     for (.Started in intrinsics.atomic_load_explicit(&current_thread.flags, sync.Atomic_Memory_Order.Acquire)){
         {
             if sync.atomic_load_explicit(&render_batch_buffer.changed_flag, sync.Atomic_Memory_Order.Acquire){
 
                 batches = render_batch_buffer.batches
-
                 BEGIN_EVENT("Updating Shared Render Data")
 
                 render_param_len := len(render_params)
                 shared_len := len(render_batch_buffer.shared)
 
+                //TODO: khal we can later use offset to index the smaller chunk of shared to update the render param rather then iterate over all shared.
                 for index in 0..<shared_len{
                     batch_shared := render_batch_buffer.shared[index]
 
-                    //TODO: khal
                     sprite_shader_resource_view : ^d3d11.IShaderResourceView
     
                     vertex_shader : ^d3d11.IVertexShader
@@ -627,31 +602,18 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             
                     input_layout : ^d3d11.IInputLayout
 
-                    texture_descriptor := d3d11.TEXTURE2D_DESC{
-                        Width = u32(batch_shared.width),
-                        Height = u32(batch_shared.height),
-                        MipLevels = 1,
-                        ArraySize = 1,
-                        Format = dxgi.FORMAT.R8G8B8A8_UNORM,
-                        SampleDesc = dxgi.SAMPLE_DESC{
-                            Count = 1,
-                            Quality = 0,
-                        },
-                        Usage = d3d11.USAGE.IMMUTABLE,
-                        BindFlags = d3d11.BIND_FLAGS{.SHADER_RESOURCE},
-                    }
+                    sprite_texture_descriptor.Width = u32(batch_shared.width)
+                    sprite_texture_descriptor.Height = u32(batch_shared.height)
 
-                    texture_resource := d3d11.SUBRESOURCE_DATA{
+                    sprite_texture_resource := d3d11.SUBRESOURCE_DATA{
                         pSysMem = batch_shared.texture,
-                        SysMemPitch = texture_descriptor.Width << 2,    
+                        SysMemPitch = sprite_texture_descriptor.Width << 2,    
                     }
-
-                    sprite_texture : ^d3d11.ITexture2D
 
                     //////////////////////////////// TEXTURE SETUP ////////////////////////////////
             
                     DX_CALL(
-                        device->CreateTexture2D(&texture_descriptor, &texture_resource, &sprite_texture),
+                        device->CreateTexture2D(&sprite_texture_descriptor, &sprite_texture_resource, &sprite_texture),
                         sprite_texture,
                     )
             
@@ -724,21 +686,16 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
         BEGIN_EVENT("Draw Call")
 
+        //Nvidia recommend using Map rather the UpdateSubResource so we will follow thier guidence.
         DX_CALL(
-            device_context->Map(vs_cbuffer_0,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresources[1]),
+            device_context->Map(vs_global_cbuffer,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresources[1]),
             nil,
             true,
         )
 
-        //TODO: khal update dt and time.
-        {
-            constants := (^GlobalDynamicConstantBuffer)(mapped_subresources[1].pData)
-            constants.viewport_size = {viewport.Width, viewport.Height}
-            constants.time = 0
-            constants.delta_time = 0
-        }
+        intrinsics.mem_copy_non_overlapping(mapped_subresources[1].pData,vs_buffer_data, size_of(GlobalDynamicVSConstantBuffer))
 
-        device_context->Unmap(vs_cbuffer_0, 0)
+        device_context->Unmap(vs_global_cbuffer, 0)
 
         device_context->ClearRenderTargetView(back_render_target_view[current_buffer_index], &{0.0, 0.4, 0.5, 1.0})
         device_context->OMSetRenderTargets(1, &back_render_target_view[current_buffer_index], nil) 
@@ -759,27 +716,28 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             device_context->PSSetShader(render_param.pixel_shader, nil, 0)
     
             DX_CALL(
-                device_context->Map(staging_buffer, 0, d3d11.MAP.WRITE, {}, &mapped_subresources[0]),
+                device_context->Map(vertex_buffers[1], 0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresources[0]),
                 nil,
                 true,
             )
     
+            //TODO:khal this will change since the data is relatively large and is updated frequently
             intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.sprite_batch[0], size_of(SpriteInstanceData) * len(current_batch.sprite_batch))
     
-            device_context->Unmap(staging_buffer, 0)
+            device_context->Unmap(vertex_buffers[1], 0)
    
-            device_context->CopyResource(vertex_buffers[1], staging_buffer)
-    
             device_context->IASetVertexBuffers(0, 2, &vertex_buffers[0], &vertex_buffer_stride[0], &vertex_buffer_offset[0])
     
-            device_context->VSSetConstantBuffers(0,1,&vs_cbuffer_0)
+            device_context->VSSetConstantBuffers(0,1,&vs_global_cbuffer)
+            //device_context->PSSetConstantBuffers() //this will hold Time, Delta Time and other notion of time in our game.
     
             device_context->PSSetShaderResources(0,1, &render_param.texture_resource)
     
             device_context->DrawIndexedInstanced(6, u32(len(current_batch.sprite_batch)),0,0,0)
         }
 
-        current_buffer_index = (current_buffer_index + 1) % 2;
+        //Fast implementation (bitwise operation) of (current_buffer_index + 1) % 2
+        current_buffer_index = (current_buffer_index + 1) & 1
 
         DX_CALL(
             swapchain->Present(1,0),
@@ -792,6 +750,5 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         free_all(context.temp_allocator)
     }
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////

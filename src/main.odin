@@ -256,6 +256,8 @@ main ::  proc()  {
 			0.0, 0.0, 0.0, 1.0,
 		},
 	})
+
+	//TODO:khal proof of implementation flesh it out.
 	data,_ := os.read_entire_file_from_filename("resource/animation/player_anim.json")
 	player_anim : journey.Animator
 	json.unmarshal(data, &player_anim)
@@ -302,7 +304,6 @@ main ::  proc()  {
 			}
 
 			running = sdl2_event.type != sdl2.EventType.QUIT
-
 		}
 
 		if !sync.atomic_load_explicit(&render_batch_buffer.changed_flag, sync.Atomic_Memory_Order.Consume){
@@ -330,12 +331,14 @@ main ::  proc()  {
 	
 				changed := len(render_batch_buffer.batches) != batch.len || len(render_batch_buffer.shared) != batch_shared.len
 	
-				render_batch_buffer.shared = (cast(^[dynamic]journey.SpriteBatchShared)batch_shared)[:]
-				render_batch_buffer.batches = (cast(^[dynamic]journey.SpriteBatch)batch)[:]
-				
-				//render_thread.data = &render_batch_buffer
-	
-				sync.atomic_store_explicit(&render_batch_buffer.changed_flag, changed, sync.Atomic_Memory_Order.Relaxed)
+				if changed{
+					render_batch_buffer.shared = (cast(^[dynamic]journey.SpriteBatchShared)batch_shared)[:]
+					render_batch_buffer.batches = (cast(^[dynamic]journey.SpriteBatch)batch)[:]
+					
+					//render_thread.data = &render_batch_buffer
+		
+					sync.atomic_store_explicit(&render_batch_buffer.changed_flag, true, sync.Atomic_Memory_Order.Relaxed)
+				}
 			}
 
 			journey.END_EVENT()

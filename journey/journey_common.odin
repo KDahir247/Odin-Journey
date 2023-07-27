@@ -145,8 +145,14 @@ SpriteIndex :: struct{
     position : [2]f32,
 }
 
-GlobalDynamicConstantBuffer :: struct #align 16{
-    viewport_size : [2]f32,
+GlobalDynamicVSConstantBuffer :: struct #align 16{
+    viewport_x : f32,
+    viewport_y : f32,
+    viewport_width : f32,
+    viewport_height : f32,
+}
+
+GlobalDynamicPSConstantBuffer :: struct #align 16{
     time : f32,
     delta_time : f32,
 }

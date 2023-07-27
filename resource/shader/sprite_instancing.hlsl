@@ -23,9 +23,10 @@ END_SHADER_DECLARATIONS
 */
 
 cbuffer VS_CONSTANT_BUFFER : register(b0){
-    float2 viewportSize;
-    float time;
-    float delta_time;
+    float viewport_x;
+    float viewport_y;
+    float viewport_width;
+    float viewport_height;
 };
 
 struct VSIn{
@@ -54,7 +55,7 @@ VsOut vs_main(in VSIn vs_in)
     float4 scaled_quad = float4(vs_in.quadid * vs_in.src_rect.zw, 0.0, 1.0);
 
     
-    float2 device_conversion = float2(4.0, -4.0) / viewportSize;
+    float2 device_conversion = float2(4.0, -4.0) / float2(viewport_width, viewport_height);
     float2 position = mul(scaled_quad, vs_in.transform).xy * device_conversion - float2(1.0, -1.0);
 
     vso.position = float4(position.x, position.y, 0.0f,1.0f);
