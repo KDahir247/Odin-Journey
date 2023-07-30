@@ -157,16 +157,24 @@ GlobalDynamicPSConstantBuffer :: struct #align 16{
     delta_time : f32,
 }
 
-//TODO: we don't need a mutex nor a cond 
-
 RenderBatchBuffer :: struct #align 64  {
     changed_flag : bool,
     batches : []SpriteBatch,
     shared : []SpriteBatchShared,
+    
+}
+
+Changed :: enum{
+    ALL,
+    TRANSFORM,
+    ANIMATION,
 }
 
 SpriteBatch :: struct{
     sprite_batch : [dynamic]SpriteInstanceData,
+    //Might have the transform seperate and the animation seperate.
+    // transform_batch : [dynamic]matrix[4,4]f32,
+    // animation_batch : [dynamic]Rect,
 }
 
 SpriteHandle :: struct{
@@ -185,9 +193,6 @@ SpriteBatchShared :: struct{
 SpriteInstanceData :: struct{
     transform : matrix[4,4]f32,
     src_rect : Rect,
-    hue_displacement : f32,
-    // We will be sorting by zdepth
-    z_depth : u32,
 }
 ////////////////////////////////////////////////////////
 

@@ -33,14 +33,11 @@ struct VSIn{
     float2 quadid : QUAD_ID;
     matrix transform : TRANSFORM;
     float4 src_rect : SRC_RECT;
-    float color : HUE_DISP;
-    float depth : Z_DEPTH;
     uint spriteid : SV_INSTANCEID;
     uint vertexid : SV_VERTEXID;
 };
 
 struct VsOut{
-    float color : COL;
     float4 position : SV_POSITION;
     float2 uv : UV;
 };
@@ -60,7 +57,6 @@ VsOut vs_main(in VSIn vs_in)
 
     vso.position = float4(position.x, position.y, 0.0f,1.0f);
     vso.uv = scaled_quad.xy + vs_in.src_rect.xy;
-    vso.color = vs_in.color;
 
     return vso;
 }

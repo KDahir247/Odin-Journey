@@ -51,6 +51,13 @@ stop_renderer :: proc(render_thread : ^thread.Thread){
 }
 
 
+// Used through out the game (SpriteSheet, FontAtlas, TileMapping)
+@(private) 
+RenderInstanceData :: struct #align 16{
+    model : matrix[4,4]f32,
+    src_rect : Rect,
+}
+
 @(private)
 backend_proc :: #type proc(current_thread : ^thread.Thread)
 
@@ -319,7 +326,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{d3d11.CPU_ACCESS_FLAG.WRITE},
     }
 
-    instance_layout_descriptor := [8]d3d11.INPUT_ELEMENT_DESC{
+    instance_layout_descriptor := [6]d3d11.INPUT_ELEMENT_DESC{
         {"QUAD_ID", 0, dxgi.FORMAT.R32G32_FLOAT, 0,0, d3d11.INPUT_CLASSIFICATION.VERTEX_DATA, 0},
 
         {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
@@ -327,8 +334,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         {"TRANSFORM",2, dxgi.FORMAT.R32G32B32A32_FLOAT,1,32, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"TRANSFORM",3, dxgi.FORMAT.R32G32B32A32_FLOAT,1,48, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
-        {"HUE_DISP", 0, dxgi.FORMAT.R32_FLOAT,1, 80, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
-        {"Z_DEPTH", 0, dxgi.FORMAT.R32_FLOAT, 1, 84, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
     }
 
     index_buffer_descriptor := d3d11.BUFFER_DESC{
@@ -709,6 +714,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             //     // check it in the render loop. 
             //     break
             // }
+
+            //handle the changes here.
+
     
             device_context->IASetInputLayout(render_param.layout_input)
     
@@ -720,10 +728,15 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 nil,
                 true,
             )
-    
+
+            instance_data := ([^]RenderInstanceData)(mapped_subresources[0].pData)
+
+
+            
             //TODO:khal this will change since the data is relatively large and is updated frequently
             intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.sprite_batch[0], size_of(SpriteInstanceData) * len(current_batch.sprite_batch))
     
+        
             device_context->Unmap(vertex_buffers[1], 0)
    
             device_context->IASetVertexBuffers(0, 2, &vertex_buffers[0], &vertex_buffer_stride[0], &vertex_buffer_offset[0])
@@ -736,7 +749,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             device_context->DrawIndexedInstanced(6, u32(len(current_batch.sprite_batch)),0,0,0)
         }
 
-        //Fast implementation (bitwise operation) of (current_buffer_index + 1) % 2
         current_buffer_index = (current_buffer_index + 1) & 1
 
         DX_CALL(

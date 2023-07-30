@@ -45,7 +45,11 @@ create_sprite_batcher :: proc($tex_path : cstring, $shader_cache : u32) -> uint{
     sprite_batch_entity := ecs.create_entity(ecs_context)
 
     ecs.add_component_unchecked(ecs_context,sprite_batch_entity, journey.SpriteBatch{
-        sprite_batch = make_dynamic_array_len_cap([dynamic]journey.SpriteInstanceData,0, journey.DEFAULT_BATCH_SIZE),
+    
+		sprite_batch =  make_dynamic_array_len_cap([dynamic]journey.SpriteInstanceData,0, journey.DEFAULT_BATCH_SIZE),
+		// animation_batch = make_dynamic_array_len_cap([dynamic]journey.Rect,0, journey.DEFAULT_BATCH_SIZE),
+        // transform_batch = make_dynamic_array_len_cap([dynamic]matrix[4,4]f32,0, journey.DEFAULT_BATCH_SIZE),
+
     })
     shared := ecs.add_component_unchecked(ecs_context, sprite_batch_entity, journey.SpriteBatchShared{
         identifier = identifier_idx,
@@ -83,7 +87,9 @@ sprite_batch_free :: proc(){
 		image.image_free(shared.texture)
         shared.texture = nil
 
-        delete(batcher.sprite_batch)
+		delete(batcher.sprite_batch)
+        //delete(batcher.animation_batch)
+        //delete(batcher.transform_batch)
 
         ecs.remove_component(ecs_context, entity, journey.SpriteBatch)
         ecs.remove_component(ecs_context, entity, journey.SpriteBatchShared)
@@ -167,6 +173,7 @@ on_animation :: proc(elapsed_time : f64){
 
 @(optimization_mode="size")
 main ::  proc()  {
+	journey.test()
 	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
 
 	ecs_context := ecs.init_ecs()
