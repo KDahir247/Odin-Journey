@@ -1,5 +1,6 @@
 package journey
 
+import "core:fmt"
 import "core:math/linalg"
 
 //Goes infinitely from the origin to the direction in both side (+ direction, - direction)
@@ -73,3 +74,4 @@ project_vector :: proc(proj, onto : [2]f32) -> [2]f32{
 
     return res
 }
+

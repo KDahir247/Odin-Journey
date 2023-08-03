@@ -173,7 +173,10 @@ on_animation :: proc(elapsed_time : f64){
 
 @(optimization_mode="size")
 main ::  proc()  {
+
 	journey.test()
+	
+	//journey.test()
 	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
 
 	ecs_context := ecs.init_ecs()

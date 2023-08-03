@@ -2,7 +2,9 @@ package ecs
 
 import "core:container/queue"
 
+
 Entity :: distinct uint
+
 
 Entity_And_Some_Info  :: struct {
   entity: Entity,
