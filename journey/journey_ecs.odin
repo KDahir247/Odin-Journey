@@ -151,11 +151,9 @@ destroy_entity :: proc(entity_store : ^EntityStore, entity : Entity){
 
 //40
 ComponentStore :: struct #align 64 {
-    sparse : []Maybe(Entity), // 16
-    entities : ^Entity, //8
+    sparse : []int, // 16
+    entities : ^Entity, //8 
     components : ^u8, //8
-
-    //TODO: khal can we remove this
     len : int,  //8
 }
 
@@ -169,7 +167,11 @@ deinit_component_store :: proc(comp_storage : ComponentStore){
 init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMPONENT) -> ComponentStore{
     raw_components,_ := mem.alloc(size_of(type) * DEFAULT_MAX_ENTITY_WITH_COMPONENT, 64)
     raw_entities,_ := mem.alloc(size_of(Entity) * DEFAULT_MAX_ENTITY_WITH_COMPONENT, 64)
-    sparse := make_slice([]Maybe(Entity), DEFAULT_MAX_ENTITY_WITH_COMPONENT)
+    sparse := make_slice([]int, DEFAULT_MAX_ENTITY_WITH_COMPONENT)
+
+    //slice.fill(sparse, -1)
+    runtime.memset(&sparse[0], -1, size_of(sparse[0]) * len(sparse))
+    //fmt.println(sparse)
 
     return ComponentStore{
         sparse = sparse,
@@ -180,21 +182,23 @@ init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMP
 }
 
 insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T){
-
     //assert(component_storage.type == type_of(component) && entity.id < len(component_storage.sparse), "...")
     
     local_component := component
     local_entity := entity
 
-    incr_mask := (1.0 -  has_component(component_storage, entity))
+    dense_id := component_storage.sparse[entity.id]
+    has_mask := has_component(component_storage, entity)
+    incr_mask := (1.0 -  has_mask)
 
-    dense_entity := component_storage.sparse[entity.id].? or_else Entity{component_storage.len, entity.version}
-    component_storage.sparse[entity.id] = dense_entity
+    dense_index := (component_storage.len * incr_mask) + (dense_id * has_mask)
 
-    comp_ptr := slice.ptr_add(component_storage.components,dense_entity.id * size_of(component))
+    component_storage.sparse[entity.id] = dense_index
+
+    comp_ptr := slice.ptr_add(component_storage.components,dense_index * size_of(component))
+    ent_ptr := slice.ptr_add(component_storage.entities, dense_index)
+    
     comp_ptr^ = (cast(^u8)(&local_component))^
-
-    ent_ptr := slice.ptr_add(component_storage.entities, dense_entity.id)
     ent_ptr^ = local_entity
 
     component_storage.len += incr_mask
@@ -203,9 +207,26 @@ insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, c
 get_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) ->(retrieved_comp : ^component, valid : bool) #optional_ok{
     //assert(component_storage.type == component, "trying to fetch a different component type from the component storage. Component storage just handle one type of component.")    
     
-    dense_entity := component_storage.sparse[entity.id].? or_return 
-    retrieved_comp = &([^]component)(component_storage.components)[dense_entity.id]
+    dense_index := component_storage.sparse[entity.id]
+
+    if dense_index != -1{
+        retrieved_comp = &([^]component)(component_storage.components)[dense_index]
+    }
+
     return
+}
+
+
+//
+set_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) {
+    local_component := component
+
+    assert(component_storage.sparse[entity.id] != -1, "")
+
+    dense_id := component_storage.sparse[entity.id]
+    comp_ptr := slice.ptr_add(component_storage.components,dense_id * size_of(component))
+
+    comp_ptr^ = (cast(^u8)(&local_component))^
 }
 
 //TODO: khal this need working on
@@ -214,23 +235,23 @@ remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $
     //TODO: should i put the removed entity in the last element then decrement the len by one. So if we insert the same thing we removed then it is technically cached.. 
     // And should i also put the removed component in the last element then decrement the len by one, So it is is a sense cached.
         
-    dense_entity := component_storage.sparse[entity.id].? or_return
+    dense_id := component_storage.sparse[entity.id]
         
     component_storage.len -= 1
 
     last_entity := ([^]Entity)(component_storage.entities)[component_storage.len]
 
-    ent_ptr := slice.ptr_add(component_storage.entities, dense_entity.id)
+    ent_ptr := slice.ptr_add(component_storage.entities, dense_id)
     ent_ptr^ = last_entity
 
     //We need to reorder the sparse set 
     //TODO: can we remove the if statement here as well?
-    if dense_entity.id < component_storage.len{
-        component_storage.sparse[last_entity.id] = Entity{dense_entity.id, last_entity.version}
-        component_storage.sparse[entity.id] = nil
+    if dense_id < component_storage.len{
+        component_storage.sparse[last_entity.id] = dense_id
+        component_storage.sparse[entity.id] = -1
     }
 
-    removed_comp_ptr := ([^]component)(component_storage.components)[dense_entity.id:]
+    removed_comp_ptr := ([^]component)(component_storage.components)[dense_id:]
     last_comp_ptr := ([^]component)(component_storage.components)[component_storage.len:]
 
     removed_component = removed_comp_ptr[0]
@@ -242,12 +263,9 @@ remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $
 
 @(optimization_mode="speed")
 has_component :: #force_inline proc(component_storage : ^ComponentStore, entity : Entity) -> int{
+    dense_id := component_storage.sparse[entity.id]
 
-    assert(entity.id != -1, "usage of INVALID_ENTITY constant as the entity.")
-    
-    dense_entity := component_storage.sparse[entity.id].? or_else INVALID_ENTITY
-
-    return (dense_entity.id >= 0) ? 1 : 0
+    return clamp(dense_id + 1, 0, 1)
 }
 
 retrieve_components :: proc(component_storage : ^ComponentStore, $component_type : typeid) -> []component_type{
@@ -293,6 +311,12 @@ test :: proc(){
     fmt.println("Get Component after removed", get_component(&sparse_storage,entity, Test_Struct ))
     fmt.println("Get other Component after", get_component(&sparse_storage, entity_2, Test_Struct))
     
+
+    b := Test_Struct{
+        b = 100,
+    }
+    
+    set_component(&sparse_storage, entity_2, b)
 
     fmt.println(retrieve_entities_with_component(&sparse_storage))
     fmt.println(retrieve_components(&sparse_storage, Test_Struct))
