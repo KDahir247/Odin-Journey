@@ -151,10 +151,10 @@ destroy_entity :: proc(entity_store : ^EntityStore, entity : Entity){
 
 //40
 ComponentStore :: struct #align 64 {
-    sparse : []int, // 16
-    entities : ^Entity, //8 
-    components : ^u8, //8
-    len : int,  //8
+    sparse : []int, // 16  entity_indices
+    entities : ^Entity, //8 entity list 
+    components : ^u8, //8 component list
+    len : int,  //8  length of entity and component list
 }
 
 
@@ -181,7 +181,7 @@ init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMP
     }
 }
 
-insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T){
+insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) #no_bounds_check{
     //assert(component_storage.type == type_of(component) && entity.id < len(component_storage.sparse), "...")
     
     local_component := component
@@ -195,8 +195,8 @@ insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, c
 
     component_storage.sparse[entity.id] = dense_index
 
-    comp_ptr := slice.ptr_add(component_storage.components,dense_index * size_of(component))
-    ent_ptr := slice.ptr_add(component_storage.entities, dense_index)
+    comp_ptr :^u8= ([^]u8)(component_storage.components)[dense_index * size_of(component):]
+    ent_ptr :^Entity= ([^]Entity)(component_storage.entities)[dense_id:]
     
     comp_ptr^ = (cast(^u8)(&local_component))^
     ent_ptr^ = local_entity
@@ -204,7 +204,7 @@ insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, c
     component_storage.len += incr_mask
 }
 
-get_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) ->(retrieved_comp : ^component, valid : bool) #optional_ok{
+get_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) ->(retrieved_comp : ^component, valid : bool) #optional_ok #no_bounds_check{
     //assert(component_storage.type == component, "trying to fetch a different component type from the component storage. Component storage just handle one type of component.")    
     
     dense_index := component_storage.sparse[entity.id]
@@ -217,39 +217,38 @@ get_component :: proc(component_storage : ^ComponentStore, entity : Entity, $com
 }
 
 
-//
-set_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) {
+@(optimization_mode="speed")
+set_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) #no_bounds_check {
+
+    assert(component_storage.sparse[entity.id] != -1, "Entity is missing component or component has been removed prior.")
     local_component := component
 
-    assert(component_storage.sparse[entity.id] != -1, "")
-
     dense_id := component_storage.sparse[entity.id]
-    comp_ptr := slice.ptr_add(component_storage.components,dense_id * size_of(component))
+    comp_ptr :^u8= ([^]u8)(component_storage.components)[dense_id * size_of(component):] 
 
     comp_ptr^ = (cast(^u8)(&local_component))^
 }
 
-//TODO: khal this need working on
+//TODO: khal can we remove component parameter and just use infer the type of component in this ComponentStore
+@(optimization_mode="size")
 remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) -> (removed_component : component, valid : bool) #optional_ok{
 
     //TODO: should i put the removed entity in the last element then decrement the len by one. So if we insert the same thing we removed then it is technically cached.. 
     // And should i also put the removed component in the last element then decrement the len by one, So it is is a sense cached.
-        
     dense_id := component_storage.sparse[entity.id]
         
     component_storage.len -= 1
 
     last_entity := ([^]Entity)(component_storage.entities)[component_storage.len]
 
-    ent_ptr := slice.ptr_add(component_storage.entities, dense_id)
+    ent_ptr :^Entity = ([^]Entity)(component_storage.entities)[dense_id:]
     ent_ptr^ = last_entity
 
-    //We need to reorder the sparse set 
-    //TODO: can we remove the if statement here as well?
-    if dense_id < component_storage.len{
-        component_storage.sparse[last_entity.id] = dense_id
-        component_storage.sparse[entity.id] = -1
-    }
+    mask :=  ((dense_id - component_storage.len) >> 31 & 1)  
+    invert_mask := 1 - mask
+
+    component_storage.sparse[last_entity.id] = (dense_id * invert_mask) | (component_storage.sparse[last_entity.id] * mask)  
+    component_storage.sparse[entity.id] = -1
 
     removed_comp_ptr := ([^]component)(component_storage.components)[dense_id:]
     last_comp_ptr := ([^]component)(component_storage.components)[component_storage.len:]
@@ -262,19 +261,17 @@ remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $
 
 
 @(optimization_mode="speed")
-has_component :: #force_inline proc(component_storage : ^ComponentStore, entity : Entity) -> int{
-    dense_id := component_storage.sparse[entity.id]
-
-    return clamp(dense_id + 1, 0, 1)
+has_component :: #force_inline proc(component_storage : ^ComponentStore, entity : Entity) -> int #no_bounds_check{
+    return 1 - (component_storage.sparse[entity.id] >> 31)  & 1
 }
 
-retrieve_components :: proc(component_storage : ^ComponentStore, $component_type : typeid) -> []component_type{
-    //assert(component_storage.type == component_type)
-
+@(optimization_mode="speed")
+retrieve_components :: proc(component_storage : ^ComponentStore, $component_type : typeid) -> []component_type #no_bounds_check{
     return ([^]component_type)(component_storage.components)[:component_storage.len]
 }
 
-retrieve_entities_with_component :: proc(component_storage : ^ComponentStore) -> []Entity{
+@(optimization_mode="speed")
+retrieve_entities_with_component :: proc(component_storage : ^ComponentStore) -> []Entity #no_bounds_check{
     return ([^]Entity)(component_storage.entities)[:component_storage.len]
 }
 
@@ -291,7 +288,7 @@ test :: proc(){
     c.b = 55
     
     sparse_storage := init_component_store(Test_Struct)
-    entity : Entity = {0, 2}
+    entity : Entity = {7, 2}
     
     entity_2 : Entity = {1,2}
     insert_component(&sparse_storage, entity, a)
@@ -301,15 +298,13 @@ test :: proc(){
     fmt.println()
     fmt.println("Get Component", get_component(&sparse_storage,entity, Test_Struct ))
     fmt.println("Get Component", get_component(&sparse_storage,entity, Test_Struct ))
-    //fmt.println("Get Component", get_component(&sparse_storage,{30, 0}, Test_Struct ))
-    //fmt.println("Get Component", get_component(&sparse_storage,{30, 0}, Entity ))
 
     fmt.println("Get other Component before ", get_component(&sparse_storage, entity_2, Test_Struct))
     fmt.println("Get Component before removed", get_component(&sparse_storage,entity, Test_Struct ))
     r := remove_component(&sparse_storage, entity, Test_Struct)
     fmt.println("Removed component ", r)
     fmt.println("Get Component after removed", get_component(&sparse_storage,entity, Test_Struct ))
-    fmt.println("Get other Component after", get_component(&sparse_storage, entity_2, Test_Struct))
+    fmt.println("Get other Component after removed", get_component(&sparse_storage, entity_2, Test_Struct))
     
 
     b := Test_Struct{
@@ -333,7 +328,6 @@ test :: proc(){
     enqueue(&queue, Entity{0,6})
     enqueue(&queue, Entity{0,7})
     enqueue(&queue, Entity{0,8})
-    fmt.println(queue)
 
     fmt.println(dequeue(&queue))
     fmt.println(dequeue(&queue))
