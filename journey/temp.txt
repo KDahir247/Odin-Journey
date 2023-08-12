@@ -1,0 +1,53 @@
+
+    group_data : GroupData
+
+    min_entities : []Entity
+    min_len := 0b1111_1111_1111_1111
+
+    //TODO: khal find a way to recycle group when the group is destroyed...
+    append(&world.groups,group_data)
+
+    group_index := len(world.groups) - 1
+
+    //TODO: khal add support for ECS_Query_Dec none in group
+
+    for all, index in query_desc.all{
+        store := &world.component_store_info[all];
+        store^.group_index = group_index
+        store_index := world.component_store_info[all].component_store_index
+        
+
+        component_store := world.components_stores[store_index]
+        component_store_len := component_store.len
+       
+    
+        if min_len > component_store_len{
+
+            min_entities = internal_retrieve_entities_with_component(&component_store)
+
+            min_len = component_store_len
+        }
+
+        // non_zero_mask := (-component_store_len >> 63) & 1
+        // min_mask := -((component_store_len - min_len) >> 63)
+
+        // previous_min_len := min_len
+        // min_len = (component_store_len * min_mask) | (min_len * (1 - min_mask)) 
+        // min_len = (non_zero_mask * min_len) | (previous_min_len * (1 - non_zero_mask))
+
+    }
+
+
+    for all in query_desc.all{
+        count := 0
+        component_store_index := world.component_store_info[all].component_store_index
+        group_start := world.groups[group_index].start;
+
+        component_store := world.components_stores[component_store_index]
+
+
+        //loop unroll???
+
+    }
+
+    //world.groups[group_index].end = 0 //min_len

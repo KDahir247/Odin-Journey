@@ -95,8 +95,7 @@ ECS_Query_Dec :: struct #align 64{
 
 GroupData :: struct{
     start : int,
-    new_starget : int,
-    end : int,
+    new_target : int,
 }
 
 
@@ -146,7 +145,7 @@ deinit_world :: proc(world : ^World){
 
 
 @(optimization_mode="speed")
-is_register :: proc(world : ^World, $component : typeid) -> bool {
+is_register :: #force_inline proc(world : ^World, $component : typeid) -> bool {
     _, valid := world.component_store_info[component]
     return valid
 }
@@ -161,13 +160,41 @@ register :: proc(world : ^World, $component : typeid){
         }
 
         append(&world.components_stores, init_component_store(component))
+
     }
 }
+
+
+
+@(deferred_out=delete_type_slice)
+@(optimization_mode="speed")
+all_store_types :: proc(world : ^World) -> []typeid {
+    store_types := make_slice([]typeid, len(world.component_store_info))
+
+    current_index := 0
+
+    for store_type in world.component_store_info{
+        store_types[current_index] = store_type
+        
+        current_index += 1
+    }
+
+    return store_types
+}
+
+@(private)
+@(optimization_mode="speed")
+delete_type_slice :: proc(store_types : []typeid){
+    delete(store_types)
+}
+
 
 @(optimization_mode="speed")
 set_component :: proc(world : ^World, entity : Entity, component : $T, $safety_check : bool){
     component_id := world.component_store_info[component].component_store_index
 
+    // constant bool if statement will almost always get optimized out by compiler.
+    // we indicate we want optimize for speed as well, so this if statement should be optimized out to just one path
     if safety_check{
         if internal_has_component(world.components_stores[component_id], entity) == 1{
             internal_set_component(world.components_stores[component_id], entity, component)
@@ -201,55 +228,95 @@ get_component :: proc(world : ^World, entity : Entity, $component : typeid, $saf
 
 @(optimization_mode="speed")
 get_entities_with_component :: proc(world : ^World, $component : typeid) -> []Entity{
-    return retrieve_entities_with_component(world.components_store[component])
+    component_info := world.component_store_info[component]
+    return internal_retrieve_entities_with_component(&world.components_stores[component_info.component_store_index])
 } 
 
 
 @(optimization_mode="speed")
 get_components_with_id :: proc(world : ^World, $component : typeid) -> []component{
     component_id := world.component_store_info[component].component_store_index
-    return internal_retrieve_components(world.components_stores[component_id],component_id)
+    return internal_retrieve_components(&world.components_stores[component_id],component)
+}
+
+
+@(optimization_mode="speed")
+add_component :: proc(world : ^World, entity : Entity, $component : $T){
+    target_component_store := world.component_store_info[T]
+
+    //It is part of a group if it is not -1 then we need a specific add component to the component store to sort 
+    if target_component_store.group_index != -1{
+
+    }else{
+    internal_insert_component(&world.components_stores[target_component_store.component_store_index], entity, component)
+    }
 }
 
 // Really fast way to query over the sparse set to get multiple components and entity
 // But it is restrictive it order the component sparse with using similar entity in other component that is 
 // in the same group. Also we want have a component in mutliple group, so Position in group 1 can't also be added to group two
 // unless the position is removed from group 1 
+// Checking if component is part of another group is not checked and handled it will cause undefined behaviour currently.
 
 //TODO: khal not done.
-
 @(optimization_mode="size")
 group :: proc(world : ^World,  query_desc : ECS_Query_Dec) {
     group_data : GroupData
-    min_len := 0b1111_1111_1111_1111
+    is_valid : bool = true
 
-    //TODO: khal find a way to recycle group when the group is destroyed...
+    //TODO: check for recycled group
+
     append(&world.groups,group_data)
 
     group_index := len(world.groups) - 1
 
-    //TODO: khal add support for ECS_Query_Dec none in group
+    owned_store := world.component_store_info[query_desc.all[0]];
+    owned_component_store := world.components_stores[owned_store.component_store_index]
 
     for all in query_desc.all{
-
         store := &world.component_store_info[all];
-
         store^.group_index = group_index
-
-        component_store_index := world.component_store_info[all].component_store_index
-        component_store_len := world.components_stores[component_store_index].len
-        
-        non_zero_mask := (-component_store_len >> 63) & 1
-        min_mask := -((component_store_len - min_len) >> 63)
-
-        previous_min_len := min_len
-        min_len = (component_store_len * min_mask) | (min_len * (1 - min_mask)) 
-        min_len = (non_zero_mask * min_len) | (previous_min_len * (1 - non_zero_mask))
-
     }
 
-    world.groups[group_index].end = min_len
 
+    current := 0
+    
+    for entity, index in internal_retrieve_entities_with_component(&owned_component_store){
+
+
+        is_valid = true
+
+        //See if it has all the components in the query.
+        for all in query_desc.all{
+            store := &world.component_store_info[all];
+            component_store := world.components_stores[store.component_store_index]
+            is_valid &= bool(internal_has_component(&world.components_stores[store.component_store_index], entity))
+        }
+
+
+        if is_valid {
+
+            for all in query_desc.all{
+                store := &world.component_store_info[all];
+                component_store := &world.components_stores[store.component_store_index]
+
+
+                fmt.println(all, current)
+             
+            
+                //Swap the entity with current
+
+            }
+
+
+            //After we updated all increment current.
+            //TODO: khal current will be replaced with the group start.. 
+
+            current += 1
+
+        }
+       
+    }
 }
 
 // Slower way to query over sparse set to get multiple components and entity
@@ -374,8 +441,8 @@ internal_destroy_entity :: proc(entity_store : ^EntityStore, entity : Entity){
 
 ComponentStore :: struct #align 64 { // 40
     sparse : []int, // 16  entity_indices
-    entities : ^Entity, //8 entity list 
-    components : ^u8, //8 component list
+    entities : rawptr,
+    components : rawptr, //8 component list
     len : int,  //8  length of entity and component list
 }
 
@@ -400,8 +467,8 @@ init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMP
 
     return ComponentStore{
         sparse = sparse,
-        entities = cast(^Entity)(raw_entities),
-        components = cast(^u8)(raw_components),
+        entities = raw_entities,
+        components = raw_components,
         len = 0,
     }
 }
@@ -410,6 +477,8 @@ init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMP
 @(optimization_mode="size")
 internal_insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) #no_bounds_check{
     
+    //Assert here or we will get undefined behaviour.
+
     local_component := component
     local_entity := entity
 
@@ -421,10 +490,10 @@ internal_insert_component :: proc(component_storage : ^ComponentStore, entity : 
 
     component_storage.sparse[entity.id] = dense_index
 
-    comp_ptr :^u8= ([^]u8)(component_storage.components)[dense_index * size_of(component):]
+    comp_ptr :^T= ([^]T)(component_storage.components)[dense_index:]
     ent_ptr :^Entity= ([^]Entity)(component_storage.entities)[dense_index:]
     
-    comp_ptr^ = (cast(^u8)(&local_component))^
+    comp_ptr^ = local_component
     ent_ptr^ = local_entity
 
     component_storage.len += incr_mask
@@ -444,6 +513,14 @@ internal_get_component :: proc(component_storage : ^ComponentStore, entity : Ent
     return
 }
 
+@(private)
+@(optimization_mode="speed")
+internal_get_entity :: proc(component_storage : ^ComponentStore, index : int) -> (retrieved_entity : Entity, valid : bool) #optional_ok #no_bounds_check{
+    dense_index := component_storage.sparse[index]
+    retrieved_entity = ([^]Entity)(component_storage.entities)[dense_index]
+   
+    return
+}
 
 // Get the specified component from the entity. Doesn't check and handle if the entity has or has not the component.
 // It assumes the it has the component. validation is passed to the user. Call has_component function if the end user is unsure.
@@ -511,85 +588,143 @@ internal_retrieve_entities_with_component :: #force_inline proc(component_storag
     return ([^]Entity)(component_storage.entities)[:component_storage.len]
 }
 
+@(private)
+internal_swap_value :: proc(component_storage : ^ComponentStore, dst_entity, src_entity : Entity, component_type : typeid){
+
+    dst_id := component_storage.sparse[dst_entity.id]
+    src_id := component_storage.sparse[src_entity.id]
+
+    src_entity_ptr :^Entity = ([^]Entity)(component_storage.entities)[src_id:]
+    dst_entity_ptr :^Entity = ([^]Entity)(component_storage.entities)[dst_id:]
+
+    dst_entity_ptr^ = src_entity
+    src_entity_ptr^ = dst_entity
+
+
+    //slice.ptr_swap_non_overlapping(([^]u8)(component_storage.components)[dst_id:],([^]u8)(component_storage.components)[src_id:], size_of(component_type))
+
+    //Swap the component and the entity.
+    //Swap the sparse to keep it up to date    
+    slice.ptr_swap_non_overlapping(&component_storage.sparse[dst_entity.id],&component_storage.sparse[src_entity.id], size_of(int))
+
+
+}
+
 ///////////////////////////////////////////////////////////
 
 test :: proc(){
 
-    fmt.println("Size and Align Of EntityStore: ",size_of(EntityStore), align_of(EntityStore))
+    // fmt.println("Size and Align Of EntityStore: ",size_of(EntityStore), align_of(EntityStore))
 
-    a : Test_Struct
-    a.b = 30
-    c : Test_Struct
-    c.b = 55
+    // a : Test_Struct
+    // a.b = 30
+    // c : Test_Struct
+    // c.b = 55
     
-    l : Test_Struct
-    l.b = 200
-    sparse_storage := init_component_store(Test_Struct)
-    entity : Entity = {7, 2}
-    
-
-
-    entity_2 : Entity = {1,2}
-    entity_3 := Entity{4, 4}
-    internal_insert_component(&sparse_storage, entity, a)
-    internal_insert_component(&sparse_storage, entity_3, l)
-    internal_insert_component(&sparse_storage, entity_2, c)
-
-
-    fmt.println()
-    fmt.println("Get Component", internal_get_component(&sparse_storage,entity, Test_Struct ))
-    fmt.println("Get Component", internal_get_component(&sparse_storage,entity, Test_Struct ))
-
-    fmt.println("Get other Component before ", internal_get_component(&sparse_storage, entity_2, Test_Struct))
-    fmt.println("Get Component before removed", internal_get_component(&sparse_storage,entity, Test_Struct ))
-    // r := remove_component(&sparse_storage, entity_2, Test_Struct)
-    // fmt.println("Removed component ", r)
-    fmt.println("Get Component after removed", internal_get_component(&sparse_storage,entity, Test_Struct ))
-    fmt.println("Get other Component after removed", internal_get_component(&sparse_storage, entity_2, Test_Struct))
+    // l : Test_Struct
+    // l.b = 200
+    //  sparse_storage := init_component_store(f64)
+    //  entity : Entity = {7, 2}
     
 
-    // b := Test_Struct{
-    //     b = 100,
-    // }
+
+    // entity_2 : Entity = {1,2}
+    // entity_3 := Entity{4, 4}
+    // a : GlobalDynamicPSConstantBuffer = {4.0, 3.0}
+    // internal_insert_component(&sparse_storage, entity,4.0)
+
+
+    // // fmt.println()
+    //  fmt.println("Get Component", internal_retrieve_components(&sparse_storage, f64 ))
+    // fmt.println("Get Component", internal_get_component(&sparse_storage,entity, Test_Struct ))
+
+    // fmt.println("Get other Component before ", internal_get_component(&sparse_storage, entity_2, Test_Struct))
+    // fmt.println("Get Component before removed", internal_get_component(&sparse_storage,entity, Test_Struct ))
+    // // r := remove_component(&sparse_storage, entity_2, Test_Struct)
+    // // fmt.println("Removed component ", r)
+    // fmt.println("Get Component after removed", internal_get_component(&sparse_storage,entity, Test_Struct ))
+    // fmt.println("Get other Component after removed", internal_get_component(&sparse_storage, entity_2, Test_Struct))
     
-    // set_component(&sparse_storage, entity_2, b)
 
-    fmt.println(internal_retrieve_entities_with_component(&sparse_storage))
-    fmt.println(internal_retrieve_components(&sparse_storage, Test_Struct))
+    // // b := Test_Struct{
+    // //     b = 100,
+    // // }
+    
+    // // set_component(&sparse_storage, entity_2, b)
+
+    // fmt.println(internal_retrieve_entities_with_component(&sparse_storage))
+    // fmt.println(internal_retrieve_components(&sparse_storage, Test_Struct))
 
 
 
-    queue : Small_Circular_Buffer(8)
-    init_circular_buffer(&queue)
-    enqueue(&queue, Entity{0,1})
-    enqueue(&queue, Entity{0,2})
-    enqueue(&queue, Entity{0,3})
-    enqueue(&queue, Entity{0,4})
-    enqueue(&queue, Entity{0,5})
-    enqueue(&queue, Entity{0,6})
-    enqueue(&queue, Entity{0,7})
-    enqueue(&queue, Entity{0,8})
+    // queue : Small_Circular_Buffer(8)
+    // init_circular_buffer(&queue)
+    // enqueue(&queue, Entity{0,1})
+    // enqueue(&queue, Entity{0,2})
+    // enqueue(&queue, Entity{0,3})
+    // enqueue(&queue, Entity{0,4})
+    // enqueue(&queue, Entity{0,5})
+    // enqueue(&queue, Entity{0,6})
+    // enqueue(&queue, Entity{0,7})
+    // enqueue(&queue, Entity{0,8})
 
-    fmt.println(dequeue(&queue))
-    fmt.println(dequeue(&queue))
-    fmt.println(dequeue(&queue))
-    fmt.println(dequeue(&queue))
-    fmt.println(dequeue(&queue))
-    fmt.println(dequeue(&queue))
-    fmt.println(dequeue(&queue))
-    fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
+    // fmt.println(dequeue(&queue))
 
-    world := scope_init_world()
+    entity : Entity = {0, 2}
+    entity1 : Entity = {1, 2}
+    entity2 : Entity = {2, 2}
+
+    entity3 :Entity = {10 , 4}
+    entity4 :Entity = {20 , 4}
+
+    // a : Test_Struct
+    // a.b = 10
+
+    // b : Test_Struct
+    // b.b = 20
+
+    // c : Test_Struct
+    // c.b = 30
+
+    world := init_world()
 
     f := ECS_Query_Dec{
-        all = []typeid{Test_Struct},
+        all = []typeid{ f64, int},
     }
 
-    is_register(world, Test_Struct)
+    register(world, f64)
+    register(world, int)
+
+    add_component(world,entity4, 5)
+    add_component(world,entity, 5)
+    add_component(world,entity2, 10)
+
+    add_component(world, entity1, 3.3)
+    add_component(world, entity, 5.5)
+    add_component(world, entity2, 2.0)
+    add_component(world,entity3, 1.14)
 
 
-    register(world, Test_Struct)
     group(world, f)
+
+   
+
+
+    fmt.println("\n\n")
+    fmt.println("F64 struct: ",get_entities_with_component(world, f64))
+    fmt.println("Int: ",get_entities_with_component(world, int))
+
+
+  
+
+
 
 
     //get_entities_with_components(&word, Test_Struct)
