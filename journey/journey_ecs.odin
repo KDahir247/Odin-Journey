@@ -39,7 +39,6 @@ deinit_circular_buffer :: proc(q : ^$Q/Small_Circular_Buffer($T)){
 }
 
 //TODO: khal break dependencies.
-
 @(optimization_mode="speed")
 enqueue :: proc(q : ^$Q/Small_Circular_Buffer($T), entity : Entity){
     head := q.shared_index >> 32
@@ -78,10 +77,8 @@ contains :: proc(q : ^$Q/Small_Circular_Buffer($T)) -> bool{
 
 /////////////////////////// ECS Query Struct ///////////////////////////////
 
-
-ECS_Query_Dec :: struct #align 64{
+ECS_Query_Dec :: struct{
     all : []typeid,
-    //some : []typeid,
     none : []typeid, 
 }
 
@@ -162,11 +159,10 @@ register :: proc(world : ^World, $component : typeid){
 }
 
 
-
-@(deferred_out=delete_type_slice)
+// memory allocation function call free all on context.temp_allocator.
 @(optimization_mode="size")
 all_store_types :: proc(world : ^World) -> []typeid {
-    store_types := make_slice([]typeid, len(world.component_store_info))
+    store_types := make_slice([]typeid, len(world.component_store_info), context.temp_allocator)
 
     current_index := 0
 
@@ -179,39 +175,28 @@ all_store_types :: proc(world : ^World) -> []typeid {
     return store_types
 }
 
-@(private)
-@(optimization_mode="size")
-delete_type_slice :: proc(store_types : []typeid){
-    delete(store_types)
-}
-
 
 @(optimization_mode="speed")
 set_component :: proc(world : ^World, entity : Entity, component : $T, $safety_check : bool){
-    component_id := world.component_store_info[component].component_store_index
-
-    // constant bool if statement will almost always get optimized out by compiler.
-    // we indicate we want optimize for speed as well, so this if statement should be optimized out to just one path
-    if safety_check{
+    component_id := world.component_store_info[T].component_store_index
+    
+    when safety_check{
         if internal_has_component(world.components_stores[component_id], entity) == 1{
             internal_set_component(world.components_stores[component_id], entity, component)
         }
     }else{
-        internal_set_component(world.components_stores[component_id], entity, component)
+        internal_set_component(&world.components_stores[component_id], entity, component)
     }
 }
 
 
 @(optimization_mode="speed")
 get_component :: proc(world : ^World, entity : Entity, $component : typeid, $safety_check : bool) -> ^component{
+    desired_component : ^component = nil
     
     component_id := world.component_store_info[component].component_store_index
 
-    desired_component : ^component = nil
-
-    // constant bool if statement will almost always get optimized out by compiler.
-    // we indicate we want optimize for speed as well, so this if statement should be optimized out to just one path
-    if safety_check{
+    when safety_check{
         if internal_has_component(world.components_stores[component_id], entity) == 1{
             desired_component = internal_get_component(world.components_stores[component_id], entity, component)
         }
@@ -239,21 +224,24 @@ get_components_with_id :: proc(world : ^World, $component : typeid) -> []compone
 
 @(optimization_mode="speed")
 add_component :: proc(world : ^World, entity : Entity, $component : $T){
-    target_component_store := world.component_store_info[T]
-    internal_insert_component(&world.components_stores[target_component_store.component_store_index], entity, component)
+    component_store_info := world.component_store_info[T]
+    internal_insert_component(&world.components_stores[component_store_info.component_store_index], entity, component)
 
-    if target_component_store.group_index != -1{
-        group_maybe_add(world,entity, target_component_store.group_index)
+    if component_store_info.group_index != -1{
+        group_maybe_add(world, entity, component_store_info.group_index)
     }
 }
 
 
-//TODO: khal implement
 @(optimization_mode="speed")
-remove_component :: proc(world : ^World, entity : Entity, $component : typeid){
+remove_component :: proc(world : ^World, entity : Entity, $component_type : typeid){
+    component_store_info := world.component_store_info[component_type]
 
-    
+    if component_store_info.group_index != -1{
+        group_maybe_remove(world, entity, component_store_info.group_index)
+    }
 
+    internal_remove_component(&world.components_stores[component_store_info.component_store_index], entity, component_type)
 }
 
 // Really fast way to query over the sparse set to get multiple components and entity
@@ -289,16 +277,40 @@ group :: proc(world : ^World,  query_desc : ECS_Query_Dec) {
     }
 }
 
-//TODO: khal implement 
+//TODO: optimize it 
 @(private)
 @(optimization_mode="speed")
 group_maybe_remove :: proc(world : ^World, entity : Entity, group_index : int){
+    store_group := &world.groups[group_index]
+    all_components := store_group.all_query
 
+    is_valid := 1
+    swap_index := store_group.start - 1
 
+    for all in all_components{
+        store := world.component_store_info[all];
+        component_store := world.components_stores[store.component_store_index]
 
+        is_valid &= internal_has_component(&component_store, entity)
+    }
 
+    //Since if there is only one entity that 
+    if is_valid == 1{
+        if swap_index > 0{
+
+            for all in all_components{
+                store := world.component_store_info[all];
+                component_store := world.components_stores[store.component_store_index]
+
+                internal_swap_value(&component_store, internal_get_entity(&component_store, swap_index), entity)
+            }
+        }
+        
+        store_group.start -= 1
+    }
 }
 
+//TODO: khal Optimize this
 @(private)
 @(optimization_mode="speed")
 group_maybe_add :: proc(world : ^World, entity : Entity, group_index : int){
@@ -353,6 +365,7 @@ create_entity :: proc(world : ^World) -> Entity{
 
 //TODO: khal not done.
 // Relatively slow... currently, since we don't know the component the entity actually has (we need to do linear lookup)
+// Got to structure this differently so it doesn't have to do a linear search.
 @(optimization_mode="speed")
 remove_entity :: proc(world : ^World, entity : Entity){
 
@@ -471,12 +484,12 @@ deinit_component_store :: proc(comp_storage : ComponentStore){
 @(private)
 @(optimization_mode="size")
 init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMPONENT) -> ComponentStore{
-    raw_components,_ := mem.alloc(size_of(type) * DEFAULT_MAX_ENTITY_WITH_COMPONENT, 64)
-    raw_entities,_ := mem.alloc(size_of(Entity) * DEFAULT_MAX_ENTITY_WITH_COMPONENT, 64)
-    sparse := make_slice([]int, DEFAULT_MAX_ENTITY_WITH_COMPONENT)
+    raw_components,_ := mem.alloc(size_of(type) * size, 64)
+    raw_entities,_ := mem.alloc(size_of(Entity) * size, 64)
+    sparse := make_slice([]int, size)
 
     //len(sparse) << 3 is a faster of sizeof(int) * len(sparse) where sizeof(int) == 8 
-    runtime.memset(&sparse[0], -1,len(sparse) << 3)
+    runtime.memset(&sparse[0], -1,size << 3)
 
     return ComponentStore{
         sparse = sparse,
@@ -510,48 +523,37 @@ internal_insert_component :: proc(component_storage : ^ComponentStore, entity : 
     component_storage.len += incr_mask
 }
 
-
-// Get the specified component from the entity. Doesn't check and handle if the entity has or has not the component.
-// It assumes the it has the component. validation is passed to the user. Call has_component function if the end user is unsure.
 @(private)
 @(optimization_mode="speed")
-internal_get_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) ->(retrieved_comp : ^component, valid : bool) #optional_ok #no_bounds_check{
-    //assert(component_storage.type == component, "trying to fetch a different component type from the component storage. Component storage just handle one type of component.")    
-    
+internal_get_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) -> ^component  #no_bounds_check{
     dense_index := component_storage.sparse[entity.id]
-    retrieved_comp = &([^]component)(component_storage.components)[dense_index]
-
-    return
+    return &([^]component)(component_storage.components)[dense_index]
 }
 
 @(private)
 @(optimization_mode="speed")
-internal_get_entity :: proc(component_storage : ^ComponentStore, index : int) -> Entity {
-    max_len := component_storage.len - 1
-    safe_index := index > max_len ? max_len : index 
-    return internal_retrieve_entities_with_component(component_storage)[safe_index]
+internal_get_entity :: #force_inline proc(component_storage : ^ComponentStore, index : int) -> Entity {
+    //max_len := component_storage.len - 1
+    //safe_index := index > max_len ? max_len : index 
+    return internal_retrieve_entities_with_component(component_storage)[index]
 }
 
-// Get the specified component from the entity. Doesn't check and handle if the entity has or has not the component.
-// It assumes the it has the component. validation is passed to the user. Call has_component function if the end user is unsure.
+
 @(private)
 @(optimization_mode="speed")
 internal_set_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) #no_bounds_check {
     
-    local_component := component
-
     dense_id := component_storage.sparse[entity.id]
-    comp_ptr :^rawptr= ([^]rawptr)(component_storage.components)[dense_id:] 
-
-    comp_ptr^ = local_component
+    comp_ptr :^T= ([^]T)(component_storage.components)[dense_id:] 
+    comp_ptr^ = component
 }
 
 
-//TODO: khal rework since we change the structure of component_storage.
+//TODO: khal rework since we change the structure of component_storage. Also remove the optional_ok internal fn are designed to have as little check to make it fast.
 //TODO: khal can we remove component parameter and just use infer the type of component in this ComponentStore
 @(private)
 @(optimization_mode="size")
-internal_remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) -> (removed_component : component, valid : bool) #optional_ok{
+internal_remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) -> component{
 
     //TODO: should i put the removed entity in the last element then decrement the len by one. So if we insert the same thing we removed then it is technically cached.. 
     // And should i also put the removed component in the last element then decrement the len by one, So it is is a sense cached.
@@ -570,14 +572,15 @@ internal_remove_component :: proc(component_storage : ^ComponentStore, entity : 
     component_storage.sparse[last_entity.id] = (dense_id * invert_mask) | (component_storage.sparse[last_entity.id] * mask)  
     component_storage.sparse[entity.id] = -1
 
+    
     removed_comp_ptr := ([^]component)(component_storage.components)[dense_id:]
     last_comp_ptr := ([^]component)(component_storage.components)[component_storage.len:]
 
-    removed_component = removed_comp_ptr[0]
+    removed_component := removed_comp_ptr[0]
 
-    removed_comp_ptr = last_comp_ptr
-    
-    return
+    slice.ptr_swap_non_overlapping(removed_comp_ptr,last_comp_ptr, size_of(component_storage.type) )
+
+    return removed_component
 }
 
 @(private)
@@ -599,6 +602,13 @@ internal_retrieve_entities_with_component :: #force_inline proc(component_storag
     return ([^]Entity)(component_storage.entities)[:component_storage.len]
 }
 
+internal_swap_valuec := proc(component_storage : ^ComponentStore, dst_entity, src_entity : Entity){
+    dst_id := component_storage.sparse[dst_entity.id]
+    src_id := component_storage.sparse[src_entity.id]
+
+    slice.ptr_swap_non_overlapping(([^]Entity)(component_storage.entities)[dst_id:], ([^]Entity)(component_storage.entities)[src_id:], size_of(Entity))
+    slice.ptr_swap_non_overlapping(([^]rawptr)(component_storage.components)[dst_id:], ([^]rawptr)(component_storage.components)[src_id:], size_of(component_storage.type))
+}
 
 @(private)
 @(optimization_mode="speed")
@@ -630,21 +640,29 @@ test :: proc(){
     register(world, f64)
     register(world, int)
 
-    group(world, f)
+    //group(world, f)
 
     add_component(world,entity4, 5)
     add_component(world,entity, 5)
     add_component(world,entity2, 10)
+
 
     add_component(world, entity1, 3.3)
     add_component(world, entity2, 2.0)
     add_component(world,entity3, 1.14)
     add_component(world, entity, 5.5)
 
-   // group(world, f)
+    group(world, f)
     add_component(world,entity4, 2.1)
 
-    fmt.println("\n\n")
+    remove_component(world, entity2, f64)
+
     fmt.println("F64 struct entities: ",get_entities_with_component(world, f64))
+    fmt.println(get_components_with_id(world, f64))
+
+    fmt.println("\n\n")
+
     fmt.println("Int struct entities: ",get_entities_with_component(world, int))
+    fmt.println(get_components_with_id(world, int))
+
 }
