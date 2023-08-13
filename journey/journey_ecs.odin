@@ -258,11 +258,7 @@ add_component :: proc(world : ^World, entity : Entity, $component : $T){
             is_valid &= internal_has_component(&world.components_stores[store.component_store_index], entity)
         }
 
-
         if is_valid == 1 {
-            store_group.start += 1
-
-            fmt.println(store_group)
             for all in group_components{
                 store := &world.component_store_info[all];
                 component_store := &world.components_stores[store.component_store_index]
@@ -271,6 +267,8 @@ add_component :: proc(world : ^World, entity : Entity, $component : $T){
                     internal_swap_value(component_store, internal_get_entity(component_store, store_group.start), entity)
                 }
             }
+            store_group.start += 1
+
         }
     }
 }
@@ -309,7 +307,7 @@ group :: proc(world : ^World,  query_desc : ECS_Query_Dec) {
     // Since we are doing a iteration over all the entities and this is rather inefficient when there is alot of entity rather then a look up
     // So we can do if it does have it then store if in the first elem (overide previous) other wise store it in sequence and we can iterate it and skip the first elem such as
     // some_slice[1:] this will remove checking if it is valid as well. we can do that above where we assign the group index.
-    for entity, index in internal_retrieve_entities_with_component(&owned_component_store){
+    for entity in internal_retrieve_entities_with_component(&owned_component_store){
         is_valid = 1
 
         //See if it has all the components in the query.
@@ -324,10 +322,10 @@ group :: proc(world : ^World,  query_desc : ECS_Query_Dec) {
                 store := &world.component_store_info[all];
                 component_store := &world.components_stores[store.component_store_index]
 
-                internal_swap_value(component_store, internal_get_entity(component_store, index - 1), entity)
+                internal_swap_value(component_store, internal_get_entity(component_store,  world.groups[group_index].start), entity)
             }
 
-            world.groups[group_index].start = index - 1
+            world.groups[group_index].start += 1
         }
        
     }
@@ -612,68 +610,6 @@ internal_swap_value :: proc(component_storage : ^ComponentStore, dst_entity, src
 
 test :: proc(){
 
-    // fmt.println("Size and Align Of EntityStore: ",size_of(EntityStore), align_of(EntityStore))
-
-    // a : Test_Struct
-    // a.b = 30
-    // c : Test_Struct
-    // c.b = 55
-    
-    // l : Test_Struct
-    // l.b = 200
-    //  sparse_storage := init_component_store(f64)
-    //  entity : Entity = {7, 2}
-    
-
-
-    // entity_2 : Entity = {1,2}
-    // entity_3 := Entity{4, 4}
-    // a : GlobalDynamicPSConstantBuffer = {4.0, 3.0}
-    // internal_insert_component(&sparse_storage, entity,4.0)
-
-
-    // // fmt.println()
-    //  fmt.println("Get Component", internal_retrieve_components(&sparse_storage, f64 ))
-    // fmt.println("Get Component", internal_get_component(&sparse_storage,entity, Test_Struct ))
-
-    // fmt.println("Get other Component before ", internal_get_component(&sparse_storage, entity_2, Test_Struct))
-    // fmt.println("Get Component before removed", internal_get_component(&sparse_storage,entity, Test_Struct ))
-    // // r := remove_component(&sparse_storage, entity_2, Test_Struct)
-    // // fmt.println("Removed component ", r)
-    // fmt.println("Get Component after removed", internal_get_component(&sparse_storage,entity, Test_Struct ))
-    // fmt.println("Get other Component after removed", internal_get_component(&sparse_storage, entity_2, Test_Struct))
-    
-
-    // // b := Test_Struct{
-    // //     b = 100,
-    // // }
-    
-    // // set_component(&sparse_storage, entity_2, b)
-
-    // fmt.println(internal_retrieve_entities_with_component(&sparse_storage))
-    // fmt.println(internal_retrieve_components(&sparse_storage, Test_Struct))
-
-
-
-    // queue : Small_Circular_Buffer(8)
-    // init_circular_buffer(&queue)
-    // enqueue(&queue, Entity{0,1})
-    // enqueue(&queue, Entity{0,2})
-    // enqueue(&queue, Entity{0,3})
-    // enqueue(&queue, Entity{0,4})
-    // enqueue(&queue, Entity{0,5})
-    // enqueue(&queue, Entity{0,6})
-    // enqueue(&queue, Entity{0,7})
-    // enqueue(&queue, Entity{0,8})
-
-    // fmt.println(dequeue(&queue))
-    // fmt.println(dequeue(&queue))
-    // fmt.println(dequeue(&queue))
-    // fmt.println(dequeue(&queue))
-    // fmt.println(dequeue(&queue))
-    // fmt.println(dequeue(&queue))
-    // fmt.println(dequeue(&queue))
-    // fmt.println(dequeue(&queue))
 
     entity : Entity = {0, 2}
     entity1 : Entity = {1, 2}
@@ -682,14 +618,7 @@ test :: proc(){
     entity3 :Entity = {10 , 4}
     entity4 :Entity = {20 , 4}
 
-    // a : Test_Struct
-    // a.b = 10
 
-    // b : Test_Struct
-    // b.b = 20
-
-    // c : Test_Struct
-    // c.b = 30
 
     world := init_world()
 
@@ -700,17 +629,21 @@ test :: proc(){
     register(world, f64)
     register(world, int)
 
+    //group(world, f)
+
+
     add_component(world,entity4, 5)
     add_component(world,entity, 5)
     add_component(world,entity2, 10)
 
     add_component(world, entity1, 3.3)
-    add_component(world, entity, 5.5)
     add_component(world, entity2, 2.0)
     add_component(world,entity3, 1.14)
+    add_component(world, entity, 5.5)
 
 
     group(world, f)
+    add_component(world,entity4, 2.1)
 
 
 
