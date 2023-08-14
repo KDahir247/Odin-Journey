@@ -88,10 +88,12 @@ ECS_Query_Dec :: struct{
 
 GroupData :: struct{
     all_query : []typeid,
-    exlude_query : []typeid,
     start : int,
 }
 
+
+Group :: struct{
+}
 
 ////////////////////////// ECS World ////////////////////////////////////
 
@@ -225,6 +227,7 @@ get_components_with_id :: proc(world : ^World, $component : typeid) -> []compone
 @(optimization_mode="speed")
 add_component :: proc(world : ^World, entity : Entity, $component : $T){
     component_store_info := world.component_store_info[T]
+
     internal_insert_component(&world.components_stores[component_store_info.component_store_index], entity, component)
 
     if component_store_info.group_index != -1{
@@ -234,14 +237,25 @@ add_component :: proc(world : ^World, entity : Entity, $component : $T){
 
 
 @(optimization_mode="speed")
-remove_component :: proc(world : ^World, entity : Entity, $component_type : typeid){
+remove_component :: proc(world : ^World, entity : Entity, $component_type : typeid, $safety_check : bool){
     component_store_info := world.component_store_info[component_type]
 
-    if component_store_info.group_index != -1{
-        group_maybe_remove(world, entity, component_store_info.group_index)
-    }
+    when safety_check{
+        if internal_has_component(&world.components_stores[component_store_info.component_store_index], entity) == 1{
+            if component_store_info.group_index != -1{
+                group_maybe_remove(world, entity, component_store_info.group_index)
+            }
+        
+            internal_remove_component(&world.components_stores[component_store_info.component_store_index], entity, component_type)
+        }
 
-    internal_remove_component(&world.components_stores[component_store_info.component_store_index], entity, component_type)
+    }else{
+        if component_store_info.group_index != -1{
+            group_maybe_remove(world, entity, component_store_info.group_index)
+        }
+    
+        internal_remove_component(&world.components_stores[component_store_info.component_store_index], entity, component_type)
+    }
 }
 
 // Really fast way to query over the sparse set to get multiple components and entity
@@ -252,11 +266,11 @@ remove_component :: proc(world : ^World, entity : Entity, $component_type : type
 
 //TODO: khal make it fast now and implement exclude.
 @(optimization_mode="size")
-group :: proc(world : ^World,  query_desc : ECS_Query_Dec) {
+group :: proc(world : ^World,  query_desc : ..typeid) {
     group_data : GroupData
 
-    group_data.all_query = query_desc.all
-    group_data.exlude_query = query_desc.none
+    group_data.all_query = query_desc
+    //group_data.exlude_query = query_desc.none
 
     //TODO: check for recycled group
 
@@ -264,10 +278,10 @@ group :: proc(world : ^World,  query_desc : ECS_Query_Dec) {
 
     group_index := len(world.groups) - 1
 
-    owned_store := world.component_store_info[query_desc.all[0]];
+    owned_store := world.component_store_info[query_desc[0]];
     owned_component_store := world.components_stores[owned_store.component_store_index]
 
-    for all in query_desc.all{
+    for all in query_desc{
         store := &world.component_store_info[all];
         store^.group_index = group_index
     }
@@ -294,7 +308,6 @@ group_maybe_remove :: proc(world : ^World, entity : Entity, group_index : int){
         is_valid &= internal_has_component(&component_store, entity)
     }
 
-    //Since if there is only one entity that 
     if is_valid == 1{
         if swap_index > 0{
 
@@ -318,6 +331,7 @@ group_maybe_add :: proc(world : ^World, entity : Entity, group_index : int){
     all_components := store_group.all_query
 
     is_valid := 1
+
     for all in store_group.all_query{
         store := world.component_store_info[all];
         component_store := world.components_stores[store.component_store_index]
@@ -602,14 +616,6 @@ internal_retrieve_entities_with_component :: #force_inline proc(component_storag
     return ([^]Entity)(component_storage.entities)[:component_storage.len]
 }
 
-internal_swap_valuec := proc(component_storage : ^ComponentStore, dst_entity, src_entity : Entity){
-    dst_id := component_storage.sparse[dst_entity.id]
-    src_id := component_storage.sparse[src_entity.id]
-
-    slice.ptr_swap_non_overlapping(([^]Entity)(component_storage.entities)[dst_id:], ([^]Entity)(component_storage.entities)[src_id:], size_of(Entity))
-    slice.ptr_swap_non_overlapping(([^]rawptr)(component_storage.components)[dst_id:], ([^]rawptr)(component_storage.components)[src_id:], size_of(component_storage.type))
-}
-
 @(private)
 @(optimization_mode="speed")
 internal_swap_value :: proc(component_storage : ^ComponentStore, dst_entity, src_entity : Entity) #no_bounds_check{
@@ -634,28 +640,28 @@ test :: proc(){
     world := init_world()
 
     f := ECS_Query_Dec{
-        all = []typeid{ f64, int},
+        all = []typeid{ },
     }
 
     register(world, f64)
     register(world, int)
 
     //group(world, f)
+    group(world, f64, int)
 
     add_component(world,entity4, 5)
     add_component(world,entity, 5)
     add_component(world,entity2, 10)
+    add_component(world,entity, 30)
 
 
     add_component(world, entity1, 3.3)
-    add_component(world, entity2, 2.0)
+    //add_component(world, entity2, 2.0, true)
     add_component(world,entity3, 1.14)
     add_component(world, entity, 5.5)
-
-    group(world, f)
     add_component(world,entity4, 2.1)
 
-    remove_component(world, entity2, f64)
+    //remove_component(world, entity2, f64, true)
 
     fmt.println("F64 struct entities: ",get_entities_with_component(world, f64))
     fmt.println(get_components_with_id(world, f64))
