@@ -10,6 +10,10 @@ import "core:mem"
 DEFAULT_MAX_ENTITY_WITH_COMPONENT :: 2048
 INVALID_ENTITY :: Entity{-1, 0}
 
+// Hi bit are the entity id, Lo bit are the version
+_Entity :: distinct int
+
+//TODO: khal remove and use distinct _Entity.
 //TODO: khal later we will store version and id in a single variable for entity.
 @(private)
 Entity :: struct{
@@ -18,6 +22,15 @@ Entity :: struct{
 }
 
 ////////////////////////////// ECS Utility ////////////////////////////////////
+
+
+//return 0 for all negative and 1 for all postive and zero.
+@(private)
+@(optimization_mode="speed")
+normalize_value :: #force_inline proc "contextless" (val : int) -> int{
+    return (val >> 63) + 1 //arithemtic shift
+}
+
 //size must have all bit set to one plus 1. eg. 0b0111 == 7 then we add 1 so 8
 @(private)
 Small_Circular_Buffer :: struct($size : uint){
@@ -264,26 +277,25 @@ remove_component :: proc(world : ^World, entity : Entity, $component_type : type
 // unless the position is removed from group 1 
 // Checking if component is part of another group is not checked and handled it will cause undefined behaviour currently.
 
-//TODO: khal make it fast now and implement exclude.
 @(optimization_mode="size")
 group :: proc(world : ^World,  query_desc : ..typeid) {
     group_data : GroupData
 
     group_data.all_query = query_desc
-    //group_data.exlude_query = query_desc.none
 
     //TODO: check for recycled group
-
     append(&world.groups,group_data)
-
-    group_index := len(world.groups) - 1
 
     owned_store := world.component_store_info[query_desc[0]];
     owned_component_store := world.components_stores[owned_store.component_store_index]
+    
+    group_index := len(world.groups) - 1
 
     for all in query_desc{
         store := &world.component_store_info[all];
         store^.group_index = group_index
+
+        component_store := world.components_stores[store.component_store_index].len
     }
 
     for entity in internal_retrieve_entities_with_component(&owned_component_store){
@@ -291,7 +303,32 @@ group :: proc(world : ^World,  query_desc : ..typeid) {
     }
 }
 
-//TODO: optimize it 
+
+@(private)
+@(optimization_mode="speed")
+group_maybe_add :: proc(world : ^World, entity : Entity, group_index : int){
+    store_group := &world.groups[group_index]
+
+    is_valid := 1
+
+    for all in store_group.all_query{
+        store := world.component_store_info[all];
+        component_store := world.components_stores[store.component_store_index]
+        is_valid &= internal_has_component(&world.components_stores[store.component_store_index], entity)
+    }
+
+    offset_index := (1.0 - is_valid) * len(store_group.all_query)
+
+    for all in store_group.all_query[offset_index:]{
+        store := &world.component_store_info[all];
+        component_store := &world.components_stores[store.component_store_index]
+
+        if (component_store.sparse[entity.id] > store_group.start) do internal_swap_value(component_store, internal_get_entity(component_store, store_group.start), entity)
+    }
+
+    store_group.start += is_valid
+}
+
 @(private)
 @(optimization_mode="speed")
 group_maybe_remove :: proc(world : ^World, entity : Entity, group_index : int){
@@ -308,57 +345,20 @@ group_maybe_remove :: proc(world : ^World, entity : Entity, group_index : int){
         is_valid &= internal_has_component(&component_store, entity)
     }
 
-    if is_valid == 1{
-        if swap_index > 0{
+    offset_mask := 1 - (is_valid & normalize_value(swap_index)); //swap_index > 0
+    offset_index := len(all_components) * offset_mask
 
-            for all in all_components{
-                store := world.component_store_info[all];
-                component_store := world.components_stores[store.component_store_index]
-
-                internal_swap_value(&component_store, internal_get_entity(&component_store, swap_index), entity)
-            }
-        }
-        
-        store_group.start -= 1
-    }
-}
-
-//TODO: khal Optimize this
-@(private)
-@(optimization_mode="speed")
-group_maybe_add :: proc(world : ^World, entity : Entity, group_index : int){
-    store_group := &world.groups[group_index]
-    all_components := store_group.all_query
-
-    is_valid := 1
-
-    for all in store_group.all_query{
+    for all in all_components[offset_index:]{
         store := world.component_store_info[all];
         component_store := world.components_stores[store.component_store_index]
-        is_valid &= internal_has_component(&world.components_stores[store.component_store_index], entity)
+
+        internal_swap_value(&component_store, internal_get_entity(&component_store, swap_index), entity)
     }
+        
+    store_group.start -= is_valid
 
-    //TODO:khal implement exlude query
-    // for none in store_group.exlude_query{
-    //     store := world.component_store_info[none];
-    //     component_store := world.components_stores[store.component_store_index]
-
-    //     is_valid &= (1 - internal_has_component(&world.components_stores[store.component_store_index], entity))
-    // }
-
-    if is_valid == 1 {
-        for all in store_group.all_query{
-            store := &world.component_store_info[all];
-            component_store := &world.components_stores[store.component_store_index]
-
-            if (component_store.sparse[entity.id] > store_group.start){
-                internal_swap_value(component_store, internal_get_entity(component_store, store_group.start), entity)
-            }
-        }
-        store_group.start += 1
-
-    }
 }
+
 
 // Slower way to query over sparse set to get multiple components and entity
 // Not restrictive as group, since there is no dependencies.
@@ -562,9 +562,6 @@ internal_set_component :: proc(component_storage : ^ComponentStore, entity : Ent
     comp_ptr^ = component
 }
 
-
-//TODO: khal rework since we change the structure of component_storage. Also remove the optional_ok internal fn are designed to have as little check to make it fast.
-//TODO: khal can we remove component parameter and just use infer the type of component in this ComponentStore
 @(private)
 @(optimization_mode="size")
 internal_remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) -> component{
@@ -647,7 +644,6 @@ test :: proc(){
     register(world, int)
 
     //group(world, f)
-    group(world, f64, int)
 
     add_component(world,entity4, 5)
     add_component(world,entity, 5)
@@ -656,19 +652,23 @@ test :: proc(){
 
 
     add_component(world, entity1, 3.3)
-    //add_component(world, entity2, 2.0, true)
+    add_component(world, entity2, 2.0)
     add_component(world,entity3, 1.14)
     add_component(world, entity, 5.5)
     add_component(world,entity4, 2.1)
+    group(world, f64, int)
 
-    //remove_component(world, entity2, f64, true)
+    remove_component(world, entity2, f64, true)
 
     fmt.println("F64 struct entities: ",get_entities_with_component(world, f64))
     fmt.println(get_components_with_id(world, f64))
-
-    fmt.println("\n\n")
-
     fmt.println("Int struct entities: ",get_entities_with_component(world, int))
     fmt.println(get_components_with_id(world, int))
 
+
+    a := []f32{2.0, 3.0, 4.0, 5.0}
+
+    for b in a[:0]{
+        fmt.println("call",b)
+    }
 }
