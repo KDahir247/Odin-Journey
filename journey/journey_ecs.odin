@@ -7,6 +7,7 @@ import "core:intrinsics"
 import "core:mem"
 
 
+DEFAULT_ENTITY_STORE_CAPACITY :: 2048
 DEFAULT_MAX_ENTITY_WITH_COMPONENT :: 2048
 INVALID_ENTITY :: Entity{-1, 0}
 
@@ -129,7 +130,7 @@ World :: struct{
 init_world :: proc() -> ^World{
     world := new(World)
     
-    world.entities_stores = init_entity_store()
+    world.entities_stores = init_entity_store(DEFAULT_ENTITY_STORE_CAPACITY)
     world.components_stores = make([dynamic]ComponentStore)
     world.component_store_info = make(map[typeid]ComponentStoreData)
     world.groups = make([dynamic]GroupData)
@@ -373,7 +374,7 @@ query :: proc(world : ^World,  query_desc : ECS_Query_Dec){
 }
 
 @(optimization_mode="speed")
-create_entity :: proc(world : ^World) -> Entity{
+create_entity :: proc(world : ^World) -> u32{
     return internal_create_entity(&world.entities_stores)
 }
 
@@ -406,72 +407,100 @@ remove_entity :: proc(world : ^World, entity : Entity){
     //TODO: khal we want to remove the group if the entity is in a group
     //TODO: we want to remove the component it has in the component store.
     //then we can call destroy entity 
-    internal_destroy_entity(&world.entities_stores, entity)
+    //internal_destroy_entity(&world.entities_stores, entity)
 }
 
 ///////////////////////////////////////////////////////////////////
 
 //////////////////////// Entity Store /////////////////////////////
 
-//64
+//TODO: khal we need to design a way to handle invalid/stale versioning on entities
 EntityStore :: struct{
-    entities : [dynamic]Entity, // 40
-    recycled_entities : Small_Circular_Buffer(8), //24
+    //alive & dead entities
+    entities : [dynamic]u64,
+    // how many entity has been destroyed, but not yet recycled. 
+    available_to_recycle : int,
+    //tell us the next entity to recycle.
+    next_recycle : u32,
 }
 
 @(private)
 @(optimization_mode="size")
-init_entity_store :: proc() -> EntityStore{
-    circular_buffer : Small_Circular_Buffer(8)
-    init_circular_buffer(&circular_buffer)
-
+init_entity_store :: proc($capacity : int) -> EntityStore{
+    entities := make([dynamic]u64, 0,capacity)
+    
     entity_store := EntityStore{
-        entities = make_dynamic_array([dynamic]Entity),
-        recycled_entities = circular_buffer,
+        entities = entities,
+        available_to_recycle = 0,
+        next_recycle = 0,
     }
-
+    
     return entity_store
 }
+
 
 
 @(private)
 @(optimization_mode="size")
 deinit_entity_store :: proc(entity_store : ^EntityStore){
-    deinit_circular_buffer(&entity_store.recycled_entities)
     delete_dynamic_array(entity_store.entities)
 }
+@(private)
+@(optimization_mode="speed")
+internal_create_entity :: proc(entity_store : ^EntityStore) -> u32{
+    entity : u32 
 
-@(optimization_mode="size")
-internal_clear_recycled_entities :: proc(entity_store : ^EntityStore){
-    clear(&entity_store.recycled_entities)
+   if entity_store.available_to_recycle > 0{
+    entity  = entity_store.next_recycle 
+
+    entity_store.next_recycle = u32(entity_store.entities[entity] >> 32)
+    entity_store.entities[entity] = u64(entity) << 32
+
+    entity_store.available_to_recycle -= 1
+   }else{
+    entity = u32(len(entity_store.entities))  
+
+    append(&entity_store.entities, u64(entity) << 32)
+   }
+
+   return entity
 }
 
 @(private)
 @(optimization_mode="speed")
-internal_create_entity :: proc(entity_store : ^EntityStore) -> Entity{
+internal_destroy_entity :: proc(entity_store : ^EntityStore, entity : u32){
+    entity_store.entities[entity] += 1
+    entity_store.available_to_recycle += 1
 
-    entity : Entity = INVALID_ENTITY
-
-    if contains(&entity_store.recycled_entities){
-        recycled_entity := dequeue(&entity_store.recycled_entities)
-        entity.id = recycled_entity.id
-
-        entity_store.entities[recycled_entity.id] = entity
-
-    }else{
-        current_entity_id := len(entity_store.entities)
-        entity.id = current_entity_id
-        append(&entity_store.entities, entity)
+    if entity_store.next_recycle != 0{
+                 entity_store.entities[entity] &= 0xFFFFFFFF 
+                 entity_store.entities[entity] |= u64(entity_store.next_recycle) << 32 
     }
 
-    return entity
+    entity_store.next_recycle = entity
+}
+
+
+@(private)
+@(optimization_mode="speed")
+internal_entity_is_valid :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> int{
+    return 0 //TODO: khal implement
 }
 
 @(private)
 @(optimization_mode="speed")
-internal_destroy_entity :: proc(entity_store : ^EntityStore, entity : Entity){
-    entity_store.entities[entity.id] = INVALID_ENTITY
-    enqueue(&entity_store.recycled_entities, entity)
+internal_entity_is_alive :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> int{
+    dirty_version := entity_store.entities[entity] & 0xFFFF
+    version := entity_store.entities[entity] & 0xFFFF0000
+
+
+    return int(1 -  (version - dirty_version))
+}
+
+@(private)
+@(optimization_mode="speed")
+internal_fetch_entity_detail :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> u64{
+    return entity_store.entities[entity]
 }
 
 //////////////////////////////////////////////////////////////////
@@ -627,48 +656,84 @@ internal_swap_value :: proc(component_storage : ^ComponentStore, dst_entity, src
 ///////////////////////////////////////////////////////////
 
 test :: proc(){
-    entity : Entity = {0, 2}
-    entity1 : Entity = {1, 2}
-    entity2 : Entity = {2, 2}
+    // entity : Entity = {0, 2}
+    // entity1 : Entity = {1, 2}
+    // entity2 : Entity = {2, 2}
 
-    entity3 :Entity = {10 , 4}
-    entity4 :Entity = {20 , 4}
+    // entity3 :Entity = {10 , 4}
+    // entity4 :Entity = {20 , 4}
 
-    world := init_world()
+    // world := init_world()
 
-    f := ECS_Query_Dec{
-        all = []typeid{ },
-    }
+    // f := ECS_Query_Dec{
+    //     all = []typeid{ },
+    // }
 
-    register(world, f64)
-    register(world, int)
+    // register(world, f64)
+    // register(world, int)
 
-    //group(world, f)
+    // //group(world, f)
 
-    add_component(world,entity4, 5)
-    add_component(world,entity, 5)
-    add_component(world,entity2, 10)
-    add_component(world,entity, 30)
-
-
-    add_component(world, entity1, 3.3)
-    add_component(world, entity2, 2.0)
-    add_component(world,entity3, 1.14)
-    add_component(world, entity, 5.5)
-    add_component(world,entity4, 2.1)
-    group(world, f64, int)
-
-    remove_component(world, entity2, f64, true)
-
-    fmt.println("F64 struct entities: ",get_entities_with_component(world, f64))
-    fmt.println(get_components_with_id(world, f64))
-    fmt.println("Int struct entities: ",get_entities_with_component(world, int))
-    fmt.println(get_components_with_id(world, int))
+    // add_component(world,entity4, 5)
+    // add_component(world,entity, 5)
+    // add_component(world,entity2, 10)
+    // add_component(world,entity, 30)
 
 
-    a := []f32{2.0, 3.0, 4.0, 5.0}
+    // add_component(world, entity1, 3.3)
+    // add_component(world, entity2, 2.0)
+    // add_component(world,entity3, 1.14)
+    // add_component(world, entity, 5.5)
+    // add_component(world,entity4, 2.1)
+    // group(world, f64, int)
 
-    for b in a[:0]{
-        fmt.println("call",b)
-    }
+    // remove_component(world, entity2, f64, true)
+
+    // fmt.println("F64 struct entities: ",get_entities_with_component(world, f64))
+    // fmt.println(get_components_with_id(world, f64))
+    // fmt.println("Int struct entities: ",get_entities_with_component(world, int))
+    // fmt.println(get_components_with_id(world, int))
+
+
+    // a := []f32{2.0, 3.0, 4.0, 5.0}
+
+    // for b in a[:0]{
+    //     fmt.println("call",b)
+    // }
+
+
+
+    ///////////////////////// Entity Store test //////////////////////////////////
+
+
+    entity_store : EntityStore = init_entity_store(2048)
+
+    a := internal_create_entity(&entity_store)
+    b := internal_create_entity(&entity_store)
+    c := internal_create_entity(&entity_store)
+    d := internal_create_entity(&entity_store)
+    e := internal_create_entity(&entity_store)
+    f := internal_create_entity(&entity_store)
+    g := internal_create_entity(&entity_store)
+
+
+    internal_destroy_entity(&entity_store, g)
+    fmt.println(entity_store)
+
+    internal_destroy_entity(&entity_store, f)
+    fmt.println(entity_store)
+
+    internal_destroy_entity(&entity_store, e)
+    fmt.println(entity_store)
+
+
+     test1 := internal_create_entity(&entity_store)
+     test2 := internal_create_entity(&entity_store)
+     test3 := internal_create_entity(&entity_store)
+
+
+     fmt.printf("%b, %b, %b\n", test1, test2, test3)
+
+     fmt.println(entity_store)
+
 }
