@@ -475,7 +475,6 @@ internal_insert_component :: proc(component_storage : ^ComponentStore, entity : 
     local_component := component
     local_entity := entity
 
-    fmt.println("entity", entity)
     dense_id := component_storage.sparse[entity]
     has_mask := internal_has_component(component_storage, entity)
     incr_mask := (1.0 -  has_mask)
@@ -556,7 +555,6 @@ internal_has_component :: #force_inline proc(component_storage : ^ComponentStore
 @(private)
 @(optimization_mode="speed")
 internal_retrieve_components :: #force_inline proc(component_storage : ^ComponentStore, $component_type : typeid) -> []component_type #no_bounds_check{
-    fmt.println(component_storage.len)
     return ([^]component_type)(component_storage.components)[:component_storage.len]
 }
 
@@ -625,52 +623,10 @@ test :: proc(){
     entities := fetch_group_entities(world, group)
     float  := fetch_group_element_at(world, group, 0, f64)
     integer := fetch_group_element_at(world, group, 1, int)
-
     
-    // for i in 0..<len(entities){
-    //     fmt.println(integer[i])
-    //     integer[i] += 10
-    //     fmt.println(integer[i])
-    // }
-
-    // v: =  NULL_ENTITY & 0x80000000
-
-    // fmt.println(i32(NULL_ENTITY & 0x7FFFFFFF) - i32(v))
-    
-
-    // a := []f32{2.0, 3.0, 4.0, 5.0}
-
-    // for b in a[:0]{
-    //     fmt.println("call",b)
-    // }
-
-    ///////////////////////// Entity Store test //////////////////////////////////
-
-
-    // entity_store : EntityStore = init_entity_store(2048)
-
-    // a := internal_create_entity(&entity_store)
-    // b := internal_create_entity(&entity_store)
-    // c := internal_create_entity(&entity_store)
-    // d := internal_create_entity(&entity_store)
-    // e := internal_create_entity(&entity_store)
-    // f := internal_create_entity(&entity_store)
-    // g := internal_create_entity(&entity_store)
-
-    //  internal_destroy_entity(&entity_store, a)
-    //  fmt.println(internal_entity_is_alive(&entity_store, a))
-    //  internal_destroy_entity(&entity_store, d)
-    //  fmt.println(internal_entity_is_alive(&entity_store, a))
-
-    //  internal_destroy_entity(&entity_store, g)
-    //  fmt.println(entity_store)
-
-    //  internal_create_entity(&entity_store)
-    //  internal_create_entity(&entity_store)
-    //  internal_create_entity(&entity_store)
-    //  fmt.println(internal_entity_is_alive(&entity_store, a))
-
-    // fmt.println(entity_store)
-    
-
+    for i in 0..<len(entities){
+        fmt.println(integer[i])
+        integer[i] += 10
+        fmt.println(integer[i])
+    }
 }
