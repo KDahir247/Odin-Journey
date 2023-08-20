@@ -9,22 +9,7 @@ import "core:mem"
 DEFAULT_ENTITY_STORE_CAPACITY :: 2048
 DEFAULT_MAX_ENTITY_WITH_COMPONENT :: 2048
 
-
-
-//TODO: khal remove this below
-//TODO: khal remove and use distinct _Entity.
-//TODO: khal later we will store version and id in a single variable for entity.
-@(private)
-Entity :: struct{
-    id : int, // 8
-    version : uint, // 8
-}
-
 NULL_ENTITY : u32 : 0b1111_1111_1111_1111_1111_1111_1111_1111
-
-//
-
-
 ////////////////////////////// ECS Utility ////////////////////////////////////
 
 //return 0 for all negative and 1 for all postive and zero.
@@ -52,7 +37,6 @@ GroupData :: struct{
     all_query : []typeid,
     start : int,
 }
-
 
 Group :: struct($S : int){
     store_indices : [S]int,
@@ -142,31 +126,25 @@ all_store_types :: proc(world : ^World) -> []typeid {
 
 
 @(optimization_mode="speed")
-set_component :: proc(world : ^World, entity : Entity, component : $T, $safety_check : bool){
-    component_id := world.component_store_info[T].component_store_index
-    
-    when safety_check{
-        if internal_has_component(world.components_stores[component_id], entity) == 1{
-            internal_set_component(world.components_stores[component_id], entity, component)
-        }
-    }else{
+set_component :: proc(world : ^World, entity : u32, component : $T){
+
+    if internal_entity_is_alive(&world.entities_stores, entity) == 1{
+
+        component_id := world.component_store_info[T].component_store_index
         internal_set_component(&world.components_stores[component_id], entity, component)
+    
     }
 }
 
 
 @(optimization_mode="speed")
-get_component :: proc(world : ^World, entity : Entity, $component : typeid, $safety_check : bool) -> ^component{
+get_component :: proc(world : ^World, entity : u32, $component : typeid) -> ^component{
     desired_component : ^component = nil
-    
-    component_id := world.component_store_info[component].component_store_index
 
-    when safety_check{
-        if internal_has_component(world.components_stores[component_id], entity) == 1{
-            desired_component = internal_get_component(world.components_stores[component_id], entity, component)
-        }
-    }else{
-        desired_component = internal_get_component(world.components_stores[component_id], entity, component)
+    if internal_entity_is_alive(&world.entities_stores, entity) == 1{
+        component_id := world.component_store_info[component].component_store_index
+
+        desired_component = internal_get_component(world.components_stores[component_id], entity, component)    
     }
 
     return desired_component
@@ -174,7 +152,7 @@ get_component :: proc(world : ^World, entity : Entity, $component : typeid, $saf
 
 
 @(optimization_mode="speed")
-get_entities_with_component :: proc(world : ^World, component : typeid) -> []Entity{
+get_entities_with_component :: proc(world : ^World, component : typeid) -> []u32{
     component_info := world.component_store_info[component]
     return internal_retrieve_entities_with_component(&world.components_stores[component_info.component_store_index])
 } 
@@ -188,31 +166,26 @@ get_components_with_id :: proc(world : ^World, $component : typeid) -> []compone
 
 
 @(optimization_mode="speed")
-add_component :: proc(world : ^World, entity : Entity, $component : $T){
-    component_store_info := world.component_store_info[T]
+add_component :: proc(world : ^World, entity : u32, $component : $T){
+    if internal_entity_is_alive(&world.entities_stores, entity) == 1{
 
-    internal_insert_component(&world.components_stores[component_store_info.component_store_index], entity, component)
+        component_store_info := world.component_store_info[T]
 
-    if component_store_info.group_index != -1{
-        group_maybe_add(world, entity, component_store_info.group_index)
+        internal_insert_component(&world.components_stores[component_store_info.component_store_index], entity, component)
+    
+        if component_store_info.group_index != -1{
+            group_maybe_add(world, entity, component_store_info.group_index)
+        }
     }
 }
 
 
 @(optimization_mode="speed")
-remove_component :: proc(world : ^World, entity : Entity, $component_type : typeid, $safety_check : bool){
-    component_store_info := world.component_store_info[component_type]
+remove_component :: proc(world : ^World, entity : u32, $component_type : typeid){
 
-    when safety_check{
-        if internal_has_component(&world.components_stores[component_store_info.component_store_index], entity) == 1{
-            if component_store_info.group_index != -1{
-                group_maybe_remove(world, entity, component_store_info.group_index)
-            }
-        
-            internal_remove_component(&world.components_stores[component_store_info.component_store_index], entity, component_type)
-        }
+    if internal_entity_is_alive(&world.entities_stores, entity) == 1{
+        component_store_info := world.component_store_info[component_type]
 
-    }else{
         if component_store_info.group_index != -1{
             group_maybe_remove(world, entity, component_store_info.group_index)
         }
@@ -266,7 +239,7 @@ group :: proc(world : ^World,$size : int,  query_desc : [$E]typeid) -> Group(siz
 }
 
 @(optimization_mode="speed")
-fetch_group_entities :: proc(world : ^World, group : Group($S)) -> []Entity{
+fetch_group_entities :: proc(world : ^World, group : Group($S)) -> []u32{
     return internal_retrieve_entities_with_component_upto(&world.components_stores[group.store_indices[0]], world.groups[group.group_index].start)
 }
 
@@ -279,7 +252,7 @@ fetch_group_element_at :: proc(world : ^World, group : Group($S), $index : int, 
 
 @(private)
 @(optimization_mode="speed")
-group_maybe_add :: proc(world : ^World, entity : Entity, group_index : int){
+group_maybe_add :: proc(world : ^World, entity : u32, group_index : int){
     store_group := &world.groups[group_index]
 
     is_valid := 1
@@ -296,7 +269,7 @@ group_maybe_add :: proc(world : ^World, entity : Entity, group_index : int){
         store := &world.component_store_info[all];
         component_store := &world.components_stores[store.component_store_index]
 
-        if (component_store.sparse[entity.id] > store_group.start) do internal_swap_value(component_store, internal_get_entity(component_store, store_group.start), entity)
+        if (component_store.sparse[entity] > store_group.start) do internal_swap_value(component_store, internal_get_entity(component_store, store_group.start), entity)
     }
 
     store_group.start += is_valid
@@ -304,7 +277,7 @@ group_maybe_add :: proc(world : ^World, entity : Entity, group_index : int){
 
 @(private)
 @(optimization_mode="speed")
-group_maybe_remove :: proc(world : ^World, entity : Entity, group_index : int){
+group_maybe_remove :: proc(world : ^World, entity : u32, group_index : int){
     store_group := &world.groups[group_index]
     all_components := store_group.all_query
 
@@ -352,34 +325,34 @@ create_entity :: proc(world : ^World) -> u32{
 //TODO: khal not done.
 // Relatively slow... currently, since we don't know the component the entity actually has (we need to do linear lookup)
 // Got to structure this differently so it doesn't have to do a linear search.
-@(optimization_mode="speed")
-remove_entity :: proc(world : ^World, entity : Entity){
+// @(optimization_mode="speed")
+// remove_entity :: proc(world : ^World, entity : u32){
 
-    for type, component_data in world.component_store_info{
+//     for type, component_data in world.component_store_info{
 
-        component_store := &world.components_stores[component_data.component_store_index]
+//         component_store := &world.components_stores[component_data.component_store_index]
 
-        if internal_has_component(component_store, entity) == 1{
+//         if internal_has_component(component_store, entity) == 1{
 
-            if component_data.group_index != -1{
+//             if component_data.group_index != -1{
 
-                // It is register in a group we need to conform to the order of the group.
-                // so we need to get the entity pos that we want to delete in the packed array
-                // then swap it with the last valid entity in the group then decrement the group end by 1
-                // then we can remove it since removing it will swap the component and entity in the packed array with the last
-                // and this might not be added in the group, since it doesn't satisfy the query_desc in the group.
-            }
+//                 // It is register in a group we need to conform to the order of the group.
+//                 // so we need to get the entity pos that we want to delete in the packed array
+//                 // then swap it with the last valid entity in the group then decrement the group end by 1
+//                 // then we can remove it since removing it will swap the component and entity in the packed array with the last
+//                 // and this might not be added in the group, since it doesn't satisfy the query_desc in the group.
+//             }
 
-            //TODO: khal removed_component need a constant typeid..
-            //internal_remove_component(component_store, entity, type)
-        }
-    }
+//             //TODO: khal removed_component need a constant typeid..
+//             //internal_remove_component(component_store, entity, type)
+//         }
+//     }
 
-    //TODO: khal we want to remove the group if the entity is in a group
-    //TODO: we want to remove the component it has in the component store.
-    //then we can call destroy entity 
-    //internal_destroy_entity(&world.entities_stores, entity)
-}
+//     //TODO: khal we want to remove the group if the entity is in a group
+//     //TODO: we want to remove the component it has in the component store.
+//     //then we can call destroy entity 
+//     //internal_destroy_entity(&world.entities_stores, entity)
+// }
 
 ///////////////////////////////////////////////////////////////////
 
@@ -481,7 +454,7 @@ deinit_component_store :: proc(comp_storage : ComponentStore){
 @(optimization_mode="size")
 init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMPONENT) -> ComponentStore{
     raw_components,_ := mem.alloc(size_of(type) * size, 64)
-    raw_entities,_ := mem.alloc(size_of(Entity) * size, 64)
+    raw_entities,_ := mem.alloc(4 * size, 64)
     sparse := make_slice([]int, size)
 
     //len(sparse) << 3 is a faster of sizeof(int) * len(sparse) where sizeof(int) == 8 
@@ -498,20 +471,21 @@ init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMP
 
 @(private)
 @(optimization_mode="size")
-internal_insert_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) #no_bounds_check{
+internal_insert_component :: proc(component_storage : ^ComponentStore, entity : u32, component : $T) #no_bounds_check{
     local_component := component
     local_entity := entity
 
-    dense_id := component_storage.sparse[entity.id]
+    fmt.println("entity", entity)
+    dense_id := component_storage.sparse[entity]
     has_mask := internal_has_component(component_storage, entity)
     incr_mask := (1.0 -  has_mask)
 
     dense_index := (component_storage.len * incr_mask) + (dense_id * has_mask)
 
-    component_storage.sparse[entity.id] = dense_index
+    component_storage.sparse[entity] = dense_index
 
     comp_ptr :^T= ([^]T)(component_storage.components)[dense_index:]
-    ent_ptr :^Entity= ([^]Entity)(component_storage.entities)[dense_index:]
+    ent_ptr :^u32= ([^]u32)(component_storage.entities)[dense_index:]
     
     comp_ptr^ = local_component
     ent_ptr^ = local_entity
@@ -521,21 +495,21 @@ internal_insert_component :: proc(component_storage : ^ComponentStore, entity : 
 
 @(private)
 @(optimization_mode="speed")
-internal_get_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) -> ^component  #no_bounds_check{
+internal_get_component :: proc(component_storage : ^ComponentStore, entity : u32, $component : typeid) -> ^component  #no_bounds_check{
     dense_index := component_storage.sparse[entity.id]
     return &([^]component)(component_storage.components)[dense_index]
 }
 
 @(private)
 @(optimization_mode="speed")
-internal_get_entity :: #force_inline proc(component_storage : ^ComponentStore, index : int) -> Entity {
+internal_get_entity :: #force_inline proc(component_storage : ^ComponentStore, index : int) -> u32 {
     return internal_retrieve_entities_with_component(component_storage)[index]
 }
 
 
 @(private)
 @(optimization_mode="speed")
-internal_set_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) #no_bounds_check {
+internal_set_component :: proc(component_storage : ^ComponentStore, entity : u32, component : $T) #no_bounds_check {
     dense_id := component_storage.sparse[entity.id]
     comp_ptr :^T= ([^]T)(component_storage.components)[dense_id:] 
     comp_ptr^ = component
@@ -543,24 +517,24 @@ internal_set_component :: proc(component_storage : ^ComponentStore, entity : Ent
 
 @(private)
 @(optimization_mode="size")
-internal_remove_component :: proc(component_storage : ^ComponentStore, entity : Entity, $component : typeid) -> component{
+internal_remove_component :: proc(component_storage : ^ComponentStore, entity : u32, $component : typeid) -> component{
 
     //TODO: should i put the removed entity in the last element then decrement the len by one. So if we insert the same thing we removed then it is technically cached.. 
     // And should i also put the removed component in the last element then decrement the len by one, So it is is a sense cached.
-    dense_id := component_storage.sparse[entity.id]
+    dense_id := component_storage.sparse[entity]
         
     component_storage.len -= 1
 
-    last_entity := ([^]Entity)(component_storage.entities)[component_storage.len]
+    last_entity := ([^]u32)(component_storage.entities)[component_storage.len]
 
-    ent_ptr :^Entity = ([^]Entity)(component_storage.entities)[dense_id:]
+    ent_ptr :^u32 = ([^]u32)(component_storage.entities)[dense_id:]
     ent_ptr^ = last_entity
 
     mask :=  ((dense_id - component_storage.len) >> 31 & 1)  
     invert_mask := 1 - mask
 
-    component_storage.sparse[last_entity.id] = (dense_id * invert_mask) | (component_storage.sparse[last_entity.id] * mask)  
-    component_storage.sparse[entity.id] = -1
+    component_storage.sparse[last_entity] = (dense_id * invert_mask) | (component_storage.sparse[last_entity] * mask)  
+    component_storage.sparse[entity] = -1
     
     removed_comp_ptr := ([^]component)(component_storage.components)[dense_id:]
     last_comp_ptr := ([^]component)(component_storage.components)[component_storage.len:]
@@ -574,14 +548,15 @@ internal_remove_component :: proc(component_storage : ^ComponentStore, entity : 
 
 @(private)
 @(optimization_mode="speed")
-internal_has_component :: #force_inline proc(component_storage : ^ComponentStore, entity : Entity) -> int #no_bounds_check{
-    return 1 - (component_storage.sparse[entity.id] >> 31) & 1
+internal_has_component :: #force_inline proc(component_storage : ^ComponentStore, entity : u32) -> int #no_bounds_check{
+    return 1 - (component_storage.sparse[entity] >> 31) & 1
 }
 
 
 @(private)
 @(optimization_mode="speed")
 internal_retrieve_components :: #force_inline proc(component_storage : ^ComponentStore, $component_type : typeid) -> []component_type #no_bounds_check{
+    fmt.println(component_storage.len)
     return ([^]component_type)(component_storage.components)[:component_storage.len]
 }
 
@@ -593,53 +568,49 @@ internal_retrieve_components_upto :: #force_inline proc(component_storage : ^Com
 
 @(private)
 @(optimization_mode="speed")
-internal_retrieve_entities_with_component :: #force_inline proc(component_storage : ^ComponentStore) -> []Entity #no_bounds_check{
-    return ([^]Entity)(component_storage.entities)[:component_storage.len]
+internal_retrieve_entities_with_component :: #force_inline proc(component_storage : ^ComponentStore) -> []u32 #no_bounds_check{
+    return ([^]u32)(component_storage.entities)[:component_storage.len]
 }
 
 @(private)
 @(optimization_mode="speed")
-internal_retrieve_entities_with_component_upto :: #force_inline proc(component_storage : ^ComponentStore, len : int) -> []Entity #no_bounds_check{
-    return ([^]Entity)(component_storage.entities)[:len]
+internal_retrieve_entities_with_component_upto :: #force_inline proc(component_storage : ^ComponentStore, len : int) -> []u32 #no_bounds_check{
+    return ([^]u32)(component_storage.entities)[:len]
 }
 
 @(private)
 @(optimization_mode="speed")
-internal_swap_value :: proc(component_storage : ^ComponentStore, dst_entity, src_entity : Entity) #no_bounds_check{
-    dst_id := component_storage.sparse[dst_entity.id]
-    src_id := component_storage.sparse[src_entity.id]
+internal_swap_value :: proc(component_storage : ^ComponentStore, dst_entity, src_entity : u32) #no_bounds_check{
+    dst_id := component_storage.sparse[dst_entity]
+    src_id := component_storage.sparse[src_entity]
 
-    slice.ptr_swap_non_overlapping(([^]Entity)(component_storage.entities)[dst_id:], ([^]Entity)(component_storage.entities)[src_id:], size_of(Entity))
+    slice.ptr_swap_non_overlapping(([^]u32)(component_storage.entities)[dst_id:], ([^]u32)(component_storage.entities)[src_id:], 4)
     slice.ptr_swap_non_overlapping(([^]rawptr)(component_storage.components)[dst_id:], ([^]rawptr)(component_storage.components)[src_id:], size_of(component_storage.type))
-    slice.swap(component_storage.sparse, dst_entity.id, src_entity.id)
+    slice.swap(component_storage.sparse, dst_id, src_id)
 }
 
 ///////////////////////////////////////////////////////////
 
 test :: proc(){
-    entity : Entity = {0, 2}
-    entity1 : Entity = {1, 2}
-    entity2 : Entity = {2, 2}
-
-    entity3 :Entity = {10 , 4}
-    entity4 :Entity = {20 , 4}
 
     world := init_world()
 
-    f := ECS_Query_Dec{
-        all = []typeid{ },
-    }
-
+    
     register(world, f64)
     register(world, int)
 
+    entity := create_entity(world)
+    entity1 := create_entity(world)
+    entity2 := create_entity(world)
+    entity3 := create_entity(world)
+    entity4 := create_entity(world)
+    
     //group(world, f)
 
     add_component(world,entity4, 5)
     add_component(world,entity, 5)
     add_component(world,entity2, 10)
     add_component(world,entity, 30)
-
 
     group := group(world,2, [2]typeid{f64, int})
 
@@ -648,21 +619,19 @@ test :: proc(){
     add_component(world,entity3, 1.14)
     add_component(world, entity, 5.5)
     add_component(world,entity4, 2.1)
-    
-   
 
-    remove_component(world, entity2, f64, true)
-
+    remove_component(world, entity2, f64)
 
     entities := fetch_group_entities(world, group)
     float  := fetch_group_element_at(world, group, 0, f64)
     integer := fetch_group_element_at(world, group, 1, int)
 
-    for i in 0..<len(entities){
-        fmt.println(integer[i])
-        integer[i] += 10
-        fmt.println(integer[i])
-    }
+    
+    // for i in 0..<len(entities){
+    //     fmt.println(integer[i])
+    //     integer[i] += 10
+    //     fmt.println(integer[i])
+    // }
 
     // v: =  NULL_ENTITY & 0x80000000
 
