@@ -6,14 +6,12 @@ import "core:fmt"
 import "core:intrinsics"
 import "core:mem"
 
-
 DEFAULT_ENTITY_STORE_CAPACITY :: 2048
 DEFAULT_MAX_ENTITY_WITH_COMPONENT :: 2048
-INVALID_ENTITY :: Entity{-1, 0}
 
-// Hi bit are the entity id, Lo bit are the version
-_Entity :: distinct int
 
+
+//TODO: khal remove this below
 //TODO: khal remove and use distinct _Entity.
 //TODO: khal later we will store version and id in a single variable for entity.
 @(private)
@@ -22,8 +20,12 @@ Entity :: struct{
     version : uint, // 8
 }
 
-////////////////////////////// ECS Utility ////////////////////////////////////
+NULL_ENTITY : u32 : 0b1111_1111_1111_1111_1111_1111_1111_1111
 
+//
+
+
+////////////////////////////// ECS Utility ////////////////////////////////////
 
 //return 0 for all negative and 1 for all postive and zero.
 @(private)
@@ -32,60 +34,6 @@ normalize_value :: #force_inline proc "contextless" (val : int) -> int{
     return (val >> 63) + 1 //arithemtic shift
 }
 
-//size must have all bit set to one plus 1. eg. 0b0111 == 7 then we add 1 so 8
-@(private)
-Small_Circular_Buffer :: struct($size : uint){
-    buffer : []Entity, // 16 byte
-    // HI 32 bit are the tail the LO 32 bit are the head
-    shared_index : uint, // 8
-}
-
-@(optimization_mode="size")
-init_circular_buffer :: proc(q : ^$Q/Small_Circular_Buffer($T)){
-    q^.buffer = make_slice([]Entity, T)
-    q.shared_index = 0
-}
-
-@(optimization_mode="size")
-deinit_circular_buffer :: proc(q : ^$Q/Small_Circular_Buffer($T)){
-    delete_slice(q^.buffer)
-    q.shared_index = 0
-}
-
-//TODO: khal break dependencies.
-@(optimization_mode="speed")
-enqueue :: proc(q : ^$Q/Small_Circular_Buffer($T), entity : Entity){
-    head := q.shared_index >> 32
-
-    q.buffer[head] = entity
-
-    next_head := (head + 1) & (T - 1)
-    q.shared_index = (next_head << 32) | (q.shared_index & 0xFFFFFFFF)
-}
-
-@(optimization_mode="speed")
-dequeue :: proc(q : ^$Q/Small_Circular_Buffer($T)) -> Entity{
-    tail := (q.shared_index & 0xFFFFFFFF)
-
-    value := q.buffer[tail]
-
-    next_tail := (tail + 1) & (T - 1)
-    q.shared_index = (q.shared_index & 0xFFFFFFFF00000000) | next_tail
-    
-    return value
-}
-
-@(optimization_mode="size")
-clear :: proc(q : ^$Q/Small_Circular_Buffer($T)){
-    q.shared_index = 0
-    intrinsics.mem_zero(raw_data(q.buffer), size_of(Entity) * len(q.buffer))
-}
-
-
-@(optimization_mode="speed")
-contains :: proc(q : ^$Q/Small_Circular_Buffer($T)) -> bool{
-    return (q.shared_index >> 32) > (q.shared_index & 0xFFFFFFFF)
-}
 ////////////////////////////////////////////////////////////////////////////
 
 
@@ -106,7 +54,9 @@ GroupData :: struct{
 }
 
 
-Group :: struct{
+Group :: struct($S : int){
+    store_indices : [S]int,
+    group_index : int,
 }
 
 ////////////////////////// ECS World ////////////////////////////////////
@@ -115,7 +65,6 @@ ComponentStoreData :: struct{
     group_index : int,
     component_store_index : int,
 }
-
 
 World :: struct{
     entities_stores : EntityStore, 
@@ -225,7 +174,7 @@ get_component :: proc(world : ^World, entity : Entity, $component : typeid, $saf
 
 
 @(optimization_mode="speed")
-get_entities_with_component :: proc(world : ^World, $component : typeid) -> []Entity{
+get_entities_with_component :: proc(world : ^World, component : typeid) -> []Entity{
     component_info := world.component_store_info[component]
     return internal_retrieve_entities_with_component(&world.components_stores[component_info.component_store_index])
 } 
@@ -279,10 +228,19 @@ remove_component :: proc(world : ^World, entity : Entity, $component_type : type
 // Checking if component is part of another group is not checked and handled it will cause undefined behaviour currently.
 
 @(optimization_mode="size")
-group :: proc(world : ^World,  query_desc : ..typeid) {
+group :: proc(world : ^World,$size : int,  query_desc : [$E]typeid) -> Group(size) {
+
+    group : Group(len(query_desc))
+
     group_data : GroupData
 
-    group_data.all_query = query_desc
+    query_descriptor := make_slice([]typeid, len(query_desc))
+   
+    for index in  0..<len(query_desc){
+        query_descriptor[index] = query_desc[index]
+    }
+
+    group_data.all_query = query_descriptor
 
     //TODO: check for recycled group
     append(&world.groups,group_data)
@@ -292,18 +250,32 @@ group :: proc(world : ^World,  query_desc : ..typeid) {
     
     group_index := len(world.groups) - 1
 
-    for all in query_desc{
+    group.group_index = group_index
+    for all,index in query_desc{
         store := &world.component_store_info[all];
         store^.group_index = group_index
-
-        component_store := world.components_stores[store.component_store_index].len
+        group.store_indices[index] = store.component_store_index
     }
 
     for entity in internal_retrieve_entities_with_component(&owned_component_store){
        group_maybe_add(world, entity, group_index)
     }
+
+
+    return group
 }
 
+@(optimization_mode="speed")
+fetch_group_entities :: proc(world : ^World, group : Group($S)) -> []Entity{
+    return internal_retrieve_entities_with_component_upto(&world.components_stores[group.store_indices[0]], world.groups[group.group_index].start)
+}
+
+@(optimization_mode="speed")
+fetch_group_element_at :: proc(world : ^World, group : Group($S), $index : int, $type : typeid) -> []type{
+    assert(world.components_stores[group.store_indices[index]].type == type, "Element order is incorrect when fetching group element")
+
+    return internal_retrieve_components_upto(&world.components_stores[group.store_indices[index]], type, world.groups[group.group_index].start)
+}
 
 @(private)
 @(optimization_mode="speed")
@@ -360,7 +332,6 @@ group_maybe_remove :: proc(world : ^World, entity : Entity, group_index : int){
 
 }
 
-
 // Slower way to query over sparse set to get multiple components and entity
 // Not restrictive as group, since there is no dependencies.
 
@@ -414,20 +385,16 @@ remove_entity :: proc(world : ^World, entity : Entity){
 
 //////////////////////// Entity Store /////////////////////////////
 
-//TODO: khal we need to design a way to handle invalid/stale versioning on entities
 EntityStore :: struct{
-    //alive & dead entities
-    entities : [dynamic]u64,
-    // how many entity has been destroyed, but not yet recycled. 
+    entities : [dynamic]u32,
     available_to_recycle : int,
-    //tell us the next entity to recycle.
     next_recycle : u32,
 }
 
 @(private)
 @(optimization_mode="size")
 init_entity_store :: proc($capacity : int) -> EntityStore{
-    entities := make([dynamic]u64, 0,capacity)
+    entities := make([dynamic]u32, 0,capacity)
     
     entity_store := EntityStore{
         entities = entities,
@@ -438,70 +405,56 @@ init_entity_store :: proc($capacity : int) -> EntityStore{
     return entity_store
 }
 
-
-
 @(private)
 @(optimization_mode="size")
 deinit_entity_store :: proc(entity_store : ^EntityStore){
     delete_dynamic_array(entity_store.entities)
 }
 @(private)
-@(optimization_mode="speed")
+@(optimization_mode="size")
 internal_create_entity :: proc(entity_store : ^EntityStore) -> u32{
     entity : u32 
 
    if entity_store.available_to_recycle > 0{
-    entity  = entity_store.next_recycle 
+    entity = entity_store.next_recycle 
 
-    entity_store.next_recycle = u32(entity_store.entities[entity] >> 32)
-    entity_store.entities[entity] = u64(entity) << 32
+    entity_store.next_recycle = u32(entity_store.entities[entity] >> 16)
+    entity_store.entities[entity] = (entity + 1)  << 16
 
     entity_store.available_to_recycle -= 1
    }else{
-    entity = u32(len(entity_store.entities))  
+    entity = u32(len(entity_store.entities))
 
-    append(&entity_store.entities, u64(entity) << 32)
+    append(&entity_store.entities, (entity + 1) << 16)
    }
 
    return entity
 }
 
 @(private)
-@(optimization_mode="speed")
-internal_destroy_entity :: proc(entity_store : ^EntityStore, entity : u32){
-    entity_store.entities[entity] += 1
+@(optimization_mode="size")
+internal_destroy_entity :: proc(entity_store : ^EntityStore, entity : u32) #no_bounds_check{
+    version_bit := entity_store.entities[entity] & 0xFFFF
+    entity_store.entities[entity] = (entity_store.next_recycle << 16) + (version_bit + 1)
     entity_store.available_to_recycle += 1
 
-    if entity_store.next_recycle != 0{
-                 entity_store.entities[entity] &= 0xFFFFFFFF 
-                 entity_store.entities[entity] |= u64(entity_store.next_recycle) << 32 
-    }
-
-    entity_store.next_recycle = entity
+    entity_store.next_recycle = entity 
 }
 
 
 @(private)
 @(optimization_mode="speed")
 internal_entity_is_valid :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> int{
-    return 0 //TODO: khal implement
+    return u32(len(entity_store.entities) -1) > entity ? 1 : 0
 }
 
 @(private)
 @(optimization_mode="speed")
-internal_entity_is_alive :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> int{
-    dirty_version := entity_store.entities[entity] & 0xFFFF
-    version := entity_store.entities[entity] & 0xFFFF0000
-
-
-    return int(1 -  (version - dirty_version))
+internal_entity_is_alive :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> int #no_bounds_check{
+    entity_val := entity + 1
+    return entity_val == entity_store.entities[entity] >> 16 ? 1 : 0
 }
 
-@(private)
-@(optimization_mode="speed")
-internal_fetch_entity_detail :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> u64{
-    return entity_store.entities[entity]
-}
 
 //////////////////////////////////////////////////////////////////
 
@@ -576,8 +529,6 @@ internal_get_component :: proc(component_storage : ^ComponentStore, entity : Ent
 @(private)
 @(optimization_mode="speed")
 internal_get_entity :: #force_inline proc(component_storage : ^ComponentStore, index : int) -> Entity {
-    //max_len := component_storage.len - 1
-    //safe_index := index > max_len ? max_len : index 
     return internal_retrieve_entities_with_component(component_storage)[index]
 }
 
@@ -585,7 +536,6 @@ internal_get_entity :: #force_inline proc(component_storage : ^ComponentStore, i
 @(private)
 @(optimization_mode="speed")
 internal_set_component :: proc(component_storage : ^ComponentStore, entity : Entity, component : $T) #no_bounds_check {
-    
     dense_id := component_storage.sparse[entity.id]
     comp_ptr :^T= ([^]T)(component_storage.components)[dense_id:] 
     comp_ptr^ = component
@@ -611,7 +561,6 @@ internal_remove_component :: proc(component_storage : ^ComponentStore, entity : 
 
     component_storage.sparse[last_entity.id] = (dense_id * invert_mask) | (component_storage.sparse[last_entity.id] * mask)  
     component_storage.sparse[entity.id] = -1
-
     
     removed_comp_ptr := ([^]component)(component_storage.components)[dense_id:]
     last_comp_ptr := ([^]component)(component_storage.components)[component_storage.len:]
@@ -638,8 +587,20 @@ internal_retrieve_components :: #force_inline proc(component_storage : ^Componen
 
 @(private)
 @(optimization_mode="speed")
+internal_retrieve_components_upto :: #force_inline proc(component_storage : ^ComponentStore, $component_type : typeid, len : int) -> []component_type #no_bounds_check{
+    return ([^]component_type)(component_storage.components)[:len]
+}
+
+@(private)
+@(optimization_mode="speed")
 internal_retrieve_entities_with_component :: #force_inline proc(component_storage : ^ComponentStore) -> []Entity #no_bounds_check{
     return ([^]Entity)(component_storage.entities)[:component_storage.len]
+}
+
+@(private)
+@(optimization_mode="speed")
+internal_retrieve_entities_with_component_upto :: #force_inline proc(component_storage : ^ComponentStore, len : int) -> []Entity #no_bounds_check{
+    return ([^]Entity)(component_storage.entities)[:len]
 }
 
 @(private)
@@ -656,44 +617,57 @@ internal_swap_value :: proc(component_storage : ^ComponentStore, dst_entity, src
 ///////////////////////////////////////////////////////////
 
 test :: proc(){
-    // entity : Entity = {0, 2}
-    // entity1 : Entity = {1, 2}
-    // entity2 : Entity = {2, 2}
+    entity : Entity = {0, 2}
+    entity1 : Entity = {1, 2}
+    entity2 : Entity = {2, 2}
 
-    // entity3 :Entity = {10 , 4}
-    // entity4 :Entity = {20 , 4}
+    entity3 :Entity = {10 , 4}
+    entity4 :Entity = {20 , 4}
 
-    // world := init_world()
+    world := init_world()
 
-    // f := ECS_Query_Dec{
-    //     all = []typeid{ },
-    // }
+    f := ECS_Query_Dec{
+        all = []typeid{ },
+    }
 
-    // register(world, f64)
-    // register(world, int)
+    register(world, f64)
+    register(world, int)
 
-    // //group(world, f)
+    //group(world, f)
 
-    // add_component(world,entity4, 5)
-    // add_component(world,entity, 5)
-    // add_component(world,entity2, 10)
-    // add_component(world,entity, 30)
+    add_component(world,entity4, 5)
+    add_component(world,entity, 5)
+    add_component(world,entity2, 10)
+    add_component(world,entity, 30)
 
 
-    // add_component(world, entity1, 3.3)
-    // add_component(world, entity2, 2.0)
-    // add_component(world,entity3, 1.14)
-    // add_component(world, entity, 5.5)
-    // add_component(world,entity4, 2.1)
-    // group(world, f64, int)
+    group := group(world,2, [2]typeid{f64, int})
 
-    // remove_component(world, entity2, f64, true)
+    add_component(world, entity1, 3.3)
+    add_component(world, entity2, 2.0)
+    add_component(world,entity3, 1.14)
+    add_component(world, entity, 5.5)
+    add_component(world,entity4, 2.1)
+    
+   
 
-    // fmt.println("F64 struct entities: ",get_entities_with_component(world, f64))
-    // fmt.println(get_components_with_id(world, f64))
-    // fmt.println("Int struct entities: ",get_entities_with_component(world, int))
-    // fmt.println(get_components_with_id(world, int))
+    remove_component(world, entity2, f64, true)
 
+
+    entities := fetch_group_entities(world, group)
+    float  := fetch_group_element_at(world, group, 0, f64)
+    integer := fetch_group_element_at(world, group, 1, int)
+
+    for i in 0..<len(entities){
+        fmt.println(integer[i])
+        integer[i] += 10
+        fmt.println(integer[i])
+    }
+
+    // v: =  NULL_ENTITY & 0x80000000
+
+    // fmt.println(i32(NULL_ENTITY & 0x7FFFFFFF) - i32(v))
+    
 
     // a := []f32{2.0, 3.0, 4.0, 5.0}
 
@@ -701,39 +675,33 @@ test :: proc(){
     //     fmt.println("call",b)
     // }
 
-
-
     ///////////////////////// Entity Store test //////////////////////////////////
 
 
-    entity_store : EntityStore = init_entity_store(2048)
+    // entity_store : EntityStore = init_entity_store(2048)
 
-    a := internal_create_entity(&entity_store)
-    b := internal_create_entity(&entity_store)
-    c := internal_create_entity(&entity_store)
-    d := internal_create_entity(&entity_store)
-    e := internal_create_entity(&entity_store)
-    f := internal_create_entity(&entity_store)
-    g := internal_create_entity(&entity_store)
+    // a := internal_create_entity(&entity_store)
+    // b := internal_create_entity(&entity_store)
+    // c := internal_create_entity(&entity_store)
+    // d := internal_create_entity(&entity_store)
+    // e := internal_create_entity(&entity_store)
+    // f := internal_create_entity(&entity_store)
+    // g := internal_create_entity(&entity_store)
 
+    //  internal_destroy_entity(&entity_store, a)
+    //  fmt.println(internal_entity_is_alive(&entity_store, a))
+    //  internal_destroy_entity(&entity_store, d)
+    //  fmt.println(internal_entity_is_alive(&entity_store, a))
 
-    internal_destroy_entity(&entity_store, g)
-    fmt.println(entity_store)
+    //  internal_destroy_entity(&entity_store, g)
+    //  fmt.println(entity_store)
 
-    internal_destroy_entity(&entity_store, f)
-    fmt.println(entity_store)
+    //  internal_create_entity(&entity_store)
+    //  internal_create_entity(&entity_store)
+    //  internal_create_entity(&entity_store)
+    //  fmt.println(internal_entity_is_alive(&entity_store, a))
 
-    internal_destroy_entity(&entity_store, e)
-    fmt.println(entity_store)
-
-
-     test1 := internal_create_entity(&entity_store)
-     test2 := internal_create_entity(&entity_store)
-     test3 := internal_create_entity(&entity_store)
-
-
-     fmt.printf("%b, %b, %b\n", test1, test2, test3)
-
-     fmt.println(entity_store)
+    // fmt.println(entity_store)
+    
 
 }
