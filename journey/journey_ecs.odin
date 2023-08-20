@@ -144,7 +144,7 @@ get_component :: proc(world : ^World, entity : u32, $component : typeid) -> ^com
     if internal_entity_is_alive(&world.entities_stores, entity) == 1{
         component_id := world.component_store_info[component].component_store_index
 
-        desired_component = internal_get_component(world.components_stores[component_id], entity, component)    
+        desired_component = internal_get_component(&world.components_stores[component_id], entity, component)    
     }
 
     return desired_component
@@ -166,7 +166,7 @@ get_components_with_id :: proc(world : ^World, $component : typeid) -> []compone
 
 
 @(optimization_mode="speed")
-add_component :: proc(world : ^World, entity : u32, $component : $T){
+add_component :: proc(world : ^World, entity : u32, component : $T){
     if internal_entity_is_alive(&world.entities_stores, entity) == 1{
 
         component_store_info := world.component_store_info[T]
@@ -495,7 +495,7 @@ internal_insert_component :: proc(component_storage : ^ComponentStore, entity : 
 @(private)
 @(optimization_mode="speed")
 internal_get_component :: proc(component_storage : ^ComponentStore, entity : u32, $component : typeid) -> ^component  #no_bounds_check{
-    dense_index := component_storage.sparse[entity.id]
+    dense_index := component_storage.sparse[entity]
     return &([^]component)(component_storage.components)[dense_index]
 }
 
