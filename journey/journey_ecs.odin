@@ -22,15 +22,6 @@ normalize_value :: #force_inline proc "contextless" (val : int) -> int{
 ////////////////////////////////////////////////////////////////////////////
 
 
-/////////////////////////// ECS Query Struct ///////////////////////////////
-
-ECS_Query_Dec :: struct{
-    all : []typeid,
-    none : []typeid, 
-}
-
-///////////////////////////////////////////////////////////////////////////
-
 /////////////////////////// ECS Group ////////////////////////////////////
 
 GroupData :: struct{
@@ -48,15 +39,15 @@ Group :: struct($S : int){
 ComponentStoreData :: struct{
     group_index : int,
     component_store_index : int,
+    resource_index : int,
 }
 
 World :: struct{
-    entities_stores : EntityStore, 
-    components_stores : [dynamic]ComponentStore, 
+    entities_stores : EntityStore,
     component_store_info : map[typeid]ComponentStoreData,
+    components_stores : [dynamic]ComponentStore, 
     groups : [dynamic]GroupData,
-    //Resource we have to make a way to allow a array of generic type. And only on resource is allowed of the type or a map with key as typid and value as a u8 ptr
-    //resource : u32,
+    resources : [dynamic]rawptr,
 }
 
 @(optimization_mode="size")
@@ -67,6 +58,7 @@ init_world :: proc() -> ^World{
     world.components_stores = make([dynamic]ComponentStore)
     world.component_store_info = make(map[typeid]ComponentStoreData)
     world.groups = make([dynamic]GroupData)
+    world.resources = make([dynamic]rawptr)
 
     return world
 }
@@ -80,8 +72,18 @@ scope_init_world :: proc() -> ^World{
 @(optimization_mode="size")
 deinit_world :: proc(world : ^World){
     deinit_entity_store(&world.entities_stores)
+
+    for store in world.components_stores{
+        deinit_component_store(store)
+    }
+
     delete(world.components_stores)
     delete(world.component_store_info)
+
+    for res in world.resources{
+        free(res)
+    }
+
     delete(world.groups)
     free(world)
 }
@@ -94,19 +96,50 @@ is_register :: #force_inline proc(world : ^World, $component : typeid) -> bool {
 }
 
 @(optimization_mode="size")
-register :: proc(world : ^World, $component : typeid){
+register :: proc(world : ^World, $component : typeid, amount : int = DEFAULT_MAX_ENTITY_WITH_COMPONENT){
     if !is_register(world, component){
 
         world.component_store_info[component] = ComponentStoreData{
             component_store_index = len(world.components_stores),
             group_index = -1,
+            resource_index = -1,
         }
 
-        append(&world.components_stores, init_component_store(component))
-
+        append(&world.components_stores, init_component_store(component, amount))
     }
 }
 
+@(optimization_mode="size")
+create_resource :: proc(world : ^World, resource : ^$T){
+    
+    store := &world.component_store_info[T];
+    store^.resource_index = len(world.resources)
+
+    append(&world.resources, resource)
+}
+
+
+@(optimization_mode="speed")
+get_resource :: proc(world : ^World, $resource_type : typeid) -> resource_type {
+    resource_index := world.component_store_info[resource_type].resource_index
+
+    resource := (^resource_type)(world.resources[resource_index])
+
+    //Don't want the user to delete it. Deleting resource is the responsibility of the ecs world
+    return resource^
+}
+
+@(optimization_mode="speed")
+remove_resource :: proc(world : ^World, $resource_type : typeid){
+    resource_index := world.component_store_info[resource_type].resource_index
+    
+    free(world.resources[resource_index])
+    
+    store := &world.component_store_info[resource_type];
+    store^.resource_index = -1
+
+    unordered_remove(&world.resources,resource_index)
+}
 
 // memory allocation function call free all on context.temp_allocator.
 @(optimization_mode="size")
@@ -310,9 +343,9 @@ group_maybe_remove :: proc(world : ^World, entity : u32, group_index : int){
 
 //TODO: khal not done.
 @(optimization_mode="speed")
-query :: proc(world : ^World,  query_desc : ECS_Query_Dec){
+query :: proc(world : ^World,  query_desc : ..typeid){
 
-    first_must := query_desc.all[0]
+    first_must := query_desc[0]
     group_index := world.component_store_info[first_must].group_index
 
 }
@@ -453,8 +486,8 @@ deinit_component_store :: proc(comp_storage : ComponentStore){
 @(private)
 @(optimization_mode="size")
 init_component_store :: proc(type : typeid, size := DEFAULT_MAX_ENTITY_WITH_COMPONENT) -> ComponentStore{
-    raw_components,_ := mem.alloc(size_of(type) * size, 64)
-    raw_entities,_ := mem.alloc(4 * size, 64)
+    raw_components,_ := mem.alloc(size_of(type) * size)
+    raw_entities,_ := mem.alloc(4 * size)
     sparse := make_slice([]int, size)
 
     //len(sparse) << 3 is a faster of sizeof(int) * len(sparse) where sizeof(int) == 8 

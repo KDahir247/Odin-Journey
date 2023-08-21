@@ -21,14 +21,11 @@ import "../journey"
 @(optimization_mode="size")
 create_game_entity :: proc(batch_handle : uint, instance_data : journey.SpriteInstanceData) -> u32{
     world := cast(^journey.World)context.user_ptr
+    game_entity := journey.create_entity(world)
 
     target_batch := journey.get_component(world,u32(batch_handle), journey.SpriteBatch)
 
     game_sprite_handle := sprite_batch_append(target_batch, instance_data)
-
-    game_entity := journey.create_entity(world)
-
-
 
 	journey.add_component(world, game_entity, journey.SpriteHandle{
         sprite_handle = game_sprite_handle,
@@ -43,29 +40,26 @@ create_game_entity :: proc(batch_handle : uint, instance_data : journey.SpriteIn
 create_sprite_batcher :: proc($tex_path : cstring, $shader_cache : u32) -> uint{
     world := cast(^journey.World)context.user_ptr
     
-	
-    identifier_idx := u32(len(journey.get_entities_with_component(world,journey.SpriteBatchShared )))
-
     sprite_batch_entity := journey.create_entity(world)
 
+    identifier_idx := u32(len(journey.get_entities_with_component(world,journey.SpriteBatchShared )))
 
-	journey.add_component(world, sprite_batch_entity,journey.SpriteBatch{
-    
-		sprite_batch =  make_dynamic_array_len_cap([dynamic]journey.SpriteInstanceData,0, journey.DEFAULT_BATCH_SIZE),
-		// animation_batch = make_dynamic_array_len_cap([dynamic]journey.Rect,0, journey.DEFAULT_BATCH_SIZE),
-        // transform_batch = make_dynamic_array_len_cap([dynamic]matrix[4,4]f32,0, journey.DEFAULT_BATCH_SIZE),
-
-    })
+	width :i32= 0
+	height :i32= 0
+	tex := image.load(tex_path,&width,&height,nil,  4)
 
 	journey.add_component(world, sprite_batch_entity, journey.SpriteBatchShared{
 		identifier = identifier_idx,
+		texture = tex,
+		width = width, 
+		height = height,
+		shader_cache = shader_cache,
 	})
+	
+	journey.add_component(world, sprite_batch_entity,journey.SpriteBatch{
+		sprite_batch =  make_dynamic_array_len_cap([dynamic]journey.SpriteInstanceData,0, journey.DEFAULT_BATCH_SIZE),
+    })
 
-	shared := journey.get_component(world, sprite_batch_entity, journey.SpriteBatchShared)
-
-    shared.texture = image.load(tex_path,&shared.width,&shared.height,nil,  4)
-    shared.shader_cache = shader_cache
-    
     return uint(sprite_batch_entity)
 }
 
@@ -88,7 +82,6 @@ sprite_batch_free :: proc(){
     world := cast(^journey.World)context.user_ptr
     
 	batcher_entity := journey.get_entities_with_component(world, journey.SpriteBatch)
-
 
     for entity in batcher_entity{
 		batcher := journey.get_component(world,entity, journey.SpriteBatch)
@@ -114,7 +107,7 @@ sprite_batch_free :: proc(){
 fixed_update :: proc(fixed_time : f64, elapsed_time : f64, delta_time : f64){
     world := cast(^journey.World)context.user_ptr
 	
-	resource := journey.get_component(world, u32(context.user_index), journey.GameResource)
+	key_resource := journey.get_resource(world,journey.KeyResource)
 	sprites := journey.get_components_with_id(world, journey.SpriteHandle)
 
 	
@@ -125,7 +118,7 @@ fixed_update :: proc(fixed_time : f64, elapsed_time : f64, delta_time : f64){
 		sprite_batch := journey.get_component(world, u32(sprite.batch_handle), journey.SpriteBatch)
 
 		sprite_batch.sprite_batch[sprite.sprite_handle].transform += {
-		 	0.0, 0.0, 0.0, f32(resource.key.dir[3]) * 0.009 * f32(delta_time) + f32(resource.key.dir[0]) * 0.009 * f32(delta_time),
+		 	0.0, 0.0, 0.0, f32(key_resource.dir[3]) * 0.009 * f32(delta_time) + f32(key_resource.dir[0]) * 0.009 * f32(delta_time),
 		 	0.0, 0.0, 0.0, 0.0,
 		 	0.0, 0.0, 0.0, 0.0,
 		 	0.0, 0.0, 0.0, 0.0,
@@ -188,18 +181,16 @@ main ::  proc()  {
 
 	//journey.test()
 	
-	//journey.test()
 	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
 
 	world := journey.init_world()
 
-    journey.register(world, journey.GameResource)
-    journey.register(world, journey.Animator)
-    journey.register(world, journey.SpriteBatchShared)
-    journey.register(world, journey.SpriteBatch)
-	journey.register(world, journey.SpriteHandle)
+    journey.register(world, journey.KeyResource, 1)
+    journey.register(world, journey.Animator, 4)
+    journey.register(world, journey.SpriteBatchShared, 4)
+    journey.register(world, journey.SpriteBatch, 4)
+	journey.register(world, journey.SpriteHandle, 4)
 
-	//ecs_context := ecs.init_ecs()
 	context.user_ptr = world
 	
 	sdl2_event : sdl2.Event
@@ -249,7 +240,6 @@ main ::  proc()  {
         sprite_batch_free()
 
 		journey.deinit_world(world)
-		//ecs.deinit_ecs(&ecs_context)
 		context.user_ptr = nil
 
 		sdl2.DestroyWindow(window)
@@ -261,11 +251,8 @@ main ::  proc()  {
 	render_thread := journey.run_renderer(journey.RenderBackend.DX11,window_info.info.win.window, &render_batch_buffer)
 
 	//TODO: don't like this.
-	
-	resource_entity := journey.create_entity(world)
-	context.user_index = int(resource_entity)
-	journey.add_component(world, resource_entity,journey.GameResource{} )
-	resource_component := journey.get_component(world, resource_entity, journey.GameResource)
+	key_resource :=journey.KeyResource{}
+	journey.create_resource(world, &key_resource)
 
 	//
 	player_batcher_id := create_sprite_batcher("resource/sprite/padawan/pad.png", 0)
@@ -317,22 +304,22 @@ main ::  proc()  {
 			#partial switch sdl2_event.key.keysym.scancode {
 			case sdl2.Scancode.A, sdl2.Scancode.LEFT:
 				{
-					resource_component.key.dir[0] = -int(sdl2_event.key.state)
+					key_resource.dir[0] = -int(sdl2_event.key.state)
 
 				}
 			case sdl2.Scancode.D,sdl2.Scancode.RIGHT: // default
 				{
-					resource_component.key.dir[3] = int(sdl2_event.key.state)
+					key_resource.dir[3] = int(sdl2_event.key.state)
 
 				}
 			case sdl2.Scancode.W, sdl2.Scancode.UP:
 				{
-					resource_component.key.dir[1] = int(sdl2_event.key.state)
+					key_resource.dir[1] = int(sdl2_event.key.state)
 
 				}
 			case sdl2.Scancode.S, sdl2.Scancode.DOWN:
 				{
-					resource_component.key.dir[2] = -int(sdl2_event.key.state)
+					key_resource.dir[2] = -int(sdl2_event.key.state)
 
 				}
 			}

@@ -245,9 +245,6 @@ KeyResource :: struct{
     _ : u8,
 }
 
-GameResource :: struct{
-    key : KeyResource,
-}
 
 ///////////////////////////////////////////////////////
 
