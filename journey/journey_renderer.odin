@@ -102,7 +102,6 @@ init_render_backend :: proc(){
 
 ///////////////////////////// Nil Subsystem //////////////////////////////////
 @(private)
-@(optimization_mode="size")
 init_render_nil_subsystem ::  proc(current_thread : ^thread.Thread){}
 
 //////////////////////////////////////////////////////////////////////////////
@@ -110,7 +109,6 @@ init_render_nil_subsystem ::  proc(current_thread : ^thread.Thread){}
 //////////////////////////// Metal Subsystem /////////////////////////////////
 
 @(private)
-@(optimization_mode="size")
 init_render_metal_subsystem ::  proc(current_thread : ^thread.Thread){
     //Not implemented
 }
@@ -120,7 +118,6 @@ init_render_metal_subsystem ::  proc(current_thread : ^thread.Thread){
 //////////////////////////// Vulkan Subsystem /////////////////////////////////
 
 @(private)
-@(optimization_mode="size")
 init_render_vulkan_subsystem ::  proc(current_thread : ^thread.Thread){
     //Not implemented
 }
@@ -132,7 +129,6 @@ init_render_vulkan_subsystem ::  proc(current_thread : ^thread.Thread){
 
 
 @(private)
-@(optimization_mode="size")
 init_render_opengl_subsystem ::  proc(current_thread : ^thread.Thread){
     //Not implemented
 }
@@ -145,7 +141,6 @@ init_render_opengl_subsystem ::  proc(current_thread : ^thread.Thread){
 
 @(private)
 @(deferred_in=DX_END)
-@(optimization_mode="speed")
 DX_CALL ::  proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := false, loc := #caller_location)  {
     when ODIN_DEBUG{
         if hr != 0{
@@ -162,7 +157,6 @@ DX_CALL ::  proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := fa
 
 
 @(private)
-@(optimization_mode="speed")
 DX_END :: proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := false, loc := #caller_location) {
     if hr == 0 && auto_free_ptr != nil{
         unknown_ptr := cast(^d3d11.IUnknown)auto_free_ptr
@@ -175,7 +169,6 @@ DX_END :: proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := fals
 
 
 @(private)
-@(optimization_mode="size")
 init_render_dx12_subsystem ::  proc(current_thread : ^thread.Thread){
     //Not implemented
 }
@@ -183,7 +176,6 @@ init_render_dx12_subsystem ::  proc(current_thread : ^thread.Thread){
 
 //TODO:khal we need to handle window resize
 @(private)
-@(optimization_mode="size")
 init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     //TODO: DATA NEED ALIGNMENT TO 16 BOTH STRUCT AND PTR.
 
