@@ -19,7 +19,6 @@ normalize_value :: #force_inline proc "contextless" (val : int) -> int{
 
 ////////////////////////////////////////////////////////////////////////////
 
-
 /////////////////////////// ECS Group ////////////////////////////////////
 
 GroupData :: struct{
@@ -32,6 +31,7 @@ GroupData :: struct{
 ComponentStoreData :: struct{
     group_index : int,
     component_store_index : int,
+    //shared_group_index : int, // TODO:khal when implementing sub group
 }
 
 World :: struct{
@@ -41,10 +41,10 @@ World :: struct{
     groups : [dynamic]GroupData,
 }
 
-init_world :: proc() -> ^World{
+init_world :: proc(entity_capacity : int = DEFAULT_MAX_ENTITY) -> ^World{
     world := new(World)
     
-    world.entities_stores = init_entity_store(DEFAULT_MAX_ENTITY)
+    world.entities_stores = init_entity_store(entity_capacity)
     world.components_stores = make([dynamic]ComponentStore)
     world.component_store_info = make(map[typeid]ComponentStoreData)
     world.groups = make([dynamic]GroupData)
@@ -53,8 +53,8 @@ init_world :: proc() -> ^World{
 }
 
 @(deferred_out=deinit_world)
-scope_init_world :: proc() -> ^World{
-   return init_world()
+scope_init_world :: proc(entity_capacity : int = DEFAULT_MAX_ENTITY) -> ^World{
+   return init_world(entity_capacity)
 }
 
 deinit_world :: proc(world : ^World){
@@ -85,6 +85,7 @@ register :: proc(world : ^World, $component : typeid, max_component := DEFAULT_M
         world.component_store_info[component] = ComponentStoreData{
             component_store_index = len(world.components_stores),
             group_index = -1,
+            //shared_group_index = -1,
         }
 
         append(&world.components_stores, init_component_store(component, max_component))
@@ -94,8 +95,11 @@ register :: proc(world : ^World, $component : typeid, max_component := DEFAULT_M
 set_component :: proc(world : ^World, entity : u32, component : $T){
 
     if intrinsics.expect(internal_entity_is_alive(&world.entities_stores, entity), true){
+
         component_id := world.component_store_info[T].component_store_index
         internal_set_component(&world.components_stores[component_id], entity, component)
+
+        internal_increment_version(&world.entities_stores, entity)
     }
 }
 
@@ -105,7 +109,9 @@ get_component :: proc(world : ^World, entity : u32, $component : typeid) -> ^com
     if intrinsics.expect(internal_entity_is_alive(&world.entities_stores, entity), true){
         component_id := world.component_store_info[component].component_store_index
 
-        desired_component = internal_get_component(&world.components_stores[component_id], entity, component)    
+        desired_component = internal_get_component(&world.components_stores[component_id], entity, component) 
+        
+        internal_increment_version(&world.entities_stores, entity)
     }
 
     return desired_component
@@ -132,6 +138,8 @@ add_component :: proc(world : ^World, entity : u32, component : $T){
         if component_store_info.group_index != -1{
             group_maybe_add(world, entity, component_store_info.group_index)
         }
+
+        internal_increment_version(&world.entities_stores, entity)
     }
 }
 
@@ -145,6 +153,8 @@ remove_component :: proc(world : ^World, entity : u32, $component_type : typeid)
         }
     
         internal_remove_component(&world.components_stores[component_store_info.component_store_index], entity, component_type)
+
+        internal_increment_version(&world.entities_stores, entity)
     }
 }
 
@@ -169,8 +179,7 @@ group :: proc(world : ^World,   query_desc : ..typeid) -> int {
     //TODO: check for recycled group
     append(&world.groups,group_data)
 
-    owned_store := world.component_store_info[query_desc[0]]
-    owned_component_store := world.components_stores[owned_store.component_store_index]
+    owned_component_store := world.components_stores[group_data.store_indices[0]]
     
     group_index := len(world.groups) - 1
 
@@ -202,8 +211,7 @@ fetch_group_element_at :: proc(world : ^World, group_index : int, $index : int, 
 
 @(private)
 group_maybe_add :: proc(world : ^World, entity : u32, group_index : int){
-
-    store_group := &world.groups[group_index]
+    store_group := world.groups[group_index]
 
     is_valid := 1
 
@@ -211,15 +219,17 @@ group_maybe_add :: proc(world : ^World, entity : u32, group_index : int){
         is_valid &= internal_has_component(&world.components_stores[store_index], entity)
     }
 
-
     offset_index := (1.0 - is_valid) * len(store_group.store_indices)
 
     for store_index in store_group.store_indices[offset_index:]{
 
-        component_store := &world.components_stores[store_index]
+        component_store := world.components_stores[store_index]
 
-        if (component_store.sparse[entity] > store_group.start) do internal_swap_value(component_store, internal_get_entity(component_store, store_group.start), entity)
-
+        if (component_store.sparse[entity] > store_group.start) {
+            group_start_entity := internal_get_entity(&component_store, store_group.start)
+            
+            internal_swap_value(&component_store, group_start_entity, entity)
+        } 
     }
 
     store_group.start += is_valid
@@ -306,7 +316,7 @@ EntityStore :: struct{
 }
 
 @(private)
-init_entity_store :: proc($capacity : int) -> EntityStore{
+init_entity_store :: proc(capacity : int) -> EntityStore{
     entities := make([dynamic]u32, 0,capacity)
     
     entity_store := EntityStore{
@@ -344,8 +354,7 @@ internal_create_entity :: proc(entity_store : ^EntityStore) -> u32{
 
 @(private)
 internal_destroy_entity :: proc(entity_store : ^EntityStore, entity : u32) #no_bounds_check{
-    version_bit := entity_store.entities[entity] & 0xFFFF
-    entity_store.entities[entity] = (entity_store.next_recycle << 16) + (version_bit + 1)
+    entity_store.entities[entity] += 1
     entity_store.available_to_recycle += 1
 
     entity_store.next_recycle = entity 
@@ -359,15 +368,31 @@ internal_entity_is_valid :: #force_inline proc(entity_store : ^EntityStore, enti
 
 @(private)
 internal_entity_is_alive :: #force_inline proc(entity_store : ^EntityStore, entity : u32) -> bool #no_bounds_check{
-    entity_val := entity + 1
-    return entity_val == (entity_store.entities[entity] >> 16)
+    entity_detail := entity_store.entities[entity]
+    return(entity_detail & 0xFF) == (entity_detail >> 8) & 0xFF
 }
 
+@(private)
+internal_increment_version :: #force_inline proc(entity_store : ^EntityStore, entity : u32){
+    entity_store.entities[entity] += 1
+    entity_store.entities[entity] += 256 
 
+    entity_detail := entity_store.entities[entity]
+
+    //wrap-around
+    if entity_detail & 0xFF == 0xFF{
+        entity_store.entities[entity] &= 0xFFFFFF00
+    }
+
+    if entity_detail & 0xFF00 == 0xFF00{
+        entity_store.entities[entity] &= 0xFFFF00FF 
+    }
+}
 //////////////////////////////////////////////////////////////////
 
 ///////////////////// Component Store ///////////////////////////
 
+//TODO:khal added resize to solution rather then set the raw_slice to a high value.
 ComponentStore :: struct #align 64 { // 40
     entities : rawptr,
     components : rawptr, 
@@ -479,7 +504,6 @@ internal_has_component :: #force_inline proc(component_storage : ^ComponentStore
     return 1 - (component_storage.sparse[entity] >> 31) & 1
 }
 
-
 @(private)
 internal_retrieve_components :: #force_inline proc(component_storage : ^ComponentStore, $component_type : typeid) -> []component_type{
     return ([^]component_type)(component_storage.components)[:component_storage.len]
@@ -525,9 +549,10 @@ test :: proc(){
     entity2 := create_entity(world) // 2
     entity3 := create_entity(world) // 3
     entity4 := create_entity(world) // 4
-    
+
     group := group(world, f64, int)
 
+    add_component(world,entity4, 15)
     add_component(world,entity, 5)
     add_component(world,entity2, 10)
     add_component(world,entity, 30)
@@ -538,5 +563,11 @@ test :: proc(){
     add_component(world,entity3, 1.14)
     add_component(world, entity, 5.5)
     add_component(world,entity4, 2.1)
+    fmt.println(world.entities_stores)
+
+    fmt.println(internal_entity_is_alive(&world.entities_stores, entity))
+
+    fmt.println(world.entities_stores)
+
 
 }
