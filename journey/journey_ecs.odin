@@ -317,10 +317,8 @@ EntityStore :: struct{
 
 @(private)
 init_entity_store :: proc(capacity : int) -> EntityStore{
-    entities := make([dynamic]u32, 0,capacity)
-    
     entity_store := EntityStore{
-        entities = entities,
+        entities = make([dynamic]u32, 0,capacity),
         available_to_recycle = 0,
         next_recycle = 0,
     }
@@ -331,18 +329,22 @@ init_entity_store :: proc(capacity : int) -> EntityStore{
 @(private)
 deinit_entity_store :: proc(entity_store : ^EntityStore){
     delete_dynamic_array(entity_store.entities)
+    entity_store.available_to_recycle = 0
+    entity_store.next_recycle = 0
 }
 @(private)
 internal_create_entity :: proc(entity_store : ^EntityStore) -> u32{
-    entity : u32 
+    entity : u32 = entity_store.next_recycle
 
    if entity_store.available_to_recycle > 0{
-    entity = entity_store.next_recycle 
 
-    entity_store.next_recycle = entity_store.entities[entity] >> 16
+    previous_entity_detail := entity_store.entities[entity]
     entity_store.entities[entity] = (entity + 1)  << 16
 
     entity_store.available_to_recycle -= 1
+
+    entity_store.next_recycle = previous_entity_detail >> 16
+
    }else{
     entity = u32(len(entity_store.entities))
 
@@ -374,19 +376,11 @@ internal_entity_is_alive :: #force_inline proc(entity_store : ^EntityStore, enti
 
 @(private)
 internal_increment_version :: #force_inline proc(entity_store : ^EntityStore, entity : u32){
-    entity_store.entities[entity] += 1
-    entity_store.entities[entity] += 256 
-
     entity_detail := entity_store.entities[entity]
 
-    //wrap-around
-    if entity_detail & 0xFF == 0xFF{
-        entity_store.entities[entity] &= 0xFFFFFF00
-    }
-
-    if entity_detail & 0xFF00 == 0xFF00{
-        entity_store.entities[entity] &= 0xFFFF00FF 
-    }
+    entity_store.entities[entity] += 1
+    entity_store.entities[entity] += 256 
+    entity_store.entities[entity] =  (entity_detail & 0x1000) | (entity_detail & 0x100)
 }
 //////////////////////////////////////////////////////////////////
 
@@ -401,7 +395,6 @@ ComponentStore :: struct #align 64 { // 40
     len : int,  
     type : typeid,
 }
-
 
 @(private)
 deinit_component_store :: proc(comp_storage : ComponentStore){
@@ -449,7 +442,6 @@ internal_insert_component :: proc(component_storage : ^ComponentStore, entity : 
     component_storage.len += incr_mask
 }
 
-
 @(private)
 internal_get_component :: proc(component_storage : ^ComponentStore, entity : u32, $component : typeid) -> ^component {
     dense_index := component_storage.sparse[entity]
@@ -460,7 +452,6 @@ internal_get_component :: proc(component_storage : ^ComponentStore, entity : u32
 internal_get_entity :: #force_inline proc(component_storage : ^ComponentStore, index : int) -> u32 {
     return internal_retrieve_entities_with_component(component_storage)[index]
 }
-
 
 @(private)
 internal_set_component :: proc(component_storage : ^ComponentStore, entity : u32, component : $T) {
@@ -566,6 +557,10 @@ test :: proc(){
     fmt.println(world.entities_stores)
 
     fmt.println(internal_entity_is_alive(&world.entities_stores, entity))
+    internal_destroy_entity(&world.entities_stores, entity2)
+    entity5 := create_entity(world)
+
+    fmt.println(entity5)
 
     fmt.println(world.entities_stores)
 
