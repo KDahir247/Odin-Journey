@@ -53,7 +53,7 @@ stop_renderer :: proc(render_thread : ^thread.Thread){
 
 // Used through out the game (SpriteSheet, FontAtlas, TileMapping)
 @(private) 
-RenderInstanceData :: struct #align 16{
+RenderInstanceData :: struct #align (16){
     model : matrix[4,4]f32,
     src_rect : Rect,
 }

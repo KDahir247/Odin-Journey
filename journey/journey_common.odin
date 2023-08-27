@@ -2,9 +2,7 @@ package journey
 
 import "core:prof/spall"
 
-when ODIN_DEBUG{
-    import "core:fmt"
-}
+import "core:fmt"
 
 //////////////////// Utility FN ////////////////////////
 
@@ -145,19 +143,19 @@ SpriteIndex :: struct{
     position : [2]f32,
 }
 
-GlobalDynamicVSConstantBuffer :: struct #align 16{
+GlobalDynamicVSConstantBuffer :: struct #align (16){
     viewport_x : f32,
     viewport_y : f32,
     viewport_width : f32,
     viewport_height : f32,
 }
 
-GlobalDynamicPSConstantBuffer :: struct #align 16{
+GlobalDynamicPSConstantBuffer :: struct #align (16){
     time : f32,
     delta_time : f32,
 }
 
-RenderBatchBuffer :: struct #align 64  {
+RenderBatchBuffer :: struct #align (64){
     changed_flag : bool,
     batches : []SpriteBatch,
     shared : []SpriteBatchShared,
@@ -193,6 +191,7 @@ SpriteBatchShared :: struct{
 SpriteInstanceData :: struct{
     transform : matrix[4,4]f32,
     src_rect : Rect,
+    //TODO: khal add another 4 f32 and align to 16
 }
 ////////////////////////////////////////////////////////
 

@@ -14,6 +14,7 @@ import "../journey"
  import "core:encoding/json"
  import "vendor:stb/image"
 
+ //Remove below.
 
 create_game_entity :: proc(batch_handle : uint, instance_data : journey.SpriteInstanceData) -> u32{
     world := cast(^journey.World)context.user_ptr
@@ -85,6 +86,7 @@ sprite_batch_free :: proc(){
 		delete(batcher.sprite_batch)
     }
 }
+//
 
 //////////////////////////////////////////////////////////////////////
 
@@ -148,7 +150,6 @@ on_animation :: proc(elapsed_time : f64){
 }
 
 main ::  proc()  {
-
 	//journey.test()
 	
 	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
@@ -209,8 +210,6 @@ main ::  proc()  {
         sprite_batch_free()
 
 		journey.deinit_world(world)
-		free(world)
-
 		context.user_ptr = nil
 
 		sdl2.DestroyWindow(window)
@@ -220,9 +219,6 @@ main ::  proc()  {
 	}
 
 	render_thread := journey.run_renderer(journey.RenderBackend.DX11,window_info.info.win.window, &render_batch_buffer)
-
-	//TODO: don't like this.
-	key_resource :=journey.KeyResource{}
 
 	//
 	player_batcher_id := create_sprite_batcher("resource/sprite/padawan/pad.png", 0)
