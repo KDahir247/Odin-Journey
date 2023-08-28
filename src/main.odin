@@ -150,7 +150,7 @@ on_animation :: proc(elapsed_time : f64){
 }
 
 main ::  proc()  {
-	//journey.test()
+	journey.test()
 	
 	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
 
