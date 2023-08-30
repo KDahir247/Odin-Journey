@@ -62,20 +62,12 @@ deinit_world :: proc(world : ^World){
 }
 
 register_as_subgroup :: proc(world : ^World, component_groups : ..ComponentGroup, capacity : u32 = DEFAULT_COMPONENT_SPARSE){
-  
-
-    // We that a single Component Group is less restrain the the all concat Component Group.
-    // Eg. Group(int, f32) vs Group(|group 1|int, f32 |group 2| string, bool )
-    // Group(|group 1|int, f32 |group 2| string, bool ) will be more constraint...
-
-    //We want to check if the larger constraint group has the element of the smaller constraint group
-
-    internal_register_sub_group(&world.component_stores, component_groups, capacity)
-    
+    internal_register_sub_group(&world.component_stores, component_groups, capacity)  
 }
 
 register_as_group :: proc(world : ^World, component_types : ..typeid, capacity : u32 = DEFAULT_COMPONENT_SPARSE){
-    internal_register_group(&world.component_stores,component_types,capacity)
+    //TODO:khal handle case where the user put only one type if so then it is just a normal register
+    internal_register_group(&world.component_stores,component_types,-1,capacity)
 }
 
 register :: proc(world : ^World, $component_type : typeid, capacity : u32 = DEFAULT_COMPONENT_SPARSE){
@@ -133,6 +125,14 @@ remove_component :: proc(world : ^World, entity : u32, $component_type : typeid)
 }
 
 query :: proc(world : ^World,  query_desc : ..typeid) -> []u32{
+    
+
+    entity_list := get_entities_with_component(world,query_desc[0])
+
+    for entity in entity_list{
+
+    }
+
     panic("Not implemented yet!")
 }
 
@@ -249,11 +249,20 @@ ComponentStore :: struct{
 
 @(private)
 init_component_store :: proc(capacity : int) -> ComponentStore{
-    return ComponentStore{
+    component_store := ComponentStore{
         component_info = make_map(map[typeid]ComponentInfo,capacity),
         component_sparse = make([dynamic]ComponentSparse, 0, capacity),
         groups = make([dynamic]Group, 0, DEFAULT_GROUP),
     }
+
+    nil_group := Group{
+        indices = []int{},
+        start=0,
+    }
+
+    append(&component_store.groups, nil_group)
+
+    return component_store
 }
 
 @(private)
@@ -271,23 +280,17 @@ internal_register_sub_group :: proc(component_store : ^ComponentStore, component
     }
 
     for component_group in component_groups{
-        internal_register_group(component_store, component_group.component_types, capacity)
-
-        for group_type in component_group.component_types{
-            component_info := &component_store.component_info[group_type]
-            component_info^.sub_group_index = component_group_start
-        }
+        internal_register_group(component_store, component_group.component_types, component_group_end, capacity)
     }  
 
     sub_group.indices = group_indices
-
 
     append(&component_store.groups, sub_group)
 
 }
 
 @(private)
-internal_register_group :: proc(component_store : ^ComponentStore,component_types : []typeid, capacity : u32){
+internal_register_group :: proc(component_store : ^ComponentStore,component_types : []typeid,sub_group_index :int, capacity : u32){
     group : Group
 
     group_sparse_indices := make_slice([]int, len(component_types))
@@ -301,8 +304,7 @@ internal_register_group :: proc(component_store : ^ComponentStore,component_type
 
         group_sparse_indices[index] = component_info.sparse_index
         component_info^.group_index = group_index
-        component_info^.sub_group_index = -1
-
+        component_info^.sub_group_index = sub_group_index
     }
 
     group.indices = group_sparse_indices
@@ -317,8 +319,8 @@ internal_register_component :: proc(component_store : ^ComponentStore, component
     if !valid{
         component_store.component_info[component_type] = ComponentInfo{
             sparse_index = len(component_store.component_sparse),
-            group_index = -1,
-            sub_group_index = -1,
+            group_index = 0,
+            sub_group_index = 0,
         }
 
         append(&component_store.component_sparse, init_component_sparse(component_type, capacity))
@@ -334,41 +336,65 @@ internal_add_component_group :: proc(component_store : ^ComponentStore, entity :
     internal_sparse_push(&component_store.component_sparse[sparse_id], entity, component)
 
     //////////////////////////// Grouping ////////////////////////////
-    if group_id != -1{
-        group_start := component_store.groups[group_id].start
-        group_sparse_indices := component_store.groups[group_id].indices
+    
+    group_start := component_store.groups[group_id].start
+    group_sparse_indices := component_store.groups[group_id].indices
 
-        is_valid := 1
+    is_valid := len(group_sparse_indices) <= 0 ? 0 : 1
+
+    for group_sparse_id in group_sparse_indices{
+        is_valid &= internal_sparse_has(&component_store.component_sparse[group_sparse_id], entity)
+    }
+
+    offset_index := (1.0 - is_valid) * len(group_sparse_indices)
+
+    for group_sparse_id in group_sparse_indices[offset_index:]{
+        group_sparse := component_store.component_sparse[group_sparse_id]
+
+        if internal_sparse_get_index(&group_sparse, entity) > group_start{
+            group_start_entity := internal_sparse_index_entity(&group_sparse, group_start)
+
+            internal_sparse_swap(&group_sparse,group_start_entity, entity, size_of(T))
+        }
+    }
+
+    component_store.groups[group_id].start += is_valid
+
+    //////////////////////////////////////////////////////////////////
+
+    //////////////////////// Sub Grouping ////////////////////////////
+    group_sub_start := component_store.groups[sub_group_id].start
+
+    group_indices := component_store.groups[sub_group_id].indices
+    for group_id in group_indices{
+        group_sparse_indices := component_store.groups[group_id].indices
 
         for group_sparse_id in group_sparse_indices{
             is_valid &= internal_sparse_has(&component_store.component_sparse[group_sparse_id], entity)
         }
+    }
 
-        offset_index := (1.0 - is_valid) * len(group_sparse_indices)
+    if is_valid == 1 {
+        for group_id in group_indices{
+            group_sparse_indices := component_store.groups[group_id].indices
+            
+            for group_sparse_id in group_sparse_indices{
+                group_sparse := component_store.component_sparse[group_sparse_id]
 
-        for group_sparse_id in group_sparse_indices[offset_index:]{
-            group_sparse := component_store.component_sparse[group_sparse_id]
-
-            if internal_sparse_get_index(&group_sparse, entity) > group_start{
-                group_start_entity := internal_sparse_index_entity(&group_sparse, group_start)
-
-                internal_sparse_swap(&group_sparse,group_start_entity, entity, size_of(T))
+                if internal_sparse_get_index(&group_sparse, entity) > group_sub_start{
+                    group_sub_start_entity := internal_sparse_index_entity(&group_sparse, group_sub_start)
+        
+                    internal_sparse_swap(&group_sparse,group_sub_start_entity, entity, size_of(T))
+                }
             }
-
         }
 
-        component_store.groups[group_id].start += is_valid
+        component_store.groups[sub_group_id].start += 1
     }
 
-    if sub_group_id != -1{
 
-        //We need to make the group ordered if possible...
-        fmt.println("adding from sub group ", typeid_of(T))
 
-    }
-
-    ///////////////////////////////////////////////////
-
+    //////////////////////////////////////////////////////////////////
 
 }
 
@@ -611,8 +637,8 @@ test :: proc(){
 
     world := init_world()
 
-    //register_as_group(world, f64, int)
-    register_as_subgroup(world, ComponentGroup{component_types = {f64, int}}, ComponentGroup{ component_types = {string, bool} })
+    //register_as_group(world, rune, f32)
+    register_as_subgroup(world, ComponentGroup{component_types = {f64, int}}, ComponentGroup{ component_types = {string} })
 
     entity := create_entity(world)
     entity1 := create_entity(world) // 1
@@ -620,16 +646,23 @@ test :: proc(){
     entity3 := create_entity(world) // 3
     entity4 := create_entity(world) // 4
 
-    add_component(world,entity4, 15)
-    add_component(world,entity, 5)
-
+    
     add_component(world, entity1, 3.3)
     add_component(world, entity, 2.4)
     add_component(world,entity4, 2.1)
+    add_component(world, entity3, 2.4)
+    
+    add_component(world, entity4, "hi")
+    add_component(world, entity3, "Bob")
 
+    
+    add_component(world,entity3, 5)
+    add_component(world,entity4, 15)
+    add_component(world,entity, 5)
 
     fmt.println(get_entities_with_component(world, int))
     fmt.println(get_entities_with_component(world, f64))
+    fmt.println(get_entities_with_component(world, string))
 
 	deinit_world(world)
 }
