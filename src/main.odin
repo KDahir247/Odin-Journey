@@ -150,7 +150,7 @@ on_animation :: proc(elapsed_time : f64){
 }
 
 main ::  proc()  {
-	journey.test()
+	//journey.size_test()
 	
 	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
 
@@ -210,6 +210,7 @@ main ::  proc()  {
         sprite_batch_free()
 
 		journey.deinit_world(world)
+		free(world)
 		context.user_ptr = nil
 
 		sdl2.DestroyWindow(window)
@@ -300,7 +301,7 @@ main ::  proc()  {
 				}
 			}
 
-			journey.END_EVENT()
+			//journey.END_EVENT()
 		}
 
 		free_all(context.temp_allocator)
