@@ -145,7 +145,6 @@ DX_CALL ::  proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := fa
     when ODIN_DEBUG{
         if hr != 0{
             hr_index := int(hr) & 0xFFFFFFFF
-            //err_code := HR_ERR_MAP[hr_index]
             fmt.printf("RAW ERROR ID : %x\n look description in the resource/debug : %v", hr_index, loc)
 
             if panic_on_fail{
@@ -182,7 +181,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     vs_buffer_data := new(GlobalDynamicVSConstantBuffer)
     defer free(vs_buffer_data)
 
-    batches : []SpriteBatch
+    batches : #soa[]SpriteBatch
 
     current_buffer_index := 0
 

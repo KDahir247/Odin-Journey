@@ -2,11 +2,8 @@ package journey
 
 import "core:prof/spall"
 
-import "core:fmt"
-
 //////////////////// Utility FN ////////////////////////
 
-@(optimization_mode="size")
 CREATE_PROFILER :: #force_inline proc($name : string, buffer_size : int = spall.BUFFER_DEFAULT_SIZE,thread_id : u32 = 0, pid : u32 = 0){
     when #config(PROFILE,true){
         if created == false{
@@ -20,7 +17,6 @@ CREATE_PROFILER :: #force_inline proc($name : string, buffer_size : int = spall.
     }
 }
 
-@(optimization_mode="size")
 CREATE_PROFILER_BUFFER :: #force_inline proc(tid : u32, pid :u32= 0){
     when #config(PROFILE,true){
         if created == false{
@@ -32,7 +28,6 @@ CREATE_PROFILER_BUFFER :: #force_inline proc(tid : u32, pid :u32= 0){
     }
 }
 
-@(optimization_mode="size")
 FREE_PROFILER :: #force_inline proc(){
     when #config(PROFILE,true){
         if created == true{
@@ -45,7 +40,6 @@ FREE_PROFILER :: #force_inline proc(){
     }
 }
 
-@(optimization_mode="size")
 FREE_PROFILER_BUFFER :: #force_inline proc(){
     when #config(PROFILE,true){
         if created == true{
@@ -58,7 +52,6 @@ FREE_PROFILER_BUFFER :: #force_inline proc(){
     }
 }
 
-@(optimization_mode="speed")
 BEGIN_EVENT :: proc(name : string){
     when #config(PROFILER, true){
         if created{
@@ -67,7 +60,6 @@ BEGIN_EVENT :: proc(name : string){
     }
 }
 
-@(optimization_mode="speed")
 END_EVENT :: proc(){
     when #config(PROFILER, true){
         if created{
@@ -124,13 +116,13 @@ DEFAULT_AUDIO_PATH_MP3 :: "resource/aduio/*.mp3"
 
 DEFAULT_BATCH_SIZE : u32 : 1024
 
-FIXED_DELTA_TIME : f64 : 0.01388888888888888888888888888889 // 1 / 72
-SCALED_FIXED_DELTA_TIME : f64 : FIXED_DELTA_TIME * TIME_SCALE
-TIME_SCALE : f64 :  1.0
+FIXED_DELTA_TIME : f32 : 0.01388888888888888888888888888889 // 1 / 72
+SCALED_FIXED_DELTA_TIME : f32 : FIXED_DELTA_TIME * TIME_SCALE
+TIME_SCALE : f32 :  1.0
 
-DELTA_TIME_VSYNC_144 : f64 : 0.00694444444444444444444444444444
+DELTA_TIME_VSYNC_144 : f32 : 0.00694444444444444444444444444444
 
-MAX_DELTA_TIME : f64 : 0.3333 * TIME_SCALE
+MAX_DELTA_TIME : f32: 0.3333 * TIME_SCALE
 
 ///////////////////////////////////////////////////////
 
@@ -157,8 +149,8 @@ GlobalDynamicPSConstantBuffer :: struct #align (16){
 
 RenderBatchBuffer :: struct #align (64){
     changed_flag : bool,
-    batches : []SpriteBatch,
-    shared : []SpriteBatchShared,
+    batches : #soa[]SpriteBatch, //TODO:remove rather have a slice that has a dynamic array of the instance data it will just have all the data, so slice with all data.
+    shared : #soa[]SpriteBatchShared,
     
 }
 
@@ -168,6 +160,7 @@ Changed :: enum{
     ANIMATION,
 }
 
+////////TODO: khal remove
 SpriteBatch :: struct{
     sprite_batch : [dynamic]SpriteInstanceData,
     //Might have the transform seperate and the animation seperate.
@@ -180,18 +173,21 @@ SpriteHandle :: struct{
     sprite_handle : uint,
 }
 
-SpriteBatchShared :: struct{
-    texture : rawptr,
-    width : i32,
-    height : i32,
-    shader_cache : u32,
-    identifier : u32,
-}
 
 SpriteInstanceData :: struct{
     transform : matrix[4,4]f32,
     src_rect : Rect,
     //TODO: khal add another 4 f32 and align to 16
+}
+
+/////////////
+
+SpriteBatchShared :: struct{
+    texture : rawptr,
+    width : i32,
+    height : i32,
+    shader_cache : u32,
+    identifier : int,
 }
 ////////////////////////////////////////////////////////
 
@@ -215,10 +211,10 @@ Scale :: struct {
 
 Animator :: struct{
     clips :[]Animation,
-    animation_speed : f64,
+    animation_speed : f32,
     current_clip : int,
     previous_frame : int, 
-    animation_time : f64,
+    animation_time : f32,
 }
 
 Animation :: struct{
