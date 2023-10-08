@@ -772,7 +772,7 @@ query_1 :: proc(world : $W/^$World, $a : typeid) -> Query_1(a) #no_bounds_check{
     return Query_1(a){
         world = world,
         index = 0,
-        len = sparse_set_a.len,
+        len = internal_sparse_len(&sparse_set_a,len(component_info_a.field_sizes)),
 
         a_sparse_index = component_info_a.sparse_index,
     } 

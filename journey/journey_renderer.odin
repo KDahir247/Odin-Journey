@@ -176,17 +176,15 @@ init_render_dx12_subsystem ::  proc(current_thread : ^thread.Thread){
 }
 
 
-//TODO:khal we need to handle window resize
+//TODO:khal we need to handle window resize, then maybe a debug mode to allow editor support.
 @(private)
 init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
-    //TODO:remove
-
     //TODO: DATA NEED ALIGNMENT TO 16 BOTH STRUCT AND PTR.
 
     vs_buffer_data := new(GlobalDynamicVSConstantBuffer)
     defer free(vs_buffer_data)
 
-    batches : []SpriteBatchGroup
+    batches : []RenderBatchGroup
 
     current_buffer_index := 0
 
@@ -584,15 +582,15 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
             if sync.atomic_load_explicit(&render_batch_buffer.changed_flag, sync.Atomic_Memory_Order.Acquire){
 
-                sprite_group_group,_ := slice.map_values(render_batch_buffer.sprite_batch_groups)
+                render_batch_group,_ := slice.map_values(render_batch_buffer.render_batch_groups)
 
-                batches = sprite_group_group
+                batches = render_batch_group
                 BEGIN_EVENT("Updating Shared Render Data")
 
 
                 //TODO: khal we can later use offset to index the smaller chunk of shared to update the render param rather then iterate over all shared.
-                for sprite_batch in batches{
-                    tex_parameter := sprite_batch.texture_param
+                for render_batch in batches{
+                    tex_parameter := render_batch.texture_param
 
                     sprite_shader_resource_view : ^d3d11.IShaderResourceView
 
@@ -685,6 +683,8 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 END_EVENT()
             }
         }
+
+        BEGIN_EVENT("Draw Call")
 
         //Nvidia recommend using Map rather the UpdateSubResource so we will follow thier guidence.
         DX_CALL(

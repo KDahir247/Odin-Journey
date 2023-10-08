@@ -124,10 +124,13 @@ DELTA_TIME_VSYNC_144 : f32 : 0.00694444444444444444444444444444
 
 MAX_DELTA_TIME : f32: 0.3333 * TIME_SCALE
 
-//temp
+GRAVITY :: 0.00981
+
 ResourceCache :: struct{
     render_buffer : ^RenderBatchBuffer,
 }
+
+
 ///////////////////////////////////////////////////////
 
 /////////////////// RENDERER DATA /////////////////////
@@ -153,7 +156,7 @@ GlobalDynamicPSConstantBuffer :: struct #align (16){
 
 RenderBatchBuffer :: struct #align (64){
     changed_flag : bool,
-    sprite_batch_groups : map[uint]SpriteBatchGroup,
+    render_batch_groups : map[uint]RenderBatchGroup,
 }
 
 Changed :: enum{
@@ -162,9 +165,9 @@ Changed :: enum{
     ANIMATION,
 }
 
-SpriteBatchGroup :: struct{
+RenderBatchGroup :: struct{
     texture_param : TextureParam,
-    instances : [dynamic]RenderInstanceData, //TODO:khal we would want 
+    instances : [dynamic]RenderInstanceData, 
 }
 
 RenderInstanceData :: struct #align (16){
@@ -185,7 +188,7 @@ TextureParam :: struct{
 
 
 /////////////////// GAME DATA /////////////////////////
-SpriteInstance :: struct{
+RenderInstance :: struct{
     hash : uint,
     instance_index : uint,
 }
@@ -197,7 +200,6 @@ Position :: struct{
 
 Rotation :: struct{
     z : f32,
-    __padding : f32,
 }
 
 Scale :: struct {
@@ -222,6 +224,38 @@ Animation :: struct{
     // offset_slice : int, // (how much column should be be skipped in the sprite sheet)
     // animation_speed : int, // (the speed of the animation 1.0x mean normal, 2.0x mean 2 times etc...)
     // loop : int, // (looping animation clip. 1 is looping, 0 mean doesn't loop)
+}
+
+Velocity :: struct{
+    x : f32,
+    y : f32,
+}
+
+Acceleration :: struct{
+    x : f32,
+    y : f32,
+}
+
+Damping :: struct{
+    val : f32,
+}
+
+//Mass val is represent as the inverse mass
+Mass :: struct{
+    val : f32, 
+}
+
+AccumulatedForce :: struct{
+    x : f32,
+    y : f32,
+}
+
+Friction :: struct{
+    val : f32,
+}
+
+Restitution :: struct{
+    val : f32,
 }
 
 ///////////////////////////////////////////////////////
