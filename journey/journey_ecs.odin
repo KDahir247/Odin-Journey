@@ -285,7 +285,7 @@ internal_fetch_page :: #force_inline proc(entity : uint) -> uint{
 ///////////////////////// ECS Group /////////////////////////////
 Group_Type :: enum int{
     Group = 0,
-    SubGroup = 1,
+    SubGroup = 1
 }
 
 Group :: struct{
@@ -411,7 +411,7 @@ deinit_component_store :: proc(component_store : $C/^$ComponentStore){
 
 //////////////////////// Sparse Set //////////////////////////
 SparseArray :: struct{
-    sparse : [dynamic]rawptr,
+    sparse : [dynamic]rawptr
 }
 
 @(private)

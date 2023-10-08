@@ -9,7 +9,5 @@
             }
     ],
     "animation_speed": 2.00000000,
-    "current_clip" : 0,
-    "previous_frame": 0,
-    "animation_time" : 0
+    "current_clip" : 0
 }

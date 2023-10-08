@@ -1,5 +1,6 @@
 package journey
 
+import "core:slice" //TODO: temp for map to slice
 import "core:fmt"
 import "core:thread"
 import "core:sync"
@@ -26,21 +27,23 @@ RenderBackend :: enum int{
 // DX11 need window's HWND DX12 can possible also use HWND handle not 100 percent sure haven't check.
 // Not sure of Metal (Don't have mac_os) 
 // Not sure of OpenGL, but can figure out relatively easily.
-run_renderer :: proc(backend : RenderBackend, render_window : rawptr, render_buffer : ^RenderBatchBuffer) -> ^thread.Thread {
+create_renderer :: proc(backend : RenderBackend, render_param : rawptr, render_buffer : ^RenderBatchBuffer) -> ^thread.Thread {
     conditional_variable :=  &sync.Cond{}
 
+    // We can't set the AffinityMask in odin, so we just got to cross our finger that the main and render thread is on the same core.
+    // :)  
     render_thread := thread.create(_render_backend_proc[backend])
     render_thread.data = render_buffer
-    render_thread.user_args[0] = render_window
+    render_thread.user_args[0] = render_param
     render_thread.user_args[1] = conditional_variable
-
+    
     thread.start(render_thread)
 
     {
         sync.guard(&render_thread.mutex)
         sync.cond_wait(conditional_variable, &render_thread.mutex)
     }
-    
+
     return render_thread
 }
 
@@ -51,12 +54,12 @@ stop_renderer :: proc(render_thread : ^thread.Thread){
 }
 
 
-// Used through out the game (SpriteSheet, FontAtlas, TileMapping)
-@(private) 
-RenderInstanceData :: struct #align (16){
-    model : matrix[4,4]f32,
-    src_rect : Rect,
-}
+// // Used through out the game (SpriteSheet, FontAtlas, TileMapping)
+// @(private) 
+// RenderInstanceData :: struct #align (16){
+//     model : matrix[4,4]f32,
+//     src_rect : Rect,
+// }
 
 @(private)
 backend_proc :: #type proc(current_thread : ^thread.Thread)
@@ -176,12 +179,14 @@ init_render_dx12_subsystem ::  proc(current_thread : ^thread.Thread){
 //TODO:khal we need to handle window resize
 @(private)
 init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
+    //TODO:remove
+
     //TODO: DATA NEED ALIGNMENT TO 16 BOTH STRUCT AND PTR.
 
     vs_buffer_data := new(GlobalDynamicVSConstantBuffer)
     defer free(vs_buffer_data)
 
-    batches : #soa[]SpriteBatch
+    batches : []SpriteBatchGroup
 
     current_buffer_index := 0
 
@@ -189,7 +194,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     vertex_buffers : [2]^d3d11.IBuffer
     mapped_subresources := [2]d3d11.MAPPED_SUBRESOURCE{}
 
-    vertex_buffer_stride : [2]u32 = {size_of(hlsl.float2), size_of(SpriteInstanceData)} // size of Vertex
+    vertex_buffer_stride : [2]u32 = {size_of(hlsl.float2), size_of(RenderInstanceData)} // size of Vertex
     vertex_buffer_offset : [2]u32 = {0,0}
 
     vertices := [4]hlsl.float2{
@@ -576,20 +581,21 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     for (.Started in intrinsics.atomic_load_explicit(&current_thread.flags, sync.Atomic_Memory_Order.Acquire)){
         {
+
             if sync.atomic_load_explicit(&render_batch_buffer.changed_flag, sync.Atomic_Memory_Order.Acquire){
 
-                batches = render_batch_buffer.batches
+                sprite_group_group,_ := slice.map_values(render_batch_buffer.sprite_batch_groups)
+
+                batches = sprite_group_group
                 BEGIN_EVENT("Updating Shared Render Data")
 
-                render_param_len := len(render_params)
-                shared_len := len(render_batch_buffer.shared)
 
                 //TODO: khal we can later use offset to index the smaller chunk of shared to update the render param rather then iterate over all shared.
-                for index in 0..<shared_len{
-                    batch_shared := render_batch_buffer.shared[index]
+                for sprite_batch in batches{
+                    tex_parameter := sprite_batch.texture_param
 
                     sprite_shader_resource_view : ^d3d11.IShaderResourceView
-    
+
                     vertex_shader : ^d3d11.IVertexShader
                     pixel_shader : ^d3d11.IPixelShader
             
@@ -598,11 +604,11 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             
                     input_layout : ^d3d11.IInputLayout
 
-                    sprite_texture_descriptor.Width = u32(batch_shared.width)
-                    sprite_texture_descriptor.Height = u32(batch_shared.height)
+                    sprite_texture_descriptor.Width = u32(tex_parameter.width)
+                    sprite_texture_descriptor.Height = u32(tex_parameter.height)
 
                     sprite_texture_resource := d3d11.SUBRESOURCE_DATA{
-                        pSysMem = batch_shared.texture,
+                        pSysMem = tex_parameter.texture,
                         SysMemPitch = sprite_texture_descriptor.Width << 2,    
                     }
 
@@ -619,9 +625,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                     )
             
                     //////////////////////////// SHADER SETUP //////////////////////////////////
-                    assert(u32(len(CACHED_SHARED_PATH) - 1) >= batch_shared.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
+                    assert(u32(len(CACHED_SHARED_PATH) - 1) >= tex_parameter.shader_cache, "Invalid shader cache. the shader cache is larger then the maximum shader cache index")
             
-                    target_shader_path := CACHED_SHARED_PATH[batch_shared.shader_cache]
+                    target_shader_path := CACHED_SHARED_PATH[tex_parameter.shader_cache]
             
                     shader_file := target_shader_path[16:]
             
@@ -680,8 +686,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             }
         }
 
-        BEGIN_EVENT("Draw Call")
-
         //Nvidia recommend using Map rather the UpdateSubResource so we will follow thier guidence.
         DX_CALL(
             device_context->Map(vs_global_cbuffer,0, d3d11.MAP.WRITE_DISCARD, {}, &mapped_subresources[1]),
@@ -696,10 +700,12 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         device_context->ClearRenderTargetView(back_render_target_view[current_buffer_index], &{0.0, 0.4, 0.5, 1.0})
         device_context->OMSetRenderTargets(1, &back_render_target_view[current_buffer_index], nil) 
 
+
         for index in 0..<len(render_params){
+
             current_batch := batches[index]
             render_param := render_params[index]
-
+            
             // if len(current_batch.sprite_batch) <= 0 {
             //     //TODO: khal there is no batches we might want to filter out zero entity in batch in the game loop rather then
             //     // check it in the render loop. 
@@ -720,13 +726,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 true,
             )
 
-            instance_data := ([^]RenderInstanceData)(mapped_subresources[0].pData)
-
-
-            
-            //TODO:khal this will change since the data is relatively large and is updated frequently
-            intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.sprite_batch[0], size_of(SpriteInstanceData) * len(current_batch.sprite_batch))
-    
+            intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.instances[0], size_of(RenderInstanceData) * len(current_batch.instances))
         
             device_context->Unmap(vertex_buffers[1], 0)
    
@@ -737,7 +737,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     
             device_context->PSSetShaderResources(0,1, &render_param.texture_resource)
     
-            device_context->DrawIndexedInstanced(6, u32(len(current_batch.sprite_batch)),0,0,0)
+            device_context->DrawIndexedInstanced(6, u32(len(current_batch.instances)),0,0,0)
         }
 
         current_buffer_index = (current_buffer_index + 1) & 1

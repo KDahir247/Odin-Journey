@@ -124,12 +124,16 @@ DELTA_TIME_VSYNC_144 : f32 : 0.00694444444444444444444444444444
 
 MAX_DELTA_TIME : f32: 0.3333 * TIME_SCALE
 
+//temp
+ResourceCache :: struct{
+    render_buffer : ^RenderBatchBuffer,
+}
 ///////////////////////////////////////////////////////
 
 /////////////////// RENDERER DATA /////////////////////
 MAX_SPRITE_BATCH :: 2048
 
-INSTANCE_BYTE_WIDTH :: size_of(SpriteInstanceData) << 11
+INSTANCE_BYTE_WIDTH :: size_of(RenderInstanceData) << 11
 
 SpriteIndex :: struct{
     position : [2]f32,
@@ -149,9 +153,7 @@ GlobalDynamicPSConstantBuffer :: struct #align (16){
 
 RenderBatchBuffer :: struct #align (64){
     changed_flag : bool,
-    batches : #soa[]SpriteBatch, //TODO:remove rather have a slice that has a dynamic array of the instance data it will just have all the data, so slice with all data.
-    shared : #soa[]SpriteBatchShared,
-    
+    sprite_batch_groups : map[uint]SpriteBatchGroup,
 }
 
 Changed :: enum{
@@ -160,21 +162,12 @@ Changed :: enum{
     ANIMATION,
 }
 
-////////TODO: khal remove
-SpriteBatch :: struct{
-    sprite_batch : [dynamic]SpriteInstanceData,
-    //Might have the transform seperate and the animation seperate.
-    // transform_batch : [dynamic]matrix[4,4]f32,
-    // animation_batch : [dynamic]Rect,
+SpriteBatchGroup :: struct{
+    texture_param : TextureParam,
+    instances : [dynamic]RenderInstanceData, //TODO:khal we would want 
 }
 
-SpriteHandle :: struct{
-    batch_handle : uint,
-    sprite_handle : uint,
-}
-
-
-SpriteInstanceData :: struct{
+RenderInstanceData :: struct #align (16){
     transform : matrix[4,4]f32,
     src_rect : Rect,
     //TODO: khal add another 4 f32 and align to 16
@@ -182,17 +175,20 @@ SpriteInstanceData :: struct{
 
 /////////////
 
-SpriteBatchShared :: struct{
+TextureParam :: struct{
     texture : rawptr,
     width : i32,
     height : i32,
     shader_cache : u32,
-    identifier : int,
 }
 ////////////////////////////////////////////////////////
 
 
 /////////////////// GAME DATA /////////////////////////
+SpriteInstance :: struct{
+    hash : uint,
+    instance_index : uint,
+}
 
 Position :: struct{
     x : f32,
