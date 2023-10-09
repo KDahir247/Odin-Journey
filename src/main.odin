@@ -175,13 +175,21 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [
 //////////////////////////////////////////////////////////////////////
 
 event_update :: proc(game_loop : ^GameLoop, event : ^sdl2.Event){
-	if event.type == sdl2.EventType.KEYDOWN{
-		#partial switch event.key.keysym.sym{
-			case sdl2.Keycode.A, sdl2.Keycode.LEFT:
-				fmt.println("Left Pressed")
-			case sdl2.Keycode.D, sdl2.Keycode.RIGHT:
-				fmt.println("Right Pressed")
-		}
+	world := cast(^journey.World)context.user_ptr
+	unique_entity := uint(context.user_index)
+	controller := journey.get_soa_component(world, unique_entity, journey.GameController)
+
+	safe_keycode_index := min(int(event.key.keysym.sym), len(controller.key_buffer) - 1)
+
+	if event.type == sdl2.EventType.KEYDOWN {
+
+		press_value := controller.sensitvity * 0.01
+		controller.key_buffer[safe_keycode_index] = min(controller.key_buffer[safe_keycode_index] + press_value, 1)
+
+	}else if event.type == sdl2.EventType.KEYUP{
+
+		//TODO: khal we later want to decrement this slowly rather the snaping to zero
+		controller.key_buffer[safe_keycode_index] = 0
 	}
 }
 
@@ -191,17 +199,18 @@ fixed_update :: proc(game_loop : ^GameLoop){
     world := cast(^journey.World)context.user_ptr
 	unique_entity := uint(context.user_index)
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
+	game_controller := journey.get_soa_component(world, unique_entity, journey.GameController)
 
 	acceleration_integrate_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Acceleration, 8)
     velocity_integrate_query := journey.query(world, journey.Velocity, journey.Damping, journey.Acceleration, 8)
 
 	force_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Velocity, 8)
 
-	 // We need mass and velocity, but velocity is grouped with damping, so we will call get_soa_component
-	 // We can assume all entity that has mass must have a velocity.... or else that would be just weird...
+	//currently physics loop only needs accumulated force this will be add on
+	fixed_update_query := journey.query(world, journey.AccumulatedForce)
+
 	for component_storage, index in journey.run(&force_query){
 		mutable_component_storage := component_storage
-
 
 		//Assuming that the inverse mass is not zero if so then we have a divide by zero exception.
 
@@ -213,7 +222,6 @@ fixed_update :: proc(game_loop : ^GameLoop){
 			mutable_component_storage.component_b[index].y += gravitation_force
 		}
 
-		
 		// Friction force. We will only calculate horizontal friction force for the game.
 		{
 			//N = m*g
@@ -275,10 +283,16 @@ fixed_update :: proc(game_loop : ^GameLoop){
 
 	//
 
+	//Fixed Loop
+	for component_storage, index in journey.run(&fixed_update_query){
+		mutable_component_storage := component_storage
 
-	//Physics Loop
-
-
+		//Only adding a horizontal add force
+		player_input_x := game_controller.key_buffer[sdl2.Keycode.D] - game_controller.key_buffer[sdl2.Keycode.A]
+		//magic number 4000 for placeholder for player movement.
+		mutable_component_storage.component_a[index].x += player_input_x * 9000
+		
+	}
 	//
 
 	journey.END_EVENT()
@@ -347,21 +361,23 @@ main ::  proc()  {
 	resource : journey.ResourceCache = journey.ResourceCache{
 		render_buffer = new(journey.RenderBatchBuffer),
 	}
-
 	resource.render_buffer.render_batch_groups = make(map[uint]journey.RenderBatchGroup)
+
+	game_controller := journey.GameController{
+		key_buffer = make([]f32, 128),
+		sensitvity = 1.0,
+		dead = 0.001,
+		gravity = 1.0,
+		rcp_max_threshold = 0.01,
+	}
+	//
 
 	game_loop := init_game_loop_window(0, 0.5, journey.MAX_DELTA_TIME)
 
 	world := journey.init_world()
 	context.user_ptr = world
 
-	//TODO: khal this will change when resource is implement in journey_ecs
-	context.user_index = int(journey.create_entity(world))
-	journey.register(world, journey.ResourceCache)
-	journey.add_soa_component(world, uint(context.user_index), resource)
-	//
-
-    journey.register(world, journey.Animator)
+	journey.register(world, journey.Animator)
 
 	journey.register(world, journey.Velocity)
 	journey.register(world, journey.Acceleration)
@@ -370,9 +386,17 @@ main ::  proc()  {
 	journey.register(world, journey.AccumulatedForce)
 	journey.register(world, journey.Friction)
 	journey.register(world, journey.Restitution)
+	journey.register(world, journey.RenderInstance)
 	
 
-	journey.register(world, journey.RenderInstance)
+	journey.register(world, journey.ResourceCache)
+	journey.register(world, journey.GameController)
+
+	//TODO: khal this will change when resource is implement in journey_ecs
+	context.user_index = int(journey.create_entity(world))
+	journey.add_soa_component(world, uint(context.user_index), resource)
+	journey.add_soa_component(world, uint(context.user_index), game_controller)
+	//
 
 	sdl2.InitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
 
@@ -399,7 +423,16 @@ main ::  proc()  {
 		journey.deinit_world(world)
 		context.user_ptr = nil
 
-		free(resource.render_buffer)
+		{
+			delete(game_controller.key_buffer)
+		
+			for _,group in resource.render_buffer.render_batch_groups{
+				delete(group.instances)
+			}
+
+			delete(resource.render_buffer.render_batch_groups)
+			free(resource.render_buffer)
+		}
 
 		sdl2.DestroyWindow(window)
 		sdl2.Quit()
@@ -426,6 +459,7 @@ main ::  proc()  {
 	journey.add_soa_component(world,player_entity_1, journey.Acceleration{0,0, journey.compute_terminal_velocity(0.1)})
 	journey.add_soa_component(world, player_entity_1, journey.AccumulatedForce{})
 	journey.add_soa_component(world, player_entity_1, journey.Mass{0.1})
+	//
 
 	///////////////////////////////////////////////////////////////////
 

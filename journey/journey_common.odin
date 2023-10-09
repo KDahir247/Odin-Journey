@@ -252,14 +252,13 @@ Restitution :: struct{
 
 /////////////////// RESOURCE DATA /////////////////////////
 
-KeyResource :: struct{
-    dir : [4]int,
-    repeated : u8,
-    //padding
-    _ : u8,
-    _ : u8,
+GameController :: struct{
+    key_buffer : []f32,
+    dead : f32,
+    sensitvity : f32,
+    gravity : f32,
+    rcp_max_threshold : f32,
 }
-
 
 ///////////////////////////////////////////////////////
 
