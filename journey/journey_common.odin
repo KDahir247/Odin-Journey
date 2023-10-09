@@ -114,29 +114,18 @@ DEFAULT_AUDIO_PATH_MP3 :: "resource/aduio/*.mp3"
 
 //////////////////// COMMON VARIABLES //////////////////
 
-DEFAULT_BATCH_SIZE : u32 : 1024
-
-FIXED_DELTA_TIME : f32 : 0.01388888888888888888888888888889 // 1 / 72
-SCALED_FIXED_DELTA_TIME : f32 : FIXED_DELTA_TIME * TIME_SCALE
 TIME_SCALE : f32 :  1.0
+MAX_DELTA_TIME : f32: (1.0 / 30.0) * TIME_SCALE
 
-DELTA_TIME_VSYNC_144 : f32 : 0.00694444444444444444444444444444
+GRAVITY :: 19.81
+///////////////////////////////////////////////////////
 
-MAX_DELTA_TIME : f32: 0.3333 * TIME_SCALE
-
-GRAVITY :: 0.00981
+/////////////////// RENDERER DATA /////////////////////
+INSTANCE_BYTE_WIDTH :: size_of(RenderInstanceData) << 11
 
 ResourceCache :: struct{
     render_buffer : ^RenderBatchBuffer,
 }
-
-
-///////////////////////////////////////////////////////
-
-/////////////////// RENDERER DATA /////////////////////
-MAX_SPRITE_BATCH :: 2048
-
-INSTANCE_BYTE_WIDTH :: size_of(RenderInstanceData) << 11
 
 SpriteIndex :: struct{
     position : [2]f32,
@@ -234,6 +223,7 @@ Velocity :: struct{
 Acceleration :: struct{
     x : f32,
     y : f32,
+    terminal : f32,
 }
 
 Damping :: struct{

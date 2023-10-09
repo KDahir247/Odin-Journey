@@ -6,6 +6,7 @@ import "core:sys/windows"
 import "core:sync"
 import "core:os"
 import "core:math/linalg"
+import "core:time"
 
 import "vendor:sdl2"
 import "../journey"
@@ -30,8 +31,10 @@ GameLoop :: struct{
    accumulated_time : f32,
    carry_over_time : f32,
 
-   previous_time : f32,
-   current_time : f32,
+
+   start_tick : time.Tick,
+   current_time : f64,
+   previous_time : f64,
 
    terminate_next_iteration : bool,
 }
@@ -44,20 +47,13 @@ GameFnDescriptor :: struct{
 }
 
 next_frame_window :: proc(game_loop : ^GameLoop, game_descriptor : GameFnDescriptor) -> bool{
-    
-    large_time : windows.LARGE_INTEGER
+	duration_from_startup := time.tick_since(game_loop.start_tick)
+	game_loop.current_time = time.duration_seconds(duration_from_startup)
 
-    if game_loop.terminate_next_iteration{
-        return false
-    }
-
-    windows.QueryPerformanceCounter(&large_time)
-    game_loop.current_time = f32(large_time)
-
-    delta_time := min((game_loop.current_time - game_loop.previous_time) * RCP_QUERY_PERF_FREQUENCY, game_loop.maximum_frame_time)
-    
+    delta_time := clamp(f32(game_loop.current_time - game_loop.previous_time),0, game_loop.maximum_frame_time)
     game_loop.last_delta_time = delta_time
     game_loop.elapsed_time += delta_time
+
     game_loop.accumulated_time += delta_time + game_loop.carry_over_time
 
     for game_loop.accumulated_time >= game_loop.fixed_timestep{
@@ -77,7 +73,7 @@ next_frame_window :: proc(game_loop : ^GameLoop, game_descriptor : GameFnDescrip
     return !game_loop.terminate_next_iteration
 }
 
-start_looping_game :: proc(game_loop : ^GameLoop, event : ^sdl2.Event,event_fn : event_fn, game_descriptor : GameFnDescriptor){
+start_looping_game :: proc(game_loop : ^GameLoop, event : ^sdl2.Event, event_fn : event_fn, game_descriptor : GameFnDescriptor){
     for next_frame_window(game_loop, game_descriptor){
         for sdl2.PollEvent(event){
             event_fn(game_loop, event)
@@ -88,39 +84,29 @@ start_looping_game :: proc(game_loop : ^GameLoop, event : ^sdl2.Event,event_fn :
 
 // If refresh rate is zero it will adapt the refresh rate with the monitor refresh rate (uses win call)
 // linux it a bit tricker it need Xrandr extension, so this only works for windows. 
-init_game_loop_window :: proc(refresh_rate : f32 = 0 , refresh_rate_multiplier : f32 = 0.5, max_frame_time :f32= journey.MAX_DELTA_TIME) -> GameLoop{
-    large_time : windows.LARGE_INTEGER
+init_game_loop_window :: proc($refresh_rate : f32 , $refresh_rate_multiplier : f32 , $max_frame_time :f32) -> GameLoop{
+    target_refresh_rate := refresh_rate
 
-    refresh_rate := refresh_rate
-
-    if refresh_rate == 0{
+    when refresh_rate == 0{
         display_setting : windows.DEVMODEW
         windows.EnumDisplaySettingsW(nil,windows.ENUM_CURRENT_SETTINGS, &display_setting)
-        refresh_rate = f32(display_setting.dmDisplayFrequency)
+        target_refresh_rate = f32(display_setting.dmDisplayFrequency)
     }
 
-    refresh_rate *= refresh_rate_multiplier
-    fixed_time_step := 1.0 / refresh_rate
+    target_refresh_rate *= refresh_rate_multiplier
+    fixed_time_step := 1.0 / target_refresh_rate
     
-    windows.QueryPerformanceCounter(&large_time)
-
-    current_time := f32(large_time) 
-    previous_time := f32(large_time)
-
     return GameLoop{
         last_delta_time = 0,
 
         maximum_frame_time = max_frame_time,
         update_per_second = refresh_rate,
         fixed_timestep = fixed_time_step,
-
-        previous_time = previous_time,
-        current_time = current_time,
     }
 }
 
 //FNV-1a Hash
-string_hash :: proc(path : string) -> uint{
+string_hash :: proc($path : string) -> uint{
 	hash :uint=  0xcbf29ce484222325
 	prime :uint= 0x100000001b3
 
@@ -189,7 +175,14 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [
 //////////////////////////////////////////////////////////////////////
 
 event_update :: proc(game_loop : ^GameLoop, event : ^sdl2.Event){
-	
+	if event.type == sdl2.EventType.KEYDOWN{
+		#partial switch event.key.keysym.sym{
+			case sdl2.Keycode.A, sdl2.Keycode.LEFT:
+				fmt.println("Left Pressed")
+			case sdl2.Keycode.D, sdl2.Keycode.RIGHT:
+				fmt.println("Right Pressed")
+		}
+	}
 }
 
 fixed_update :: proc(game_loop : ^GameLoop){
@@ -199,21 +192,40 @@ fixed_update :: proc(game_loop : ^GameLoop){
 	unique_entity := uint(context.user_index)
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
 
+	acceleration_integrate_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Acceleration, 8)
     velocity_integrate_query := journey.query(world, journey.Velocity, journey.Damping, journey.Acceleration, 8)
-	acceleration_integrate_query := journey.query(world, journey.Mass, journey.AccumulatedForce,journey.Acceleration, 8)
-	gravity_query := journey.query(world, journey.Mass, journey.AccumulatedForce, 8)
 
+	force_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Velocity, 8)
 
-	//TODO:khal something seem off, but it works. good working progress :P
-	for component_storage, index in journey.run(&gravity_query){
+	 // We need mass and velocity, but velocity is grouped with damping, so we will call get_soa_component
+	 // We can assume all entity that has mass must have a velocity.... or else that would be just weird...
+	for component_storage, index in journey.run(&force_query){
 		mutable_component_storage := component_storage
 
-		//Assuming that the inverse mass is not zero if so then we have a divide by zero exception.
-		mass := 1.0 /mutable_component_storage.component_a[index].val
-		
-		force := journey.GRAVITY * mass
 
-		mutable_component_storage.component_b[index].y += force
+		//Assuming that the inverse mass is not zero if so then we have a divide by zero exception.
+
+		mass := 1.0 / mutable_component_storage.component_a[index].val
+
+		//Gravitation force
+		{
+			gravitation_force := journey.GRAVITY * mass 
+			mutable_component_storage.component_b[index].y += gravitation_force
+		}
+
+		
+		// Friction force. We will only calculate horizontal friction force for the game.
+		{
+			//N = m*g
+			//if surface is inclined then the formula would be N = m * g *cos(theta)
+			normal_force := mass * journey.GRAVITY
+			// This 0.65 magic number will change the friction coefficent will be retrieve by the collided ground fricition coefficient
+			// So a ice tile will have a smaller coefficient and a grass tile will have a larger coefficient. till then it will be 0.65 
+			friction := normal_force * 0.65
+			friction_force := -component_storage.component_c[index].x * friction
+			mutable_component_storage.component_b[index].x += friction_force
+		}
+
 	}
 
 	//Simple Physics Integrate	
@@ -223,8 +235,15 @@ fixed_update :: proc(game_loop : ^GameLoop){
 		acceleration_step_x := component_storage.component_a[index].val * component_storage.component_b[index].x
 		acceleration_step_y := component_storage.component_a[index].val * component_storage.component_b[index].y
 
-		mutable_component_storage.component_c[index].x = acceleration_step_x
-		mutable_component_storage.component_c[index].y = acceleration_step_y 
+		terminal := mutable_component_storage.component_c[index].terminal
+
+		mutable_component_storage.component_c[index].x += acceleration_step_x
+		mutable_component_storage.component_c[index].y += acceleration_step_y
+
+		// We will uses a clamp to terminal velocity rather the add a drag force, since they are both relativly the same.
+		// The first is faster in term of performance.
+		mutable_component_storage.component_c[index].x = clamp(mutable_component_storage.component_c[index].x,-terminal, terminal)
+		mutable_component_storage.component_c[index].y = clamp(mutable_component_storage.component_c[index].y,-terminal, terminal)
 
 		mutable_component_storage.component_b[index] = {}
 	}
@@ -252,6 +271,12 @@ fixed_update :: proc(game_loop : ^GameLoop){
 	//Physic Solver
 
 
+
+
+	//
+
+
+	//Physics Loop
 
 
 	//
@@ -325,7 +350,7 @@ main ::  proc()  {
 
 	resource.render_buffer.render_batch_groups = make(map[uint]journey.RenderBatchGroup)
 
-	game_loop := init_game_loop_window()
+	game_loop := init_game_loop_window(0, 0.5, journey.MAX_DELTA_TIME)
 
 	world := journey.init_world()
 	context.user_ptr = world
@@ -398,9 +423,9 @@ main ::  proc()  {
 
 	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 0})
 	journey.add_soa_component(world, player_entity_1, journey.Damping{0.99})
-	journey.add_soa_component(world,player_entity_1, journey.Acceleration{})
+	journey.add_soa_component(world,player_entity_1, journey.Acceleration{0,0, journey.compute_terminal_velocity(0.1)})
 	journey.add_soa_component(world, player_entity_1, journey.AccumulatedForce{})
-	journey.add_soa_component(world, player_entity_1, journey.Mass{1})
+	journey.add_soa_component(world, player_entity_1, journey.Mass{0.1})
 
 	///////////////////////////////////////////////////////////////////
 

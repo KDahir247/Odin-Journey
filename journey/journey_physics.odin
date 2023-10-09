@@ -4,220 +4,231 @@ package journey
 import "core:math"
 import "core:math/linalg"
 
-
-
-CollisionHit :: struct{
-    collider : AABB,
-    contact_point : [2]f32, // the collision point.
-    delta_displacement : [2]f32,//  vector to add move collided AABB back to non collided state.
-    contact_normal : [2]f32,
-    time : f32, //how far along the line the collision occurred (0,1)
-}   
-
-CollisionSweep :: struct{
-    hit : CollisionHit,
-    pos : [2]f32,
-    time : f32,
+// Smaller object range from 0 to 1
+// Large object range from 1 to 10
+// Underwater or fluid range from 10 to 1000
+compute_terminal_velocity ::  proc(inverse_mass : f32, gravitation_acceleration : f32 = GRAVITY, inverse_constant_factor : f32 = 10) -> f32{
+    mass := 1.0 / inverse_mass
+    
+    return linalg.sqrt((2 * mass * gravitation_acceleration) * inverse_constant_factor)
 }
 
-//////////////////////////////// INTERSECTION FUNCTION /////////////////////////////////
 
-line_line_intersection :: proc "contextless" (a : Line, b : Line) -> (a_intersection: [2]f32, b_intersection: [2]f32){
-    intersection_point_a : [2]f32
-    intersection_point_b : [2]f32
 
-    displacement_vector := b.origin - a.origin
+//TODO:khal Remove everything below
 
-    cross_product_direction := (b.direction.x * a.direction.y) - (b.direction.y * a.direction.x)
-    cross_product_displacement := (displacement_vector.x * a.direction.y) - (displacement_vector.y * a.direction.x)
+// CollisionHit :: struct{
+//     collider : AABB,
+//     contact_point : [2]f32, // the collision point.
+//     delta_displacement : [2]f32,//  vector to add move collided AABB back to non collided state.
+//     contact_normal : [2]f32,
+//     time : f32, //how far along the line the collision occurred (0,1)
+// }   
 
-    colinear_mask := f32(i32(cross_product_direction != 0)) // false (0) is colinear
-    parallel_mask := f32(i32(cross_product_displacement == 0)) // false (0) is not parallel
+// CollisionSweep :: struct{
+//     hit : CollisionHit,
+//     pos : [2]f32,
+//     time : f32,
+// }
 
-    cross_product_direction_rcp := 1.0 / cross_product_direction
+// //////////////////////////////// INTERSECTION FUNCTION /////////////////////////////////
 
-    intersection_time_a := ((b.direction.x * displacement_vector.y) - (b.direction.y * displacement_vector.x)) * cross_product_direction_rcp
-    intersection_time_b := ((a.direction.x * displacement_vector.y) - (a.direction.y * displacement_vector.x)) * cross_product_direction_rcp
+// line_line_intersection :: proc "contextless" (a : Line, b : Line) -> (a_intersection: [2]f32, b_intersection: [2]f32){
+//     intersection_point_a : [2]f32
+//     intersection_point_b : [2]f32
 
-    time_direction_a := intersection_time_a * a.direction
-    time_direction_b := intersection_time_b * b.direction
+//     displacement_vector := b.origin - a.origin
 
-    intersection_point_a = ({a.origin.x + time_direction_a.x, a.origin.y + time_direction_a.y} * colinear_mask) + (a.origin * parallel_mask)
-    intersection_point_b = ({b.origin.x + time_direction_b.x, b.origin.y + time_direction_b.y} * colinear_mask) + (b.origin * parallel_mask)
+//     cross_product_direction := (b.direction.x * a.direction.y) - (b.direction.y * a.direction.x)
+//     cross_product_displacement := (displacement_vector.x * a.direction.y) - (displacement_vector.y * a.direction.x)
+
+//     colinear_mask := f32(i32(cross_product_direction != 0)) // false (0) is colinear
+//     parallel_mask := f32(i32(cross_product_displacement == 0)) // false (0) is not parallel
+
+//     cross_product_direction_rcp := 1.0 / cross_product_direction
+
+//     intersection_time_a := ((b.direction.x * displacement_vector.y) - (b.direction.y * displacement_vector.x)) * cross_product_direction_rcp
+//     intersection_time_b := ((a.direction.x * displacement_vector.y) - (a.direction.y * displacement_vector.x)) * cross_product_direction_rcp
+
+//     time_direction_a := intersection_time_a * a.direction
+//     time_direction_b := intersection_time_b * b.direction
+
+//     intersection_point_a = ({a.origin.x + time_direction_a.x, a.origin.y + time_direction_a.y} * colinear_mask) + (a.origin * parallel_mask)
+//     intersection_point_b = ({b.origin.x + time_direction_b.x, b.origin.y + time_direction_b.y} * colinear_mask) + (b.origin * parallel_mask)
   
-    return intersection_point_a, intersection_point_b
-}
+//     return intersection_point_a, intersection_point_b
+// }
 
 
-// y represent the y axis for the horizontal line
-line_horizontal_intersection :: proc "contextless" (a : Line, y : f32) -> [2]f32{
-    intersection_point : [2]f32
+// // y represent the y axis for the horizontal line
+// line_horizontal_intersection :: proc "contextless" (a : Line, y : f32) -> [2]f32{
+//     intersection_point : [2]f32
 
-    displacement_vector :[2]f32 = {-a.origin.x, y - a.origin.y}
+//     displacement_vector :[2]f32 = {-a.origin.x, y - a.origin.y}
 
-    colinear_mask := f32(i32(a.direction.y != 0)) // false (0) is colinear
-    parallel_mask := f32(i32(displacement_vector.y == 0)) // false (0) is not parallel
+//     colinear_mask := f32(i32(a.direction.y != 0)) // false (0) is colinear
+//     parallel_mask := f32(i32(displacement_vector.y == 0)) // false (0) is not parallel
 
-    intersection_time := displacement_vector.y / a.direction.y
-    intersection_point = ({a.origin.x + intersection_time *  a.direction.x, y} * colinear_mask) + (a.origin * parallel_mask)
+//     intersection_time := displacement_vector.y / a.direction.y
+//     intersection_point = ({a.origin.x + intersection_time *  a.direction.x, y} * colinear_mask) + (a.origin * parallel_mask)
 
-    return intersection_point
-}
+//     return intersection_point
+// }
 
-// x represent the y axis for the vertical line
-line_vetical_intersection :: proc "contextless" (a : Line, x : f32) -> [2]f32{
-    intersection_point : [2]f32
+// // x represent the y axis for the vertical line
+// line_vetical_intersection :: proc "contextless" (a : Line, x : f32) -> [2]f32{
+//     intersection_point : [2]f32
 
-    displacement_vector :[2]f32 = {x - a.origin.x,  -a.origin.y}
+//     displacement_vector :[2]f32 = {x - a.origin.x,  -a.origin.y}
 
-    colinear_mask := f32(i32(a.direction.x != 0)) // false (0) is colinear
-    parallel_mask := f32(i32(displacement_vector.x == 0)) // false (0) is not parallel
+//     colinear_mask := f32(i32(a.direction.x != 0)) // false (0) is colinear
+//     parallel_mask := f32(i32(displacement_vector.x == 0)) // false (0) is not parallel
 
-    intersection_time := displacement_vector.x / a.direction.x
+//     intersection_time := displacement_vector.x / a.direction.x
 
-    intersection_point = ({x, a.origin.y + intersection_time * a.direction.y} * colinear_mask) + (a.origin * parallel_mask)
+//     intersection_point = ({x, a.origin.y + intersection_time * a.direction.y} * colinear_mask) + (a.origin * parallel_mask)
 
-    //Note We can now use the point to aabb to get the collision hit since intersection_point is the point that collided in the aabb.
+//     //Note We can now use the point to aabb to get the collision hit since intersection_point is the point that collided in the aabb.
 
 
-    return intersection_point
-}
+//     return intersection_point
+// }
 
-fast_aabb_aabb_intersection :: proc "contextless"(a : AABB, b : AABB) -> bool{
+// fast_aabb_aabb_intersection :: proc "contextless"(a : AABB, b : AABB) -> bool{
 
-    x :=  abs(a.origin.x - b.origin.x) <= (a.half.x + b.half.x)
-    y := abs(a.origin.y - b.origin.y) <= (a.half.y + b.half.y)
+//     x :=  abs(a.origin.x - b.origin.x) <= (a.half.x + b.half.x)
+//     y := abs(a.origin.y - b.origin.y) <= (a.half.y + b.half.y)
     
-    return x && y
+//     return x && y
 
-}
+// }
 
-aabb_point_intersection :: proc "contextless"(a : AABB, b : [2]f32) -> CollisionHit {
-    hit : CollisionHit
+// aabb_point_intersection :: proc "contextless"(a : AABB, b : [2]f32) -> CollisionHit {
+//     hit : CollisionHit
 
-    displacement_vector := b - a.origin
-    overlap := a.half - {abs(displacement_vector.x), abs(displacement_vector.y)}
+//     displacement_vector := b - a.origin
+//     overlap := a.half - {abs(displacement_vector.x), abs(displacement_vector.y)}
 
-    if overlap.x <= 0 || overlap.y <= 0{
-        //TODO: khal add a collision flag so i know if it collider or not maybe it return a enum.
-        return hit
-    }
+//     if overlap.x <= 0 || overlap.y <= 0{
+//         //TODO: khal add a collision flag so i know if it collider or not maybe it return a enum.
+//         return hit
+//     }
 
-    hit.collider = a
+//     hit.collider = a
 
-    signed_displacement :[2]f32 = {math.sign(displacement_vector.x), math.sign(displacement_vector.y)} 
+//     signed_displacement :[2]f32 = {math.sign(displacement_vector.x), math.sign(displacement_vector.y)} 
 
-    collision_mask := i32(overlap.x < overlap.y)
+//     collision_mask := i32(overlap.x < overlap.y)
 
-    mask :[2]f32 = {f32(collision_mask), f32(1- collision_mask)}
+//     mask :[2]f32 = {f32(collision_mask), f32(1- collision_mask)}
 
-    hit.delta_displacement = overlap * signed_displacement * mask
-    hit.contact_normal = signed_displacement * mask
-    hit.contact_point = ((a.origin + (a.half * signed_displacement)) * mask.x) + (b * mask.y)
+//     hit.delta_displacement = overlap * signed_displacement * mask
+//     hit.contact_normal = signed_displacement * mask
+//     hit.contact_point = ((a.origin + (a.half * signed_displacement)) * mask.x) + (b * mask.y)
 
-    return hit
-}
+//     return hit
+// }
 
-aabb_segement_intersection :: proc "contextless"(a : AABB, b : Segement, padding : [2]f32 = {0,0}) -> CollisionHit{
-    hit : CollisionHit
+// aabb_segement_intersection :: proc "contextless"(a : AABB, b : Segement, padding : [2]f32 = {0,0}) -> CollisionHit{
+//     hit : CollisionHit
     
-    rcp_displacement := 1.0 / b.displacement
-    rcp_signed_displacement : [2]f32 = {math.sign(rcp_displacement.x),math.sign(rcp_displacement.y)}
+//     rcp_displacement := 1.0 / b.displacement
+//     rcp_signed_displacement : [2]f32 = {math.sign(rcp_displacement.x),math.sign(rcp_displacement.y)}
 
-    near_time := (a.origin - rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
-    far_time := (a.origin + rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
+//     near_time := (a.origin - rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
+//     far_time := (a.origin + rcp_signed_displacement * (a.half + padding) - b.origin) * rcp_displacement
 
-    if (near_time.x > far_time.y || near_time.y > far_time.x){
-        return hit
-    }
+//     if (near_time.x > far_time.y || near_time.y > far_time.x){
+//         return hit
+//     }
 
-    max_near_time := max(near_time.x, near_time.y)
-    min_far_time := min(far_time.x, far_time.y)
+//     max_near_time := max(near_time.x, near_time.y)
+//     min_far_time := min(far_time.x, far_time.y)
 
-    if (max_near_time >= 1 || min_far_time <= 0){
-        return hit
-    }
+//     if (max_near_time >= 1 || min_far_time <= 0){
+//         return hit
+//     }
 
-    hit.collider = a
-    hit.time = clamp(max_near_time, 0, 1)
+//     hit.collider = a
+//     hit.time = clamp(max_near_time, 0, 1)
 
-    horizontal_mask := int(near_time.x > near_time.y)
-    vertical_mask := f32(1.0 - horizontal_mask)
+//     horizontal_mask := int(near_time.x > near_time.y)
+//     vertical_mask := f32(1.0 - horizontal_mask)
 
-    hit.contact_normal = -rcp_signed_displacement * {f32(horizontal_mask), vertical_mask}
+//     hit.contact_normal = -rcp_signed_displacement * {f32(horizontal_mask), vertical_mask}
 
-    hit.delta_displacement = (1.0 - hit.time) * -b.displacement
-    hit.contact_point = b.origin + b.displacement * hit.time
+//     hit.delta_displacement = (1.0 - hit.time) * -b.displacement
+//     hit.contact_point = b.origin + b.displacement * hit.time
 
-    return hit
-}
+//     return hit
+// }
 
-aabb_aabb_intersection :: proc "contextless"(a : AABB, b : AABB) -> CollisionHit{
-    hit : CollisionHit
+// aabb_aabb_intersection :: proc "contextless"(a : AABB, b : AABB) -> CollisionHit{
+//     hit : CollisionHit
 
-    //TODO:khal move this to ldtk collision. Note that the origin will change depending on the entity pivot point.
-    // Right now it is the top left
-    a_half := a.half * 0.5
-    b_half := b.half * 0.5
-    a_origin := a.origin + a_half
-    b_origin := b.origin + b_half
+//     //TODO:khal move this to ldtk collision. Note that the origin will change depending on the entity pivot point.
+//     // Right now it is the top left
+//     a_half := a.half * 0.5
+//     b_half := b.half * 0.5
+//     a_origin := a.origin + a_half
+//     b_origin := b.origin + b_half
     
-    displacement_vector := b_origin - a_origin
-    overlap := (b_half + a_half) - {abs(displacement_vector.x),abs(displacement_vector.y)}
+//     displacement_vector := b_origin - a_origin
+//     overlap := (b_half + a_half) - {abs(displacement_vector.x),abs(displacement_vector.y)}
 
-    if (overlap.x <= 0 || overlap.y <= 0){
-        return hit
-    }
+//     if (overlap.x <= 0 || overlap.y <= 0){
+//         return hit
+//     }
 
-    signed_displacement :[2]f32 = {math.sign(displacement_vector.x), math.sign(displacement_vector.y)}
+//     signed_displacement :[2]f32 = {math.sign(displacement_vector.x), math.sign(displacement_vector.y)}
 
-    hit.collider = a
+//     hit.collider = a
 
-    collision_mask := int(overlap.x < overlap.y)
-    mask : [2]f32= {f32(collision_mask), f32(1 - collision_mask)} 
+//     collision_mask := int(overlap.x < overlap.y)
+//     mask : [2]f32= {f32(collision_mask), f32(1 - collision_mask)} 
 
-    hit.delta_displacement = overlap * signed_displacement * mask
-    hit.contact_normal = signed_displacement * mask
-    hit.contact_point = ((a_origin + (a_half * signed_displacement)) * mask.x) + (b_origin * mask.y)
+//     hit.delta_displacement = overlap * signed_displacement * mask
+//     hit.contact_normal = signed_displacement * mask
+//     hit.contact_point = ((a_origin + (a_half * signed_displacement)) * mask.x) + (b_origin * mask.y)
 
-    return hit
-} 
+//     return hit
+// } 
 
-////////////////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////////////////
 
 
-//////////////////////////////// SWEEP TEST ///////////////////////////////////////////
+// //////////////////////////////// SWEEP TEST ///////////////////////////////////////////
 
-aabb_aabb_sweep :: proc (a : AABB, b : AABB, velocity : [2]f32) -> CollisionSweep{
-    sweep : CollisionSweep
+// aabb_aabb_sweep :: proc (a : AABB, b : AABB, velocity : [2]f32) -> CollisionSweep{
+//     sweep : CollisionSweep
 
-    if (velocity.x == 0 && velocity.y == 0){
-        sweep.pos = b.origin
-        sweep.hit = aabb_aabb_intersection(a,b)
+//     if (velocity.x == 0 && velocity.y == 0){
+//         sweep.pos = b.origin
+//         sweep.hit = aabb_aabb_intersection(a,b)
         
-        if sweep.hit.collider == a{
-            sweep.hit.time = 0
-        }else{
-            sweep.time = 1
-        }
+//         if sweep.hit.collider == a{
+//             sweep.hit.time = 0
+//         }else{
+//             sweep.time = 1
+//         }
 
-        return sweep
-    }
+//         return sweep
+//     }
 
-    segment := Segement{b.origin,linalg.normalize(velocity),velocity}
-    sweep.hit = aabb_segement_intersection(a, segment, b.half)
+//     segment := Segement{b.origin,linalg.normalize(velocity),velocity}
+//     sweep.hit = aabb_segement_intersection(a, segment, b.half)
 
-    if sweep.hit.collider == a{
-        sweep.time = clamp(sweep.hit.time - math.F32_EPSILON, 0, 1)
-        sweep.pos = b.origin + velocity * sweep.time
-        sweep.hit.contact_point = linalg.clamp(sweep.hit.contact_point + segment.direction * b.half, a.origin - a.half, a.origin + a.half)
-    }else{
-        sweep.pos = b.origin + velocity
-        sweep.time = 1
-    }
+//     if sweep.hit.collider == a{
+//         sweep.time = clamp(sweep.hit.time - math.F32_EPSILON, 0, 1)
+//         sweep.pos = b.origin + velocity * sweep.time
+//         sweep.hit.contact_point = linalg.clamp(sweep.hit.contact_point + segment.direction * b.half, a.origin - a.half, a.origin + a.half)
+//     }else{
+//         sweep.pos = b.origin + velocity
+//         sweep.time = 1
+//     }
 
-    return sweep
-}
+//     return sweep
+// }
 
 
 // sweep_aabb :: proc(dyn_physic : ^common.Physics, static_col : [] common.Physics) -> (bool, CollisionSweep){
@@ -325,7 +336,7 @@ aabb_vertical_collision_normal ::proc "contextless" (a : AABB, x : f32) -> (left
 //     //N = m*g
 //     //if surface is inclined then the formula would be N = m * g *cos(theta)
 //     mass := 1.0 / physics.inverse_mass
-//     normal_force := mass * physics.acceleration.y
+//     normal_force := mass * gravity
 //     friction := normal_force * friction_coefficient
 
 //     friction_force := -physics.velocity.x * friction
