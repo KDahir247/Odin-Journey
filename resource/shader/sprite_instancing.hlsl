@@ -33,12 +33,14 @@ struct VSIn{
     float2 quadid : QUAD_ID;
     matrix transform : TRANSFORM;
     float4 src_rect : SRC_RECT;
+    float4 color : COLOR;
     uint spriteid : SV_INSTANCEID;
     uint vertexid : SV_VERTEXID;
 };
 
 struct VsOut{
     float4 position : SV_POSITION;
+    float4 color : COLOR;
     float2 uv : UV;
 };
 
@@ -57,6 +59,7 @@ VsOut vs_main(in VSIn vs_in)
 
     vso.position = float4(position.x, position.y, 0.0f,1.0f);
     vso.uv = scaled_quad.xy + vs_in.src_rect.xy;
+    vso.color = vs_in.color;
 
     return vso;
 }
@@ -65,10 +68,11 @@ float4 ps_main(in VsOut vs_out) : SV_TARGET{
     float width = 0;
     float height = 0;
 
+    //TODO: this will change
     SpriteTexture.GetDimensions(width,height);
-
     float2 target_uv = vs_out.uv  * float2(1.0 / width, 1.0 / height); //TODO: khal don't hardcode the rcp sprite sheet size 
-    float4 color = SpriteTexture.Sample(SpriteSampler, target_uv);
-    return color;
+    float4 tex_color = SpriteTexture.Sample(SpriteSampler, target_uv);
+    float3 color_blend = lerp(tex_color.rgb, vs_out.color.rgb, tex_color.a * vs_out.color.a);
+    return float4(color_blend, tex_color.a);
 
 }

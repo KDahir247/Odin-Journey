@@ -7,6 +7,7 @@ import "core:sync"
 import "core:os"
 import "core:math/linalg"
 import "core:time"
+import "core:slice"
 
 import "vendor:sdl2"
 import "../journey"
@@ -117,7 +118,7 @@ string_hash :: proc($path : string) -> uint{
 	return hash
 }
 
-create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [2]f32) -> uint{
+create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [2]f32, color : [4]f32, render_order : int) -> uint{
     world := cast(^journey.World)context.user_ptr
 	unique_entity := uint(context.user_index)
 
@@ -158,8 +159,10 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [
 			f32(sprite_batch.texture_param.width),
 			f32(sprite_batch.texture_param.height),
 		},
+		color = color,
+		order_index = render_order,
 	})
-
+	
 	game_entity := journey.create_entity(world)
 
 	journey.add_soa_component(world, game_entity, journey.RenderInstance{
@@ -182,7 +185,6 @@ event_update :: proc(game_loop : ^GameLoop, event : ^sdl2.Event){
 	safe_keycode_index := min(int(event.key.keysym.sym), len(controller.key_buffer) - 1)
 
 	if event.type == sdl2.EventType.KEYDOWN {
-
 		press_value := controller.sensitvity * 0.01
 		controller.key_buffer[safe_keycode_index] = min(controller.key_buffer[safe_keycode_index] + press_value, 1)
 
@@ -218,8 +220,8 @@ fixed_update :: proc(game_loop : ^GameLoop){
 
 		//Gravitation force
 		{
-			gravitation_force := journey.GRAVITY * mass 
-			mutable_component_storage.component_b[index].y += gravitation_force
+			//gravitation_force := journey.GRAVITY * mass 
+			//mutable_component_storage.component_b[index].y += gravitation_force
 		}
 
 		// Friction force. We will only calculate horizontal friction force for the game.
@@ -294,9 +296,7 @@ fixed_update :: proc(game_loop : ^GameLoop){
 		
 	}
 	//
-
 	journey.END_EVENT()
-
 }
 
 update :: proc(game_loop : ^GameLoop){
@@ -392,12 +392,6 @@ main ::  proc()  {
 	journey.register(world, journey.ResourceCache)
 	journey.register(world, journey.GameController)
 
-	//TODO: khal this will change when resource is implement in journey_ecs
-	context.user_index = int(journey.create_entity(world))
-	journey.add_soa_component(world, uint(context.user_index), resource)
-	journey.add_soa_component(world, uint(context.user_index), game_controller)
-	//
-
 	sdl2.InitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
 
 	window := sdl2.CreateWindow(
@@ -416,6 +410,12 @@ main ::  proc()  {
 	sdl2.GetWindowWMInfo(window, &window_info)
 
 	render_thread := journey.create_renderer(journey.RenderBackend.DX11,window_info.info.win.window, resource.render_buffer)
+
+	//TODO: khal this will change when resource is implement in journey_ecs
+	context.user_index = int(journey.create_entity(world))
+	journey.add_soa_component(world, uint(context.user_index), resource)
+	journey.add_soa_component(world, uint(context.user_index), game_controller)
+	//
 
 	defer{	
 		journey.stop_renderer(render_thread)
@@ -443,8 +443,8 @@ main ::  proc()  {
 
 	///////////////////////// Game Start ///////////////////////////////
 
-	player_entity_1 := create_game_entity("resource/sprite/padawan/pad.png", 0, {200,.10})
-	player_entity_2 := create_game_entity("resource/sprite/padawan/pad.png", 0, {300,.20})
+	player_entity_1 := create_game_entity("resource/sprite/padawan/pad.png", 0, {200,.10},{0.0, 0.0, 0.0, 0.0}, 4)
+	player_entity_2 := create_game_entity("resource/sprite/padawan/pad.png", 0, {203,.20}, {0.0, 0.0, 0.0, 0.0}, 2)
 
 	//TODO:khal proof of implementation flesh it out.
 	data,_ := os.read_entire_file_from_filename("resource/animation/player_anim.json")

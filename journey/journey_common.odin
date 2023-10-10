@@ -148,12 +148,6 @@ RenderBatchBuffer :: struct #align (64){
     render_batch_groups : map[uint]RenderBatchGroup,
 }
 
-Changed :: enum{
-    ALL,
-    TRANSFORM,
-    ANIMATION,
-}
-
 RenderBatchGroup :: struct{
     texture_param : TextureParam,
     instances : [dynamic]RenderInstanceData, 
@@ -162,6 +156,8 @@ RenderBatchGroup :: struct{
 RenderInstanceData :: struct #align (16){
     transform : matrix[4,4]f32,
     src_rect : Rect,
+    color : [4]f32,
+    order_index : int,
     //TODO: khal add another 4 f32 and align to 16
 }
 

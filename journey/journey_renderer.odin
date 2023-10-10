@@ -54,13 +54,6 @@ stop_renderer :: proc(render_thread : ^thread.Thread){
 }
 
 
-// // Used through out the game (SpriteSheet, FontAtlas, TileMapping)
-// @(private) 
-// RenderInstanceData :: struct #align (16){
-//     model : matrix[4,4]f32,
-//     src_rect : Rect,
-// }
-
 @(private)
 backend_proc :: #type proc(current_thread : ^thread.Thread)
 
@@ -173,6 +166,10 @@ DX_END :: proc(hr : d3d11.HRESULT, auto_free_ptr : rawptr, panic_on_fail := fals
 @(private)
 init_render_dx12_subsystem ::  proc(current_thread : ^thread.Thread){
     //Not implemented
+}
+
+sort_by_render_order :: proc(frst, snd : RenderInstanceData) -> bool{
+    return frst.order_index > snd.order_index
 }
 
 
@@ -320,14 +317,15 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{d3d11.CPU_ACCESS_FLAG.WRITE},
     }
 
-    instance_layout_descriptor := [6]d3d11.INPUT_ELEMENT_DESC{
+    instance_layout_descriptor := [7]d3d11.INPUT_ELEMENT_DESC{
         {"QUAD_ID", 0, dxgi.FORMAT.R32G32_FLOAT, 0,0, d3d11.INPUT_CLASSIFICATION.VERTEX_DATA, 0},
 
-        {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0 , d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"TRANSFORM",1, dxgi.FORMAT.R32G32B32A32_FLOAT,1,16, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"TRANSFORM",2, dxgi.FORMAT.R32G32B32A32_FLOAT,1,32, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"TRANSFORM",3, dxgi.FORMAT.R32G32B32A32_FLOAT,1,48, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
-        {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA,1},
+        {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"COLOR",    0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,80, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
     }
 
     index_buffer_descriptor := d3d11.BUFFER_DESC{
@@ -705,7 +703,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
             current_batch := batches[index]
             render_param := render_params[index]
-            
+
+            temp_instance_slice := slice.clone(current_batch.instances[:], context.temp_allocator)
+            slice.sort_by(temp_instance_slice[:],sort_by_render_order)
             // if len(current_batch.sprite_batch) <= 0 {
             //     //TODO: khal there is no batches we might want to filter out zero entity in batch in the game loop rather then
             //     // check it in the render loop. 
@@ -714,7 +714,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
             //handle the changes here.
 
-    
             device_context->IASetInputLayout(render_param.layout_input)
     
             device_context->VSSetShader(render_param.vertex_shader, nil, 0)
@@ -726,7 +725,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 true,
             )
 
-            intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &current_batch.instances[0], size_of(RenderInstanceData) * len(current_batch.instances))
+            GPUInstanceDataSize := size_of(RenderInstanceData) - size_of(int)
+
+            intrinsics.mem_copy_non_overlapping(mapped_subresources[0].pData, &temp_instance_slice[0], GPUInstanceDataSize * len(temp_instance_slice))
         
             device_context->Unmap(vertex_buffers[1], 0)
    
@@ -737,7 +738,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     
             device_context->PSSetShaderResources(0,1, &render_param.texture_resource)
     
-            device_context->DrawIndexedInstanced(6, u32(len(current_batch.instances)),0,0,0)
+            device_context->DrawIndexedInstanced(6, u32(len(temp_instance_slice)),0,0,0)
+            
+            free_all(context.temp_allocator)
         }
 
         current_buffer_index = (current_buffer_index + 1) & 1
@@ -749,8 +752,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         )
 
        END_EVENT()
-
-        free_all(context.temp_allocator)
     }
 }
 
