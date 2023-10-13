@@ -1,27 +1,24 @@
 package main
 
+import "core:mem"
 import "core:fmt"
-import "core:thread"
 import "core:sys/windows"
 import "core:sync"
 import "core:os"
 import "core:math/linalg"
 import "core:time"
 import "core:slice"
+import "core:encoding/json"
 
 import "vendor:sdl2"
 import "../journey"
-import "core:encoding/json"
 import "vendor:stb/image"
 
-loop_fn :: #type proc(game_loop : ^GameLoop)
-event_fn :: #type proc(game_loop : ^GameLoop, event : ^sdl2.Event)
-
-QUERY_PERF_FREQUENCY :: 1000000
-RCP_QUERY_PERF_FREQUENCY :: 1.0 / QUERY_PERF_FREQUENCY
+loop_fn :: #type proc(arg : ^GameLoop)
+event_fn :: #type proc(event : ^sdl2.Event)
 
 GameLoop :: struct{
-   last_delta_time : f32,
+   delta_time : f32,
    elapsed_time : f32,
    elapsed_fixed_time : f32,
 
@@ -32,52 +29,52 @@ GameLoop :: struct{
    accumulated_time : f32,
    carry_over_time : f32,
 
-
-   start_tick : time.Tick,
-   current_time : f64,
-   previous_time : f64,
+   current_time : u32,
+   previous_time : u32,
 
    terminate_next_iteration : bool,
 }
 
 GameFnDescriptor :: struct{
+
     update : loop_fn,
     fixed_update : loop_fn,
-    on_animation : loop_fn,
+	on_animation : loop_fn,
+    on_event : event_fn,
+
     //late_update : loop_fn,
 }
 
-next_frame_window :: proc(game_loop : ^GameLoop, game_descriptor : GameFnDescriptor) -> bool{
-	duration_from_startup := time.tick_since(game_loop.start_tick)
-	game_loop.current_time = time.duration_seconds(duration_from_startup)
+next_frame_window :: proc(#no_alias game_loop : ^GameLoop, game_desc : GameFnDescriptor) -> bool{
+	game_loop.current_time = sdl2.GetTicks()
 
-    delta_time := clamp(f32(game_loop.current_time - game_loop.previous_time),0, game_loop.maximum_frame_time)
-    game_loop.last_delta_time = delta_time
-    game_loop.elapsed_time += delta_time
+    game_loop.delta_time = clamp(f32(game_loop.current_time - game_loop.previous_time) / 1000, 0, game_loop.maximum_frame_time)
+    game_loop.elapsed_time += game_loop.delta_time
 
-    game_loop.accumulated_time += delta_time + game_loop.carry_over_time
+    game_loop.accumulated_time += (game_loop.delta_time + game_loop.carry_over_time)
 
     for game_loop.accumulated_time >= game_loop.fixed_timestep{
-        game_descriptor.fixed_update(game_loop)
+
+		game_desc.fixed_update(game_loop)
 
         game_loop.elapsed_fixed_time += game_loop.fixed_timestep
         game_loop.accumulated_time -= game_loop.fixed_timestep
+
+		game_loop.carry_over_time = game_loop.accumulated_time
     }
 
-    game_descriptor.update(game_loop)
-    game_descriptor.on_animation(game_loop)
+	game_desc.update(game_loop)
+	game_desc.on_animation(game_loop)
 
-    game_loop.carry_over_time = game_loop.accumulated_time
-
-    game_loop.previous_time = game_loop.current_time
+	game_loop.previous_time = game_loop.current_time
 
     return !game_loop.terminate_next_iteration
 }
 
-start_looping_game :: proc(game_loop : ^GameLoop, event : ^sdl2.Event, event_fn : event_fn, game_descriptor : GameFnDescriptor){
+start_looping_game :: proc(game_loop : ^GameLoop, event : ^sdl2.Event, game_descriptor : GameFnDescriptor){
     for next_frame_window(game_loop, game_descriptor){
         for sdl2.PollEvent(event){
-            event_fn(game_loop, event)
+            game_descriptor.on_event(event)
             game_loop.terminate_next_iteration = event.type == sdl2.EventType.QUIT
         }
     }
@@ -98,8 +95,8 @@ init_game_loop_window :: proc($refresh_rate : f32 , $refresh_rate_multiplier : f
     fixed_time_step := 1.0 / target_refresh_rate
     
     return GameLoop{
-        last_delta_time = 0,
-
+        delta_time = 0,
+		previous_time = sdl2.GetTicks(),
         maximum_frame_time = max_frame_time,
         update_per_second = refresh_rate,
         fixed_timestep = fixed_time_step,
@@ -147,9 +144,9 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [
 
 	append(&sprite_batch.instances, journey.RenderInstanceData{
 		transform = {
-			1.0, 0.0, 0.0, position[0],
-			0.0, 1.0, 0.0, position[1],
-			0.0, 0.0, 1.0, 0.0,
+			2.0 , 0.0, 0.0, position[0],
+			0.0, 2.0, 0.0, position[1],
+			0.0, 0.0, 2.0, 0.0,
 			0.0, 0.0, 0.0, 1.0,
 		},
 
@@ -160,6 +157,7 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [
 			f32(sprite_batch.texture_param.height),
 		},
 		color = color,
+		flip_bit = {1,1},
 		order_index = render_order,
 	})
 	
@@ -177,7 +175,8 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, position : [
 
 //////////////////////////////////////////////////////////////////////
 
-event_update :: proc(game_loop : ^GameLoop, event : ^sdl2.Event){
+event_update :: proc(event : ^sdl2.Event){
+
 	world := cast(^journey.World)context.user_ptr
 	unique_entity := uint(context.user_index)
 	controller := journey.get_soa_component(world, unique_entity, journey.GameController)
@@ -195,18 +194,18 @@ event_update :: proc(game_loop : ^GameLoop, event : ^sdl2.Event){
 	}
 }
 
-fixed_update :: proc(game_loop : ^GameLoop){
-	journey.BEGIN_EVENT("Fixed Update")
+fixed_update :: proc(global : ^GameLoop){
 
+	//TODO:khal double check implmentation. something is off...
     world := cast(^journey.World)context.user_ptr
 	unique_entity := uint(context.user_index)
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
 	game_controller := journey.get_soa_component(world, unique_entity, journey.GameController)
 
 	acceleration_integrate_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Acceleration, 8)
-    velocity_integrate_query := journey.query(world, journey.Velocity, journey.Damping, journey.Acceleration, 8)
-
 	force_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Velocity, 8)
+
+    velocity_integrate_query := journey.query(world, journey.Velocity, journey.Damping, journey.Acceleration, 8)
 
 	//currently physics loop only needs accumulated force this will be add on
 	fixed_update_query := journey.query(world, journey.AccumulatedForce)
@@ -220,7 +219,7 @@ fixed_update :: proc(game_loop : ^GameLoop){
 
 		//Gravitation force
 		{
-			//gravitation_force := journey.GRAVITY * mass 
+			gravitation_force := journey.GRAVITY * mass 
 			//mutable_component_storage.component_b[index].y += gravitation_force
 		}
 
@@ -235,7 +234,6 @@ fixed_update :: proc(game_loop : ^GameLoop){
 			friction_force := -component_storage.component_c[index].x * friction
 			mutable_component_storage.component_b[index].x += friction_force
 		}
-
 	}
 
 	//Simple Physics Integrate	
@@ -245,15 +243,8 @@ fixed_update :: proc(game_loop : ^GameLoop){
 		acceleration_step_x := component_storage.component_a[index].val * component_storage.component_b[index].x
 		acceleration_step_y := component_storage.component_a[index].val * component_storage.component_b[index].y
 
-		terminal := mutable_component_storage.component_c[index].terminal
-
-		mutable_component_storage.component_c[index].x += acceleration_step_x
-		mutable_component_storage.component_c[index].y += acceleration_step_y
-
-		// We will uses a clamp to terminal velocity rather the add a drag force, since they are both relativly the same.
-		// The first is faster in term of performance.
-		mutable_component_storage.component_c[index].x = clamp(mutable_component_storage.component_c[index].x,-terminal, terminal)
-		mutable_component_storage.component_c[index].y = clamp(mutable_component_storage.component_c[index].y,-terminal, terminal)
+		mutable_component_storage.component_c[index].x = acceleration_step_x
+		mutable_component_storage.component_c[index].y = acceleration_step_y
 
 		mutable_component_storage.component_b[index] = {}
 	}
@@ -264,17 +255,19 @@ fixed_update :: proc(game_loop : ^GameLoop){
 
 		mutable_component_storage := component_storage
 
-		last_velocity_x := component_storage.component_a[index].x * game_loop.last_delta_time
-		last_velocity_y := component_storage.component_a[index].y * game_loop.last_delta_time
+		last_velocity_x := component_storage.component_a[index].x
+		last_velocity_y := component_storage.component_a[index].y
 
 		sprite_batch.instances[sprite.instance_index].transform[0,3] += last_velocity_x 
-		sprite_batch.instances[sprite.instance_index].transform[1,3] += last_velocity_y
+		sprite_batch.instances[sprite.instance_index].transform[1,3] += last_velocity_y 
 
-		mutable_component_storage.component_a[index].x += (component_storage.component_c[index].x * game_loop.last_delta_time)
-		mutable_component_storage.component_a[index].y += (component_storage.component_c[index].y * game_loop.last_delta_time)
-		
-		mutable_component_storage.component_a[index].x *= linalg.pow(component_storage.component_b[index].val, game_loop.last_delta_time)
-		mutable_component_storage.component_a[index].y *= linalg.pow(component_storage.component_b[index].val, game_loop.last_delta_time)
+		terminal := component_storage.component_a[index].terminal
+
+		mutable_component_storage.component_a[index].x += (component_storage.component_c[index].x * global.delta_time)
+		mutable_component_storage.component_a[index].y += (component_storage.component_c[index].y * global.delta_time)
+		mutable_component_storage.component_a[index].x *= linalg.pow(component_storage.component_b[index].val, global.delta_time)
+		mutable_component_storage.component_a[index].y *= linalg.pow(component_storage.component_b[index].val, global.delta_time)
+		mutable_component_storage.component_a[index].y = clamp(component_storage.component_a[index].y, -terminal, terminal)
 	}
 	//
 
@@ -290,69 +283,79 @@ fixed_update :: proc(game_loop : ^GameLoop){
 		mutable_component_storage := component_storage
 
 		//Only adding a horizontal add force
-		player_input_x := game_controller.key_buffer[sdl2.Keycode.D] - game_controller.key_buffer[sdl2.Keycode.A]
+		player_input_x := game_controller.key_buffer[sdl2.Keycode.A] - game_controller.key_buffer[sdl2.Keycode.D]
 		//magic number 4000 for placeholder for player movement.
-		mutable_component_storage.component_a[index].x += player_input_x * 9000
-		
+		mutable_component_storage.component_a[index].x += player_input_x * 1
 	}
 	//
-	journey.END_EVENT()
 }
 
-update :: proc(game_loop : ^GameLoop){
-	journey.BEGIN_EVENT("Update")
+update :: proc(global : ^GameLoop){
+	world := cast(^journey.World)context.user_ptr
+	
+	unique_entity := uint(context.user_index)
+	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
+	game_controller := journey.get_soa_component(world, unique_entity, journey.GameController)
 
+	//TODO:khal better component
+	sprite_flip_query := journey.query(world, journey.Velocity)
 
+	for component_storage, index in journey.run(&sprite_flip_query){
+		sprite := journey.get_soa_component(world, component_storage.entities[index], journey.RenderInstance)
+		sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
 
-	journey.END_EVENT()
+		if game_controller.key_buffer[sdl2.Keycode.A] > 0{
+			sprite_batch.instances[sprite.instance_index].flip_bit[0] = 1
+		}else if game_controller.key_buffer[sdl2.Keycode.D] > 0{
+			sprite_batch.instances[sprite.instance_index].flip_bit[0] = 0
+		}
+	}
 }
 
-on_animation :: proc(game_loop : ^GameLoop){
-	journey.BEGIN_EVENT("Animation Loop")
+on_animation :: proc(global : ^GameLoop){
 
     world := cast(^journey.World)context.user_ptr
+	
 	unique_entity := uint(context.user_index)
-
 	// Cache texture and shader and render data to send to render thread
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
 
 	anim_sprite_query := journey.query(world, journey.Animator)
 
 	for component_storage, index in journey.run(&anim_sprite_query){
-		
+		mutable_component_storage := component_storage
 		sprite := journey.get_soa_component(world, component_storage.entities[index], journey.RenderInstance)
+		
+		//TODO:khal do better implementation
+		if journey.has_soa_component(world, component_storage.entities[index], journey.Velocity){
+			velocity := journey.get_soa_component(world, component_storage.entities[index], journey.Velocity)
+			mutable_component_storage.component_a[index].current_clip = int(linalg.abs(velocity.x) >= 0.002)
+			
+		}
+		
 		animator := component_storage.component_a[index]
 
 		current_clip := animator.clips[animator.current_clip]
 
-		animation_delta_time := (game_loop.elapsed_time - animator.animation_time) 
-		frame_to_update := linalg.floor(animation_delta_time * animator.animation_speed)
-		next_frame := animator.previous_frame + int(frame_to_update)
+		normalized_time := global.elapsed_time / animator.animation_duration_sec
 
-		animator.previous_frame = next_frame
-		animator.previous_frame %= current_clip.len
-
-		update_mask :f32= max(frame_to_update, 0)
-		rcp_update_mask := 1 - update_mask
-
-		animator.animation_time = (game_loop.elapsed_time * update_mask) + (animator.animation_time * rcp_update_mask)
-		
 		y :=current_clip.index * current_clip.height
-		x := animator.previous_frame * current_clip.width
+		x := (int(normalized_time) % current_clip.len) * current_clip.width
 		
 		sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
 		sprite_batch.instances[sprite.instance_index].src_rect = {
 			f32(x), f32(y), f32(current_clip.width), f32(current_clip.height),
 		} 
 	}
-
-	journey.END_EVENT()
 }
 
 main ::  proc()  {
 
+	track: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&track, context.allocator)
+		context.allocator = mem.tracking_allocator(&track)
+
 	////////////////////// Game Initialize /////////////////////////
-	journey.CREATE_PROFILER("profiling/ProfilerData.spall")
 
 	sdl2_event : sdl2.Event
 	window_info : sdl2.SysWMinfo 
@@ -370,9 +373,8 @@ main ::  proc()  {
 		gravity = 1.0,
 		rcp_max_threshold = 0.01,
 	}
-	//
 
-	game_loop := init_game_loop_window(0, 0.5, journey.MAX_DELTA_TIME)
+	game_loop := init_game_loop_window(0, 1, journey.MAX_DELTA_TIME)
 
 	world := journey.init_world()
 	context.user_ptr = world
@@ -437,37 +439,51 @@ main ::  proc()  {
 		sdl2.DestroyWindow(window)
 		sdl2.Quit()
 
-		journey.FREE_PROFILER()
+		if len(track.allocation_map) > 0 {
+			fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+			for _, entry in track.allocation_map {
+				fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+			}
+		}
+		if len(track.bad_free_array) > 0 {
+			fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+			for entry in track.bad_free_array {
+				fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+			}
+		} 
+		mem.tracking_allocator_destroy(&track)
 	}
 	////////////////////////////////////////////////////////////////////
 
 	///////////////////////// Game Start ///////////////////////////////
 
-	player_entity_1 := create_game_entity("resource/sprite/padawan/pad.png", 0, {200,.10},{0.0, 0.0, 0.0, 0.0}, 4)
-	player_entity_2 := create_game_entity("resource/sprite/padawan/pad.png", 0, {203,.20}, {0.0, 0.0, 0.0, 0.0}, 2)
+	player_entity_1 := create_game_entity("resource/sprite/padawan/pad.png", 0, {0,0},{0.0, 0.0, 0.0, 0.0}, 4)
+	player_entity_2 := create_game_entity("resource/sprite/padawan/pad.png", 0, {0,0}, {0.0, 0.0, 0.0, 0.0}, 2)
 
 	//TODO:khal proof of implementation flesh it out.
 	data,_ := os.read_entire_file_from_filename("resource/animation/player_anim.json")
+	defer delete(data)
 	player_anim : journey.Animator
 	json.unmarshal(data, &player_anim)
 
 	journey.add_soa_component(world, player_entity_1, player_anim)
 	journey.add_soa_component(world, player_entity_2, player_anim)
 
-	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 0})
+	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 0, journey.compute_terminal_velocity(1)})
 	journey.add_soa_component(world, player_entity_1, journey.Damping{0.99})
-	journey.add_soa_component(world,player_entity_1, journey.Acceleration{0,0, journey.compute_terminal_velocity(0.1)})
+	journey.add_soa_component(world,player_entity_1, journey.Acceleration{0,0})
 	journey.add_soa_component(world, player_entity_1, journey.AccumulatedForce{})
-	journey.add_soa_component(world, player_entity_1, journey.Mass{0.1})
+	journey.add_soa_component(world, player_entity_1, journey.Mass{1})
 	//
 
 	///////////////////////////////////////////////////////////////////
 
 	///////////////////////// Game Loop ///////////////////////////////
-	start_looping_game(&game_loop,&sdl2_event, event_update, GameFnDescriptor{
+	start_looping_game(&game_loop,&sdl2_event, GameFnDescriptor{
 		update = update,
 		fixed_update = fixed_update,
 		on_animation = on_animation,
+		on_event = event_update,
 	})
 	///////////////////////// Game Loop ///////////////////////////////
 }

@@ -74,4 +74,3 @@ project_vector :: proc(proj, onto : [2]f32) -> [2]f32{
 
     return res
 }
-

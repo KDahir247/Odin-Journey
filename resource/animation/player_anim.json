@@ -19,6 +19,6 @@
                 "len": 17
             }
     ],
-    "animation_speed": 13.0000000,
-    "current_clip" : 1
+    "animation_duration_sec": 0.1000000,
+    "current_clip" : 0
 }

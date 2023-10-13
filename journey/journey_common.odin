@@ -2,82 +2,6 @@ package journey
 
 import "core:prof/spall"
 
-//////////////////// Utility FN ////////////////////////
-
-CREATE_PROFILER :: #force_inline proc($name : string, buffer_size : int = spall.BUFFER_DEFAULT_SIZE,thread_id : u32 = 0, pid : u32 = 0){
-    when #config(PROFILE,true){
-        if created == false{
-            created = true
-
-
-            profiler_context = spall.context_create_with_sleep(name)
-            profiler_backer := make([]u8, buffer_size)
-            profiler_buffer = spall.buffer_create(profiler_backer,thread_id, pid)
-        }
-    }
-}
-
-CREATE_PROFILER_BUFFER :: #force_inline proc(tid : u32, pid :u32= 0){
-    when #config(PROFILE,true){
-        if created == false{
-            created = true
-
-            profiler_backer := make([]u8, spall.BUFFER_DEFAULT_SIZE)
-            profiler_buffer = spall.buffer_create(profiler_backer, tid, pid)
-        }
-    }
-}
-
-FREE_PROFILER :: #force_inline proc(){
-    when #config(PROFILE,true){
-        if created == true{
-            created = false
-
-            defer delete(profiler_buffer.data)
-            spall.buffer_destroy(&profiler_context, &profiler_buffer)
-            spall.context_destroy(&profiler_context)
-        }
-    }
-}
-
-FREE_PROFILER_BUFFER :: #force_inline proc(){
-    when #config(PROFILE,true){
-        if created == true{
-                        
-        created = false
-
-        defer delete(profiler_buffer.data)
-		spall.buffer_destroy(&profiler_context, &profiler_buffer)
-        }
-    }
-}
-
-BEGIN_EVENT :: proc(name : string){
-    when #config(PROFILER, true){
-        if created{
-            spall._buffer_begin(&profiler_context, &profiler_buffer, name)
-        }
-    }
-}
-
-END_EVENT :: proc(){
-    when #config(PROFILER, true){
-        if created{
-            spall._buffer_end(&profiler_context, &profiler_buffer)
-        }
-    }
-}
-/////////////////////////////////////////////////////////
-
-//////////////////// Utility DATA /////////////////////////
-
-
-@(private) profiler_context : spall.Context
-@(private) @(thread_local) profiler_buffer : spall.Buffer
-@(private) @(thread_local) created : bool
-
-/////////////////////////////////////////////////////////
-
 
 //////////////////// COMMAN MATH ///////////////////////
   
@@ -132,6 +56,9 @@ SpriteIndex :: struct{
 }
 
 GlobalDynamicVSConstantBuffer :: struct #align (16){
+    projection_matrix : matrix[4,4]f32,
+    view_matrix : matrix[4,4]f32,
+
     viewport_x : f32,
     viewport_y : f32,
     viewport_width : f32,
@@ -157,6 +84,9 @@ RenderInstanceData :: struct #align (16){
     transform : matrix[4,4]f32,
     src_rect : Rect,
     color : [4]f32,
+    //-1 is true, 1 is false
+    flip_bit : [2]f32,
+    pivot_point : [2]f32,
     order_index : int,
     //TODO: khal add another 4 f32 and align to 16
 }
@@ -196,8 +126,7 @@ Animator :: struct{
     clips :[]Animation,
     animation_speed : f32,
     current_clip : int,
-    previous_frame : int, 
-    animation_time : f32,
+    animation_duration_sec : f32,
 }
 
 Animation :: struct{
@@ -214,12 +143,12 @@ Animation :: struct{
 Velocity :: struct{
     x : f32,
     y : f32,
+    terminal : f32,
 }
 
 Acceleration :: struct{
     x : f32,
     y : f32,
-    terminal : f32,
 }
 
 Damping :: struct{
@@ -257,26 +186,6 @@ GameController :: struct{
 }
 
 ///////////////////////////////////////////////////////
-
-
-// //REMOVE BELOW
-// Physics :: struct{
-//     collider : mathematics.AABB,
-//     position : mathematics.Vec2,
-//     velocity : mathematics.Vec2,
-//     acceleration : mathematics.Vec2,
-//     accumulated_force : mathematics.Vec2,
-//     damping : f32, 
-//     inverse_mass : f32,
-//     friction : f32,
-//     restitution : f32,
-//     grounded : bool, //TODO: khal don't like this move to wanted to align it to power of twos
-// }
-
-// TileMap :: struct{
-//     texture : ^sdl2.Texture,
-// 	dimension : mathematics.Vec2i,
-// }
 
 // PhysicsContact :: struct{
 //     contacts : [2]Physics,

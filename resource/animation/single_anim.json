@@ -8,6 +8,6 @@
                 "len": 1
             }
     ],
-    "animation_speed": 2.00000000,
+    "animation_duration_sec": 2.00000000,
     "current_clip" : 0
 }

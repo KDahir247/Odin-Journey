@@ -1,5 +1,6 @@
 package journey
 
+import "core:mem"
 import "core:slice" //TODO: temp for map to slice
 import "core:fmt"
 import "core:thread"
@@ -176,10 +177,14 @@ sort_by_render_order :: proc(frst, snd : RenderInstanceData) -> bool{
 //TODO:khal we need to handle window resize, then maybe a debug mode to allow editor support.
 @(private)
 init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
+
+    track: mem.Tracking_Allocator
+    mem.tracking_allocator_init(&track, context.allocator)
+    context.allocator = mem.tracking_allocator(&track)
+
     //TODO: DATA NEED ALIGNMENT TO 16 BOTH STRUCT AND PTR.
 
     vs_buffer_data := new(GlobalDynamicVSConstantBuffer)
-    defer free(vs_buffer_data)
 
     batches : []RenderBatchGroup
 
@@ -205,7 +210,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     render_batch_buffer := cast(^RenderBatchBuffer)current_thread.data
 
-    CREATE_PROFILER_BUFFER(u32(current_thread.id))
 
     window := windows.HWND(current_thread.user_args[0])
     
@@ -222,6 +226,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     viewport : d3d11.VIEWPORT = d3d11.VIEWPORT{
         Width = f32(window_width),
         Height = f32(window_height),
+        MinDepth = 0.01,
         MaxDepth = 1,
     }
 
@@ -229,6 +234,9 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     vs_buffer_data.viewport_y = viewport.TopLeftY
     vs_buffer_data.viewport_width = viewport.Width
     vs_buffer_data.viewport_height = viewport.Height
+    //sdl2 positive Y direction is downward so we negate the viewport.Height
+    vs_buffer_data.projection_matrix = dx11_ortho_lhs(viewport.Width,viewport.Height,viewport.MinDepth, viewport.MaxDepth)
+    vs_buffer_data.view_matrix = dx11_lookat_lhs(hlsl.float3{0.0, 0.0, 0.0}, hlsl.float3{0.0, 0.0, 1.0}, hlsl.float3{0.0, -1.0, 0.0})
 
     base_device : ^d3d11.IDevice
     base_device_context : ^d3d11.IDeviceContext
@@ -317,7 +325,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         CPUAccessFlags = d3d11.CPU_ACCESS_FLAGS{d3d11.CPU_ACCESS_FLAG.WRITE},
     }
 
-    instance_layout_descriptor := [7]d3d11.INPUT_ELEMENT_DESC{
+    instance_layout_descriptor := [9]d3d11.INPUT_ELEMENT_DESC{
         {"QUAD_ID", 0, dxgi.FORMAT.R32G32_FLOAT, 0,0, d3d11.INPUT_CLASSIFICATION.VERTEX_DATA, 0},
 
         {"TRANSFORM",0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,0 , d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
@@ -326,6 +334,8 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         {"TRANSFORM",3, dxgi.FORMAT.R32G32B32A32_FLOAT,1,48, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"COLOR",    0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,80, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"SPRITE", 0, dxgi.FORMAT.R32G32_FLOAT, 1, 96, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"SPRITE", 1, dxgi.FORMAT.R32G32_FLOAT, 1, 104, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
     }
 
     index_buffer_descriptor := d3d11.BUFFER_DESC{
@@ -400,11 +410,26 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
         delete(render_params)
 
-        //TODO: khal seem like a leak on the back buffer
-        FREE_PROFILER_BUFFER()
+        free(vs_buffer_data)
+
+        if len(track.allocation_map) > 0 {
+			fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+			for _, entry in track.allocation_map {
+				fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+			}
+		}
+		if len(track.bad_free_array) > 0 {
+			fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+			for entry in track.bad_free_array {
+				fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+			}
+		}
+		mem.tracking_allocator_destroy(&track)
+
     }
 
-    BEGIN_EVENT("Device Construction & Query")
+
+    //Device Construction & Query
 
     DX_CALL(
         d3d11.CreateDevice(nil, d3d11.DRIVER_TYPE.HARDWARE, nil, d3d11.CREATE_DEVICE_FLAGS{},&d3d_feature_level[0],len(d3d_feature_level), d3d11.SDK_VERSION,&base_device, nil, &base_device_context),
@@ -436,9 +461,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         dxgi_factory,
     )
 
-    END_EVENT()
-
-    BEGIN_EVENT("SwapChain Construction")
+    //SwapChain Construction
     
     DX_CALL(
         dxgi_factory->CreateSwapChainForHwnd(device, window, &swapchain_descriptor, nil,nil,&swapchain ),
@@ -468,31 +491,26 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     DX_CALL(
         device->CreateRenderTargetView(back_buffer[1], nil, &back_render_target_view[1]),
         back_render_target_view[1],
-        )
+    )
 
 
-    END_EVENT()
-
-    BEGIN_EVENT("CBuffer Construction")
+    //Constant Buffer Construction
 
     DX_CALL(
         device->CreateBuffer(&vs_constant_buffer_descriptor, nil,&vs_global_cbuffer),
         vs_global_cbuffer,
     )
 
-    END_EVENT()
 
-    BEGIN_EVENT("Sampler Construction")
+    //Sampler Construction
 
     DX_CALL(
         device->CreateSamplerState(&sampler_descriptor, &texture_sampler),
         texture_sampler,
     )
 
-    END_EVENT()
 
-
-    BEGIN_EVENT("Buffer Creation")
+    //Buffer Creation
 
     vertex_resource : d3d11.SUBRESOURCE_DATA = d3d11.SUBRESOURCE_DATA{
         pSysMem = (rawptr)(&vertices),
@@ -519,36 +537,31 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         index_buffer,
     )
 
-    END_EVENT()
-
-    BEGIN_EVENT("RasterizerState Creation")
+    //RasterizerState Creation
     
     DX_CALL(
         device->CreateRasterizerState(&raterizer_descriptor,&raterizer_state),
         raterizer_state,
     )
 
-    END_EVENT()
 
-    BEGIN_EVENT("StencilDepth Creation")
+    //StencilDepth Creation
 
     DX_CALL(
         device->CreateDepthStencilState(&stencil_depth_descriptor, &stencil_depth_state),
         stencil_depth_state,
     )
 
-    END_EVENT()
 
-    BEGIN_EVENT("BlendState Creation")
+    //BlendState Creation
 
     DX_CALL(
         device->CreateBlendState(&blend_descriptor, &blend_state),
         blend_state,
     )
 
-    END_EVENT()
 
-    BEGIN_EVENT("Binding")
+    //Binding
 
     device_context->IASetPrimitiveTopology(d3d11.PRIMITIVE_TOPOLOGY.TRIANGLELIST)
     device_context->IASetIndexBuffer(index_buffer, dxgi.FORMAT.R16_UINT, 0)
@@ -567,8 +580,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     device_context->DSSetShader(nil, nil, 0)
     device_context->CSSetShader(nil, nil, 0)
 
-    END_EVENT()
-
     {
         sync.guard(&current_thread.mutex)
         sync.signal((^sync.Cond)(current_thread.user_args[1]))
@@ -583,8 +594,8 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 render_batch_group,_ := slice.map_values(render_batch_buffer.render_batch_groups)
 
                 batches = render_batch_group
-                BEGIN_EVENT("Updating Shared Render Data")
-
+                
+                //Updating Shared Render Data
 
                 //TODO: khal we can later use offset to index the smaller chunk of shared to update the render param rather then iterate over all shared.
                 for render_batch in batches{
@@ -677,12 +688,10 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
                 }
 
                 sync.atomic_store_explicit(&render_batch_buffer.changed_flag, false, sync.Atomic_Memory_Order.Relaxed)
-            
-                END_EVENT()
             }
         }
 
-        BEGIN_EVENT("Draw Call")
+        //Draw Call
 
         //Nvidia recommend using Map rather the UpdateSubResource so we will follow thier guidence.
         DX_CALL(
@@ -691,6 +700,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             true,
         )
 
+        //TODO:khal rather can Map and Unmap every draw call only 
         intrinsics.mem_copy_non_overlapping(mapped_subresources[1].pData,vs_buffer_data, size_of(GlobalDynamicVSConstantBuffer))
 
         device_context->Unmap(vs_global_cbuffer, 0)
@@ -739,7 +749,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             device_context->PSSetShaderResources(0,1, &render_param.texture_resource)
     
             device_context->DrawIndexedInstanced(6, u32(len(temp_instance_slice)),0,0,0)
-            
             free_all(context.temp_allocator)
         }
 
@@ -750,8 +759,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             nil,
             true,
         )
-
-       END_EVENT()
     }
 }
 

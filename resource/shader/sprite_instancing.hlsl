@@ -23,6 +23,9 @@ END_SHADER_DECLARATIONS
 */
 
 cbuffer VS_CONSTANT_BUFFER : register(b0){
+    matrix projection_matrix;
+    matrix view_matrix;
+
     float viewport_x;
     float viewport_y;
     float viewport_width;
@@ -30,10 +33,14 @@ cbuffer VS_CONSTANT_BUFFER : register(b0){
 };
 
 struct VSIn{
-    float2 quadid : QUAD_ID;
+    float2 quadid : QUAD_ID; //vertex
+
     matrix transform : TRANSFORM;
     float4 src_rect : SRC_RECT;
     float4 color : COLOR;
+    
+    //naming is bad will change, but it will hold 2 vec2 (flip x bit, flip y bit, pivot point x, pivot point y)
+    float4 sprite_detail : SPRITE;
     uint spriteid : SV_INSTANCEID;
     uint vertexid : SV_VERTEXID;
 };
@@ -53,12 +60,20 @@ VsOut vs_main(in VSIn vs_in)
     
     float4 scaled_quad = float4(vs_in.quadid * vs_in.src_rect.zw, 0.0, 1.0);
 
-    
-    float2 device_conversion = float2(4.0, -4.0) / float2(viewport_width, viewport_height);
-    float2 position = mul(scaled_quad, vs_in.transform).xy * device_conversion - float2(1.0, -1.0);
+    float4 center_pivot = float4(vs_in.src_rect.zw * 0.5, 0.0, 0.0);
 
-    vso.position = float4(position.x, position.y, 0.0f,1.0f);
-    vso.uv = scaled_quad.xy + vs_in.src_rect.xy;
+    float4 position = scaled_quad - center_pivot;
+    position = mul(position, vs_in.transform);
+    position = mul(position, view_matrix);
+    position = mul(position, projection_matrix);
+
+    float2 flipped_scaled_quad = float2(
+        (scaled_quad.x * vs_in.sprite_detail.x) + (vs_in.src_rect.z - scaled_quad.x) * (1 - vs_in.sprite_detail.x),
+        (scaled_quad.y * vs_in.sprite_detail.y) + (vs_in.src_rect.w - scaled_quad.y) * (1 - vs_in.sprite_detail.y)
+    );
+
+    vso.position = position;
+    vso.uv = flipped_scaled_quad + vs_in.src_rect.xy;
     vso.color = vs_in.color;
 
     return vso;
@@ -70,7 +85,8 @@ float4 ps_main(in VsOut vs_out) : SV_TARGET{
 
     //TODO: this will change
     SpriteTexture.GetDimensions(width,height);
-    float2 target_uv = vs_out.uv  * float2(1.0 / width, 1.0 / height); //TODO: khal don't hardcode the rcp sprite sheet size 
+    float2 target_uv = vs_out.uv  * float2(1.0 / width , 1.0 / height); //TODO: khal don't hardcode the rcp sprite sheet size 
+
     float4 tex_color = SpriteTexture.Sample(SpriteSampler, target_uv);
     float3 color_blend = lerp(tex_color.rgb, vs_out.color.rgb, tex_color.a * vs_out.color.a);
     return float4(color_blend, tex_color.a);
