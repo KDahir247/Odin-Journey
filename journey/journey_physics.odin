@@ -4,6 +4,24 @@ package journey
 import "core:math"
 import "core:math/linalg"
 
+compute_speed :: proc(velocity : [2]f32) -> f32{
+    return linalg.length(velocity)
+}
+
+compute_sqr_speed :: proc(velocity : [2]f32) -> f32{
+    return linalg.length2(velocity)
+}
+
+compute_direction :: proc(velocity : [2]f32) -> [2]f32{
+    return velocity / compute_speed(velocity)
+}
+
+linear_drag_force :: proc(drag_coefficent : f32, velocity : [2]f32) -> [2]f32{
+    unimplemented("KHAL implement this")
+}
+
+
+
 // Smaller object range from 0 to 1
 // Large object range from 1 to 10
 // Underwater or fluid range from 10 to 1000

@@ -39,9 +39,9 @@ DEFAULT_AUDIO_PATH_MP3 :: "resource/aduio/*.mp3"
 //////////////////// COMMON VARIABLES //////////////////
 
 TIME_SCALE : f32 :  1.0
-MAX_DELTA_TIME : f32: (1.0 / 30.0) * TIME_SCALE
+MAX_DELTA_TIME : f32: (1.0 / 60.0) * TIME_SCALE
 
-GRAVITY :: 19.81
+GRAVITY :: 9.81
 ///////////////////////////////////////////////////////
 
 /////////////////// RENDERER DATA /////////////////////
@@ -143,16 +143,11 @@ Animation :: struct{
 Velocity :: struct{
     x : f32,
     y : f32,
-    terminal : f32,
 }
 
 Acceleration :: struct{
     x : f32,
     y : f32,
-}
-
-Damping :: struct{
-    val : f32,
 }
 
 //Mass val is represent as the inverse mass

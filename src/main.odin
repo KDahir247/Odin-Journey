@@ -18,21 +18,21 @@ loop_fn :: #type proc(arg : ^GameLoop)
 event_fn :: #type proc(event : ^sdl2.Event)
 
 GameLoop :: struct{
-   delta_time : f32,
-   elapsed_time : f32,
-   elapsed_fixed_time : f32,
-
-   maximum_frame_time : f32,
-   update_per_second : f32,
-   fixed_timestep : f32,
-
-   accumulated_time : f32,
-   carry_over_time : f32,
-
-   current_time : u32,
-   previous_time : u32,
-
-   terminate_next_iteration : bool,
+	fixed_deltatime : f32,
+	delta_time : f32,
+	elapsed_time : f32,
+	elapsed_fixed_time : f32,
+ 
+	maximum_frame_time : f32,
+	update_per_second : f32,
+ 
+	accumulated_time : f32,
+	carry_over_time : f32,
+ 
+	current_time : u32,
+	previous_time : u32,
+ 
+	terminate_next_iteration : bool,
 }
 
 GameFnDescriptor :: struct{
@@ -53,12 +53,12 @@ next_frame_window :: proc(#no_alias game_loop : ^GameLoop, game_desc : GameFnDes
 
     game_loop.accumulated_time += (game_loop.delta_time + game_loop.carry_over_time)
 
-    for game_loop.accumulated_time >= game_loop.fixed_timestep{
+    for game_loop.accumulated_time >= game_loop.fixed_deltatime{
 
 		game_desc.fixed_update(game_loop)
 
-        game_loop.elapsed_fixed_time += game_loop.fixed_timestep
-        game_loop.accumulated_time -= game_loop.fixed_timestep
+        game_loop.elapsed_fixed_time += game_loop.fixed_deltatime
+        game_loop.accumulated_time -= game_loop.fixed_deltatime
 
 		game_loop.carry_over_time = game_loop.accumulated_time
     }
@@ -92,14 +92,14 @@ init_game_loop_window :: proc($refresh_rate : f32 , $refresh_rate_multiplier : f
     }
 
     target_refresh_rate *= refresh_rate_multiplier
-    fixed_time_step := 1.0 / target_refresh_rate
+    fixed_deltatime := 1.0 / target_refresh_rate
     
     return GameLoop{
         delta_time = 0,
 		previous_time = sdl2.GetTicks(),
         maximum_frame_time = max_frame_time,
         update_per_second = refresh_rate,
-        fixed_timestep = fixed_time_step,
+        fixed_deltatime = fixed_deltatime,
     }
 }
 
@@ -184,7 +184,7 @@ event_update :: proc(event : ^sdl2.Event){
 	safe_keycode_index := min(int(event.key.keysym.sym), len(controller.key_buffer) - 1)
 
 	if event.type == sdl2.EventType.KEYDOWN {
-		press_value := controller.sensitvity * 0.01
+		press_value := controller.sensitvity * 0.02
 		controller.key_buffer[safe_keycode_index] = min(controller.key_buffer[safe_keycode_index] + press_value, 1)
 
 	}else if event.type == sdl2.EventType.KEYUP{
@@ -196,7 +196,9 @@ event_update :: proc(event : ^sdl2.Event){
 
 fixed_update :: proc(global : ^GameLoop){
 
-	//TODO:khal double check implmentation. something is off...
+	// TODO:khal add kinematic and rigidbody implementation for future, since this implementation has constraint that we are breaking.
+	// Look good, but not accurate. 
+
     world := cast(^journey.World)context.user_ptr
 	unique_entity := uint(context.user_index)
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
@@ -205,7 +207,7 @@ fixed_update :: proc(global : ^GameLoop){
 	acceleration_integrate_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Acceleration, 8)
 	force_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Velocity, 8)
 
-    velocity_integrate_query := journey.query(world, journey.Velocity, journey.Damping, journey.Acceleration, 8)
+    velocity_integrate_query := journey.query(world, journey.Velocity, journey.Acceleration, 8)
 
 	//currently physics loop only needs accumulated force this will be add on
 	fixed_update_query := journey.query(world, journey.AccumulatedForce)
@@ -220,7 +222,12 @@ fixed_update :: proc(global : ^GameLoop){
 		//Gravitation force
 		{
 			gravitation_force := journey.GRAVITY * mass 
-			//mutable_component_storage.component_b[index].y += gravitation_force
+			mutable_component_storage.component_b[index].y += gravitation_force
+		}
+
+		//Drag force
+		{
+			mutable_component_storage.component_b[index].y += (-0.2 *component_storage.component_c[index].y* mass)//(component_storage.component_c[index].y *component_storage.component_c[index].y * -0.1)
 		}
 
 		// Friction force. We will only calculate horizontal friction force for the game.
@@ -234,12 +241,14 @@ fixed_update :: proc(global : ^GameLoop){
 			friction_force := -component_storage.component_c[index].x * friction
 			mutable_component_storage.component_b[index].x += friction_force
 		}
+
 	}
 
 	//Simple Physics Integrate	
 	for component_storage, index in journey.run(&acceleration_integrate_query){
 		mutable_component_storage := component_storage
 
+		//a = f/m
 		acceleration_step_x := component_storage.component_a[index].val * component_storage.component_b[index].x
 		acceleration_step_y := component_storage.component_a[index].val * component_storage.component_b[index].y
 
@@ -255,19 +264,11 @@ fixed_update :: proc(global : ^GameLoop){
 
 		mutable_component_storage := component_storage
 
-		last_velocity_x := component_storage.component_a[index].x
-		last_velocity_y := component_storage.component_a[index].y
+		sprite_batch.instances[sprite.instance_index].transform[0,3] += (component_storage.component_a[index].x * global.fixed_deltatime)
+		sprite_batch.instances[sprite.instance_index].transform[1,3] += (component_storage.component_a[index].y * global.fixed_deltatime)
 
-		sprite_batch.instances[sprite.instance_index].transform[0,3] += last_velocity_x 
-		sprite_batch.instances[sprite.instance_index].transform[1,3] += last_velocity_y 
-
-		terminal := component_storage.component_a[index].terminal
-
-		mutable_component_storage.component_a[index].x += (component_storage.component_c[index].x * global.delta_time)
-		mutable_component_storage.component_a[index].y += (component_storage.component_c[index].y * global.delta_time)
-		mutable_component_storage.component_a[index].x *= linalg.pow(component_storage.component_b[index].val, global.delta_time)
-		mutable_component_storage.component_a[index].y *= linalg.pow(component_storage.component_b[index].val, global.delta_time)
-		mutable_component_storage.component_a[index].y = clamp(component_storage.component_a[index].y, -terminal, terminal)
+		mutable_component_storage.component_a[index].x += (component_storage.component_b[index].x * global.fixed_deltatime)
+		mutable_component_storage.component_a[index].y += (component_storage.component_b[index].y * global.fixed_deltatime)
 	}
 	//
 
@@ -285,7 +286,7 @@ fixed_update :: proc(global : ^GameLoop){
 		//Only adding a horizontal add force
 		player_input_x := game_controller.key_buffer[sdl2.Keycode.A] - game_controller.key_buffer[sdl2.Keycode.D]
 		//magic number 4000 for placeholder for player movement.
-		mutable_component_storage.component_a[index].x += player_input_x * 1
+		mutable_component_storage.component_a[index].x += player_input_x * 200
 	}
 	//
 }
@@ -304,9 +305,9 @@ update :: proc(global : ^GameLoop){
 		sprite := journey.get_soa_component(world, component_storage.entities[index], journey.RenderInstance)
 		sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
 
-		if game_controller.key_buffer[sdl2.Keycode.A] > 0{
+		if component_storage.component_a[index].x > 0{
 			sprite_batch.instances[sprite.instance_index].flip_bit[0] = 1
-		}else if game_controller.key_buffer[sdl2.Keycode.D] > 0{
+		}else if component_storage.component_a[index].x < 0{
 			sprite_batch.instances[sprite.instance_index].flip_bit[0] = 0
 		}
 	}
@@ -329,7 +330,7 @@ on_animation :: proc(global : ^GameLoop){
 		//TODO:khal do better implementation
 		if journey.has_soa_component(world, component_storage.entities[index], journey.Velocity){
 			velocity := journey.get_soa_component(world, component_storage.entities[index], journey.Velocity)
-			mutable_component_storage.component_a[index].current_clip = int(linalg.abs(velocity.x) >= 0.002)
+			mutable_component_storage.component_a[index].current_clip = int(linalg.abs(velocity.x) >= 0.5)
 			
 		}
 		
@@ -383,7 +384,6 @@ main ::  proc()  {
 
 	journey.register(world, journey.Velocity)
 	journey.register(world, journey.Acceleration)
-	journey.register(world, journey.Damping)
 	journey.register(world, journey.Mass)
 	journey.register(world, journey.AccumulatedForce)
 	journey.register(world, journey.Friction)
@@ -469,11 +469,10 @@ main ::  proc()  {
 	journey.add_soa_component(world, player_entity_1, player_anim)
 	journey.add_soa_component(world, player_entity_2, player_anim)
 
-	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 0, journey.compute_terminal_velocity(1)})
-	journey.add_soa_component(world, player_entity_1, journey.Damping{0.99})
+	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 0})
 	journey.add_soa_component(world,player_entity_1, journey.Acceleration{0,0})
 	journey.add_soa_component(world, player_entity_1, journey.AccumulatedForce{})
-	journey.add_soa_component(world, player_entity_1, journey.Mass{1})
+	journey.add_soa_component(world, player_entity_1, journey.Mass{0.1})
 	//
 
 	///////////////////////////////////////////////////////////////////
