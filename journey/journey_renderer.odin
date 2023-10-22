@@ -28,7 +28,7 @@ RenderBackend :: enum int{
 // DX11 need window's HWND DX12 can possible also use HWND handle not 100 percent sure haven't check.
 // Not sure of Metal (Don't have mac_os) 
 // Not sure of OpenGL, but can figure out relatively easily.
-create_renderer :: proc(backend : RenderBackend, render_param : rawptr, render_buffer : ^RenderBatchBuffer) -> ^thread.Thread {
+create_renderer :: proc(backend : RenderBackend, render_param : rawptr, render_buffer : ^RenderBatchBuffer, allocator : mem.Allocator = context.allocator) -> ^thread.Thread {
     conditional_variable :=  &sync.Cond{}
 
     // We can't set the AffinityMask in odin, so we just got to cross our finger that the main and render thread is on the same core.
@@ -177,11 +177,6 @@ sort_by_render_order :: proc(frst, snd : RenderInstanceData) -> bool{
 //TODO:khal we need to handle window resize, then maybe a debug mode to allow editor support.
 @(private)
 init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
-
-    track: mem.Tracking_Allocator
-    mem.tracking_allocator_init(&track, context.allocator)
-    context.allocator = mem.tracking_allocator(&track)
-
     //TODO: DATA NEED ALIGNMENT TO 16 BOTH STRUCT AND PTR.
 
     vs_buffer_data := new(GlobalDynamicVSConstantBuffer)
@@ -409,23 +404,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         }
 
         delete(render_params)
-
         free(vs_buffer_data)
-
-        if len(track.allocation_map) > 0 {
-			fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-			for _, entry in track.allocation_map {
-				fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-			}
-		}
-		if len(track.bad_free_array) > 0 {
-			fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
-			for entry in track.bad_free_array {
-				fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
-			}
-		}
-		mem.tracking_allocator_destroy(&track)
-
     }
 
 

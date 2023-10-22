@@ -1,8 +1,5 @@
 package journey
 
-import "core:prof/spall"
-
-
 //////////////////// COMMAN MATH ///////////////////////
   
 IDENTITY : matrix[4,4]f32 :  {
@@ -14,6 +11,8 @@ IDENTITY : matrix[4,4]f32 :  {
 
 
 //////////////////// COMMON PATH ///////////////////////
+CONFIG_BYTES :: #load("../resource/game_config.json")
+
 CACHED_SHARED_PATH :[1]string = {
     "resource/shader/sprite_instancing.hlsl",
 } 
@@ -88,7 +87,6 @@ RenderInstanceData :: struct #align (16){
     flip_bit : [2]f32,
     pivot_point : [2]f32,
     order_index : int,
-    //TODO: khal add another 4 f32 and align to 16
 }
 
 /////////////
@@ -140,6 +138,14 @@ Animation :: struct{
     // loop : int, // (looping animation clip. 1 is looping, 0 mean doesn't loop)
 }
 
+
+Collider :: struct{
+    center_x : f32,
+    center_y : f32,
+    extent_x : f32,
+    extent_y : f32,
+}
+
 Velocity :: struct{
     x : f32,
     y : f32,
@@ -151,7 +157,7 @@ Acceleration :: struct{
 }
 
 //Mass val is represent as the inverse mass
-Mass :: struct{
+InverseMass :: struct{
     val : f32, 
 }
 
@@ -168,6 +174,10 @@ Restitution :: struct{
     val : f32,
 }
 
+Force :: struct{
+    x : f32,
+    y : f32,
+}
 ///////////////////////////////////////////////////////
 
 /////////////////// RESOURCE DATA /////////////////////////

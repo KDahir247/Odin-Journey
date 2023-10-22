@@ -1,18 +1,18 @@
 package main
 
-import "core:mem"
 import "core:fmt"
 import "core:sys/windows"
 import "core:sync"
 import "core:os"
-import "core:math/linalg"
-import "core:time"
-import "core:slice"
 import "core:encoding/json"
 
-import "vendor:sdl2"
 import "../journey"
+
 import "vendor:stb/image"
+import "vendor:sdl2"
+
+import bt "../thirdparty/obacktracing"
+
 
 loop_fn :: #type proc(arg : ^GameLoop)
 event_fn :: #type proc(event : ^sdl2.Event)
@@ -36,13 +36,10 @@ GameLoop :: struct{
 }
 
 GameFnDescriptor :: struct{
-
     update : loop_fn,
     fixed_update : loop_fn,
 	on_animation : loop_fn,
     on_event : event_fn,
-
-    //late_update : loop_fn,
 }
 
 next_frame_window :: proc(#no_alias game_loop : ^GameLoop, game_desc : GameFnDescriptor) -> bool{
@@ -59,7 +56,6 @@ next_frame_window :: proc(#no_alias game_loop : ^GameLoop, game_desc : GameFnDes
 
         game_loop.elapsed_fixed_time += game_loop.fixed_deltatime
         game_loop.accumulated_time -= game_loop.fixed_deltatime
-
 		game_loop.carry_over_time = game_loop.accumulated_time
     }
 
@@ -86,9 +82,14 @@ init_game_loop_window :: proc($refresh_rate : f32 , $refresh_rate_multiplier : f
     target_refresh_rate := refresh_rate
 
     when refresh_rate == 0{
-        display_setting : windows.DEVMODEW
-        windows.EnumDisplaySettingsW(nil,windows.ENUM_CURRENT_SETTINGS, &display_setting)
-        target_refresh_rate = f32(display_setting.dmDisplayFrequency)
+		when ODIN_OS == .Windows{
+			display_setting : windows.DEVMODEW
+			windows.EnumDisplaySettingsW(nil,windows.ENUM_CURRENT_SETTINGS, &display_setting)
+			target_refresh_rate = f32(display_setting.dmDisplayFrequency)
+		}else{
+			//This will be fetched from game_config.json Fallback_RefreshRate
+			target_refresh_rate = 60
+		}
     }
 
     target_refresh_rate *= refresh_rate_multiplier
@@ -204,45 +205,65 @@ fixed_update :: proc(global : ^GameLoop){
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
 	game_controller := journey.get_soa_component(world, unique_entity, journey.GameController)
 
-	acceleration_integrate_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Acceleration, 8)
-	force_query := journey.query(world, journey.Mass, journey.AccumulatedForce, journey.Velocity, 8)
+	acceleration_integrate_query := journey.query(world, journey.InverseMass, journey.AccumulatedForce, journey.Acceleration, 8)
+	force_query := journey.query(world, journey.InverseMass, journey.AccumulatedForce, journey.Velocity, 8)
 
-    velocity_integrate_query := journey.query(world, journey.Velocity, journey.Acceleration, 8)
+    velocity_integrate_query := journey.query(world, journey.Velocity, journey.Collider, journey.Acceleration, 8)
 
-	//currently physics loop only needs accumulated force this will be add on
+	collider_query := journey.query(world,journey.Velocity, journey.Collider, journey.InverseMass,journey.AccumulatedForce, 8)
+	static_collider_offset := collider_query.len
+
+	//currently physics loop only needs accumulated force this will be add on, since we will not be changing the velocity or acceleration directly, but will depend on the force to modify these params
 	fixed_update_query := journey.query(world, journey.AccumulatedForce)
+
 
 	for component_storage, index in journey.run(&force_query){
 		mutable_component_storage := component_storage
 
-		//Assuming that the inverse mass is not zero if so then we have a divide by zero exception.
+		mass := mutable_component_storage.component_a[index].val != 0 ?  1.0 / mutable_component_storage.component_a[index].val : 0
 
-		mass := 1.0 / mutable_component_storage.component_a[index].val
-
-		//Gravitation force
+		//Gravitation force & Drag force (air resistance)
 		{
-			gravitation_force := journey.GRAVITY * mass 
-			mutable_component_storage.component_b[index].y += gravitation_force
-		}
-
-		//Drag force
-		{
-			mutable_component_storage.component_b[index].y += (-0.2 *component_storage.component_c[index].y* mass)//(component_storage.component_c[index].y *component_storage.component_c[index].y * -0.1)
+			mutable_component_storage.component_b[index].y += journey.gravitational_force(mutable_component_storage.component_a[index]) //+ journey.quadratic_drag_force(0.001,component_storage.component_c[index]).y
 		}
 
 		// Friction force. We will only calculate horizontal friction force for the game.
 		{
-			//N = m*g
-			//if surface is inclined then the formula would be N = m * g *cos(theta)
-			normal_force := mass * journey.GRAVITY
-			// This 0.65 magic number will change the friction coefficent will be retrieve by the collided ground fricition coefficient
-			// So a ice tile will have a smaller coefficient and a grass tile will have a larger coefficient. till then it will be 0.65 
-			friction := normal_force * 0.65
-			friction_force := -component_storage.component_c[index].x * friction
-			mutable_component_storage.component_b[index].x += friction_force
+			mutable_component_storage.component_b[index].x += journey.friction_force(0.02, mutable_component_storage.component_a[index],component_storage.component_c[index]).x
 		}
 
 	}
+
+	//Velocity & Collider
+	for component_storage, index in journey.run(&collider_query){
+		mutable_component_storage := component_storage
+		
+		sprite := journey.get_soa_component(world, component_storage.entities[index], journey.RenderInstance)
+		sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
+		position := sprite_batch.instances[sprite.instance_index].transform[0,3]
+
+		all_collider, len := journey.get_soa_components(world, journey.SOAType(journey.Collider))
+		static_colliders := all_collider[static_collider_offset:]
+
+		for static_collider in static_colliders{
+			sweep_test := journey.aabb_aabb_sweep(component_storage.component_b[index],component_storage.component_a[index], static_collider)
+			
+			//TODO: khal we need to now save the collision hit and check if normal and manipulate acceleration depending on the collision normal
+			//Eg [0, -1] will make acceleration on the y zero if there is no resitution on the y. [1, 0] or [-1, 0] will make the acceleration on the x zero if there is no restitution on the x. 
+				if sweep_test.time <= 0{
+					mutable_component_storage.component_a[index] = journey.compute_linear_impulse(component_storage.component_a[index], component_storage.component_c[index],sweep_test.hit.contact_normal, 0.5)
+
+					penetration := sweep_test.hit.delta_displacement + 0.0001
+
+					interpenetration := journey.compute_interpenetration(component_storage.component_c[index], penetration, sweep_test.hit.contact_normal)
+					sprite_batch.instances[sprite.instance_index].transform[0,3] += interpenetration.x
+					sprite_batch.instances[sprite.instance_index].transform[1,3] += interpenetration.y
+
+				}
+		}
+	}
+	//
+
 
 	//Simple Physics Integrate	
 	for component_storage, index in journey.run(&acceleration_integrate_query){
@@ -264,20 +285,27 @@ fixed_update :: proc(global : ^GameLoop){
 
 		mutable_component_storage := component_storage
 
-		sprite_batch.instances[sprite.instance_index].transform[0,3] += (component_storage.component_a[index].x * global.fixed_deltatime)
+		//Velocity first, then Position
+		//From Gaffer On Games (Semi-Implicit Euler)
+
+		//V = V + A*T
+		mutable_component_storage.component_a[index].x += (component_storage.component_c[index].x * global.fixed_deltatime)
+		mutable_component_storage.component_a[index].y += (component_storage.component_c[index].y * global.fixed_deltatime)
+
+		//P = P + V*T 
+		sprite_batch.instances[sprite.instance_index].transform[0,3] += (component_storage.component_a[index].x * global.fixed_deltatime) 
 		sprite_batch.instances[sprite.instance_index].transform[1,3] += (component_storage.component_a[index].y * global.fixed_deltatime)
 
-		mutable_component_storage.component_a[index].x += (component_storage.component_b[index].x * global.fixed_deltatime)
-		mutable_component_storage.component_a[index].y += (component_storage.component_b[index].y * global.fixed_deltatime)
+		//TODO:khal move Collider Resizing it should not be here.
+		sprite_rect := sprite_batch.instances[sprite.instance_index].src_rect
+
+
+		mutable_component_storage.component_b[index].extent_x = sprite_rect.width
+		mutable_component_storage.component_b[index].extent_y = sprite_rect.height
+
+		mutable_component_storage.component_b[index].center_x = sprite_batch.instances[sprite.instance_index].transform[0,3] 
+		mutable_component_storage.component_b[index].center_y = sprite_batch.instances[sprite.instance_index].transform[1,3]
 	}
-	//
-
-	//Physic Solver
-
-
-
-
-	//
 
 	//Fixed Loop
 	for component_storage, index in journey.run(&fixed_update_query){
@@ -330,8 +358,7 @@ on_animation :: proc(global : ^GameLoop){
 		//TODO:khal do better implementation
 		if journey.has_soa_component(world, component_storage.entities[index], journey.Velocity){
 			velocity := journey.get_soa_component(world, component_storage.entities[index], journey.Velocity)
-			mutable_component_storage.component_a[index].current_clip = int(linalg.abs(velocity.x) >= 0.5)
-			
+			mutable_component_storage.component_a[index].current_clip = int(abs(velocity.x) >= 0.5)
 		}
 		
 		animator := component_storage.component_a[index]
@@ -351,10 +378,14 @@ on_animation :: proc(global : ^GameLoop){
 }
 
 main ::  proc()  {
+	
+	bt_track : bt.Tracking_Allocator
 
-	track: mem.Tracking_Allocator
-		mem.tracking_allocator_init(&track, context.allocator)
-		context.allocator = mem.tracking_allocator(&track)
+	when ODIN_DEBUG{
+		bt.tracking_allocator_init(&bt_track, 16, context.allocator)
+		bt.tracking_allocator_destroy(&bt_track)
+		context.allocator = bt.tracking_allocator(&bt_track)
+	}
 
 	////////////////////// Game Initialize /////////////////////////
 
@@ -378,19 +409,10 @@ main ::  proc()  {
 	game_loop := init_game_loop_window(0, 1, journey.MAX_DELTA_TIME)
 
 	world := journey.init_world()
+	journey.init_physic_world(world)
 	context.user_ptr = world
 
 	journey.register(world, journey.Animator)
-
-	journey.register(world, journey.Velocity)
-	journey.register(world, journey.Acceleration)
-	journey.register(world, journey.Mass)
-	journey.register(world, journey.AccumulatedForce)
-	journey.register(world, journey.Friction)
-	journey.register(world, journey.Restitution)
-	journey.register(world, journey.RenderInstance)
-	
-
 	journey.register(world, journey.ResourceCache)
 	journey.register(world, journey.GameController)
 
@@ -411,7 +433,7 @@ main ::  proc()  {
 
 	sdl2.GetWindowWMInfo(window, &window_info)
 
-	render_thread := journey.create_renderer(journey.RenderBackend.DX11,window_info.info.win.window, resource.render_buffer)
+	render_thread := journey.create_renderer(journey.RenderBackend.DX11,window_info.info.win.window, resource.render_buffer, context.allocator)
 
 	//TODO: khal this will change when resource is implement in journey_ecs
 	context.user_index = int(journey.create_entity(world))
@@ -428,7 +450,7 @@ main ::  proc()  {
 		{
 			delete(game_controller.key_buffer)
 		
-			for _,group in resource.render_buffer.render_batch_groups{
+			for _, group in resource.render_buffer.render_batch_groups{
 				delete(group.instances)
 			}
 
@@ -439,26 +461,18 @@ main ::  proc()  {
 		sdl2.DestroyWindow(window)
 		sdl2.Quit()
 
-		if len(track.allocation_map) > 0 {
-			fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-			for _, entry in track.allocation_map {
-				fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-			}
+		when ODIN_DEBUG{
+			bt.tracking_allocator_print_results(&bt_track)
+			bt.tracking_allocator_destroy(&bt_track)
 		}
-		if len(track.bad_free_array) > 0 {
-			fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
-			for entry in track.bad_free_array {
-				fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
-			}
-		} 
-		mem.tracking_allocator_destroy(&track)
 	}
 	////////////////////////////////////////////////////////////////////
 
 	///////////////////////// Game Start ///////////////////////////////
 
 	player_entity_1 := create_game_entity("resource/sprite/padawan/pad.png", 0, {0,0},{0.0, 0.0, 0.0, 0.0}, 4)
-	player_entity_2 := create_game_entity("resource/sprite/padawan/pad.png", 0, {0,0}, {0.0, 0.0, 0.0, 0.0}, 2)
+	player_entity_2 := create_game_entity("resource/sprite/padawan/pad.png", 0, {0,250}, {0.0, 0.0, 0.0, 0.0}, 2)
+	player_entity_3 := create_game_entity("resource/sprite/padawan/pad.png", 0, {200,230}, {0.0, 0.0, 0.0, 0.0}, 2)
 
 	//TODO:khal proof of implementation flesh it out.
 	data,_ := os.read_entire_file_from_filename("resource/animation/player_anim.json")
@@ -468,12 +482,17 @@ main ::  proc()  {
 
 	journey.add_soa_component(world, player_entity_1, player_anim)
 	journey.add_soa_component(world, player_entity_2, player_anim)
+	journey.add_soa_component(world, player_entity_3, player_anim)
 
-	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 0})
+	journey.add_soa_component(world, player_entity_1, journey.Collider{})
+	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 1})
 	journey.add_soa_component(world,player_entity_1, journey.Acceleration{0,0})
 	journey.add_soa_component(world, player_entity_1, journey.AccumulatedForce{})
-	journey.add_soa_component(world, player_entity_1, journey.Mass{0.1})
-	//
+	journey.add_soa_component(world, player_entity_1, journey.InverseMass{0.1})
+
+
+	journey.add_soa_component(world, player_entity_2, journey.Collider{center_x = -500, center_y = 240, extent_x = 2000, extent_y = 10})
+	journey.add_soa_component(world, player_entity_3, journey.Collider{center_x = 200, center_y = 200, extent_x = 30, extent_y = 50})
 
 	///////////////////////////////////////////////////////////////////
 
