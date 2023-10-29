@@ -98,7 +98,7 @@ where intrinsics.type_is_struct(component_type){
 }
 
 
-get_soa_component_with_id :: proc(world : $W/^$World, $component_type : typeid/SOAType($E)) -> (entity_slice: []u32,soa_slice :# soa[]E, length : int)
+get_soa_component_with_id :: proc(world : $W/^$World, $component_type : typeid/SOAType($E)) -> (entity_slice: []uint,soa_slice :# soa[]E, length : int)
 where intrinsics.type_is_struct(E){
     soa_slice, length = get_soa_components(world, component_type)
     entity_slice = get_id_soa_components(world, E)

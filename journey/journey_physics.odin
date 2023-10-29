@@ -5,8 +5,9 @@ import "core:math"
 import "core:math/linalg"
 import "core:simd"
 import "core:fmt"
+import "core:intrinsics"
 
-init_physic_world :: proc(game_world : ^World){
+init_physic_world :: proc(game_world : ^World, collision_iteration_count := 8){
     register(game_world, Collider)
 	register(game_world, Velocity)
 	register(game_world, Acceleration)
@@ -14,7 +15,25 @@ init_physic_world :: proc(game_world : ^World){
 	register(game_world, AccumulatedForce)
 	register(game_world, Friction)
 	register(game_world, Restitution)
-	register(game_world, RenderInstance)
+
+    
+    register(game_world, PhysicsContacts)
+
+    register(game_world, CollisionResolver)
+
+    resource_entity := uint(context.user_index)
+
+    //collision iteration is the expect collision * 2
+    add_soa_component(game_world,resource_entity, CollisionResolver{
+        used_iteration = 0,
+        collision_iteration = collision_iteration_count,
+    })
+    
+    add_soa_component(game_world, resource_entity, PhysicsContacts{
+        
+    })
+    
+
 
     //This will have more setup when the physics in the game is fleshed out.
 	//Set up fixed_deltatime here.
@@ -29,10 +48,6 @@ aabb_min :: proc(collider : Collider) -> [2]f32{
 
 aabb_max :: proc(collider : Collider) -> [2]f32{
     return [2]f32{collider.center_x + collider.extent_x, collider.center_y + collider.extent_y}
-}
-
-aabb_size :: proc(collider : Collider) -> [2]f32{
-    return [2]f32{collider.extent_x * 2, collider.extent_y * 2}
 }
 
 //the rate at which two objects are getting closer to each other.
@@ -55,21 +70,22 @@ compute_linear_impulse :: proc(velocity: Velocity, inverse_mass : InverseMass, c
 
     delta := new - seperation_speed
 
-    // 0.1 is mass
     impulse  := delta / inverse_mass.val
     impulse_with_dir := impulse * collision_normal
 
     return Velocity{
         x = velocity.x + impulse_with_dir.x * inverse_mass.val,
         y = velocity.y + impulse_with_dir.y * inverse_mass.val,
+        previous_x = velocity.x,
+        previous_y = velocity.y,
     }
 
 }
 
-compute_contact_velocity :: proc(velocity: Velocity, acceleration : Acceleration, collision_normal : [2]f32, restitution : f32, dt : f32) -> Velocity{
+compute_contact_velocity :: proc(velocity: Velocity, acceleration : Acceleration, inverse_mass : InverseMass, collision_normal : [2]f32, restitution : f32, dt : f32) -> Velocity{
 
     seperating_velocity := (velocity.x * collision_normal.x) + (velocity.y * collision_normal.y)
-    total_inv_mass := 0.1
+    total_inv_mass := inverse_mass.val
 
     //seperating or stationary, so no impulse needed or Infinite mass impulse has no effect
     if seperating_velocity > 0 || total_inv_mass <= 0{
@@ -80,7 +96,7 @@ compute_contact_velocity :: proc(velocity: Velocity, acceleration : Acceleration
 
     acc_caused_velocity := acceleration
 
-    acc_caused_seperation_velocity := (acc_caused_velocity.x * collision_normal.x) + (acc_caused_velocity.y * collision_normal.y) * dt
+    acc_caused_seperation_velocity :=  (acc_caused_velocity.x * collision_normal.x) + (acc_caused_velocity.y * collision_normal.y) * dt
 
     if acc_caused_seperation_velocity < 0{
         new_seperating_velocity += restitution * acc_caused_seperation_velocity
@@ -92,37 +108,31 @@ compute_contact_velocity :: proc(velocity: Velocity, acceleration : Acceleration
 
     delta_velocity := new_seperating_velocity - seperating_velocity
 
-    impulse := (delta_velocity / 0.1) * collision_normal
+    impulse := (delta_velocity / inverse_mass.val) * collision_normal
 
     new_velocity := velocity
-    //new_velocity.x = impulse.x * 0.1
-    new_velocity.y += impulse.y * 0.1
+    new_velocity.x += impulse.x * total_inv_mass
+    new_velocity.y += impulse.y * total_inv_mass
     return new_velocity
 }
 
-compute_interpenetration :: proc(inverse_mass : InverseMass, penetration : [2]f32, contact_normal : [2]f32) -> [2]f32{
+compute_interpenetration :: proc(inverse_mass : InverseMass, penetration : f32, contact_normal : [2]f32) -> [2]f32{
     
-    if (penetration[0] <= 0 && penetration[1] <= 0) || inverse_mass.val <= 0{
+    if (penetration <= 0) || inverse_mass.val <= 0{
         return [2]f32{}
     }
 
-    penetration_resolution := penetration / inverse_mass.val * contact_normal
+    penetration_resolution := (-penetration / inverse_mass.val) * contact_normal
 
-    total_delta_pos_a := penetration_resolution * -inverse_mass.val
+    delta_position := penetration_resolution * inverse_mass.val
 
-    return total_delta_pos_a
+    return delta_position
 }
 
 
 compute_speed :: proc(velocity : Velocity) -> f32{
     arr := [2]f32{velocity.x, velocity.y}
     return linalg.length(arr)
-}
-
-compute_sqr_speed :: proc(velocity : Velocity) -> f32{
-    arr := [2]f32{velocity.x, velocity.y}
-
-    return linalg.length2(arr)
 }
 
 compute_direction :: proc(velocity : Velocity) -> [2]f32{
@@ -177,19 +187,7 @@ friction_force :: proc(friction_coefficient : f32, inverse_mass : InverseMass, v
 
 // //////////////////////////////// INTERSECTION FUNCTION /////////////////////////////////
 
-CollisionHit :: struct{
-    collider : Collider,
-    contact_point : [2]f32, // the collision point.
-    delta_displacement : [2]f32,//  vector to add move collided AABB back to non collided state.
-    contact_normal : [2]f32,
-    time : f32, //how far along the line the collision occurred (0,1)
-}   
 
-CollisionSweep :: struct{
-    hit : CollisionHit,
-    pos : [2]f32,
-    time : f32,
-}
 aabb_segement_intersection :: proc (dynamic_collider : Collider, delta : Velocity, static_collider : Collider) -> CollisionHit{
     hit : CollisionHit
     hit.time = 1
@@ -236,8 +234,9 @@ aabb_segement_intersection :: proc (dynamic_collider : Collider, delta : Velocit
     contact_normal_mask : [2]f32= {f32(horizontal_mask), f32(1 - horizontal_mask)} 
     hit.contact_normal = linalg.sign(aabb_displacement) * contact_normal_mask
 
-    hit.delta_displacement.x = hit.time * -delta.x
-    hit.delta_displacement.y = hit.time * -delta.y
+    //TODO: khal this doesn't seem to work.
+    hit.delta_displacement.x = hit.time * -delta.x * hit.contact_normal.x
+    hit.delta_displacement.y = hit.time * -delta.y * hit.contact_normal.y
 
     hit.contact_point.x = static_collider.center_x + delta.x * hit.time
     hit.contact_point.y = static_collider.center_y + delta.y * hit.time
@@ -381,15 +380,7 @@ collision_reflection :: proc "contextless" (intersection_point : [2]f32, movemen
 //     return velocity * rcp_speed
 // }
 
-// compute_seperation_velocity :: #force_inline proc(#no_alias physics, other : ^common.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
-//     a := (physics.velocity - other.velocity)
-//     return (a.x * contact_normal.x) + (a.y * contact_normal.y)
-// }
 
-// compute_closing_velocity :: #force_inline proc(#no_alias physics, other : ^common.Physics, contact_normal : mathematics.Vec2) -> mathematics.Vec2{
-//     a := -(physics.velocity - other.velocity)
-//     return (a.x * contact_normal.x) + (a.y * contact_normal.y)
-// }
 
 // add_impulse :: #force_inline proc(physics : ^common.Physics, impulse_factor : f32, impulse_direction : mathematics.Vec2){
 //     mass := 1.0 / physics.inverse_mass
@@ -512,76 +503,4 @@ collision_reflection :: proc "contextless" (intersection_point : [2]f32, movemen
 //     collided.position += total_delta_pos_b
 // }
 
-
-// compute_contact_velocity :: proc(#no_alias collider, collided : ^common.Physics, restitution : f32, contact_normal : mathematics.Vec2 = {0,1}, dt : f32){
-//     displacement_velocity := collided.velocity - collider.velocity
-
-//     seperating_velocity := (displacement_velocity.x * contact_normal.x) + (displacement_velocity.y * contact_normal.y)
-//     total_inv_mass := collider.inverse_mass + collided.inverse_mass
-
-//     //seperating or stationary, so no impulse needed or Infinite mass impulse has no effect
-//     if seperating_velocity > 0 || total_inv_mass <= 0{
-//         return
-//     }
-
-//     new_seperating_velocity := -seperating_velocity * restitution
-
-//     acc_caused_velocity := collided.acceleration - collider.acceleration
-
-//     acc_caused_seperation_velocity := (acc_caused_velocity.x * contact_normal.x) + (acc_caused_velocity.y * contact_normal.y) * dt
-
-//     if acc_caused_seperation_velocity < 0{
-//         new_seperating_velocity += restitution * acc_caused_seperation_velocity
-
-//         if (new_seperating_velocity < 0){
-//             new_seperating_velocity = 0
-//         }
-//     }
-
-//     delta_velocity := new_seperating_velocity - seperating_velocity
-
-//     impulse := (delta_velocity / total_inv_mass) * contact_normal
-
-//     collider.velocity += impulse * -collider.inverse_mass
-//     collided.velocity += impulse * collided.inverse_mass
-// }
-///////////////////////////////////////////////////////////////////////////
-
-
-////////////////////////// Physics Solver /////////////////////////////////
-
-// resolve_contacts :: proc(iteration : int, contacts : [dynamic]common.PhysicsContact, dt : f32){
-//     iteration_used := 0
-//     contact_num := len(contacts)
-//     for iteration_used < iteration {
-//         max :f32 = math.F32_MAX
-//         max_index := contact_num
-//         for i := 0; i < contact_num; i += 1 {
-//             // calculate seperating velocity
-//             contact := contacts[i].contacts
-//             displacement_velocity := contact[0].velocity - contact[1].velocity
-//             seperating_velocity := (displacement_velocity.x * contacts[i].contact_normal.x) + (displacement_velocity.y * contacts[i].contact_normal.y)
-
-//             if(seperating_velocity < max && seperating_velocity < 0 || contacts[i].penetration > 0){
-//                 max = seperating_velocity
-//                 max_index = i
-//             }
-
-//         }
-
-//         if max_index == contact_num{
-//             break
-//         }
-
-//         contact := contacts[max_index].contacts
-//         contact_normal := contacts[max_index].contact_normal
-//         compute_contact_velocity(&contact.x, &contact.y, 0.0, contact_normal,dt)
-//         compute_interpenetration(&contact.x, &contact.y, contacts[max_index].penetration,contact_normal)
-
-//         iteration_used = iteration_used + 1
-//     }
-// }
-
-
-/////////////////////////////////////////////////////////////////////
 

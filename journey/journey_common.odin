@@ -81,7 +81,7 @@ RenderBatchGroup :: struct{
 
 RenderInstanceData :: struct #align (16){
     transform : matrix[4,4]f32,
-    src_rect : Rect,
+    src_rect : [4]f32,
     color : [4]f32,
     //-1 is true, 1 is false
     flip_bit : [2]f32,
@@ -101,6 +101,32 @@ TextureParam :: struct{
 
 
 /////////////////// GAME DATA /////////////////////////
+
+//1 = Left, 0 = Right
+Direction :: enum u32{
+    Left_Top = 0b11, //1,1 
+    Right_Top = 0b01, //0,1
+    Left_Bottom = 0b10, //1,0
+    Right_Bottom = 0b00, //0,0
+}
+
+TextureType :: enum i32{
+    SpriteSheet = 0,
+    Individual = 1,
+
+}
+
+
+EntityDescriptor :: struct{
+    position : [2]f32,
+    scale : [2]f32,
+    color : [4]f32,
+
+    sprite_texture_type : TextureType,
+    direction : Direction,
+
+}
+
 RenderInstance :: struct{
     hash : uint,
     instance_index : uint,
@@ -138,6 +164,39 @@ Animation :: struct{
     // loop : int, // (looping animation clip. 1 is looping, 0 mean doesn't loop)
 }
 
+CollisionHit :: struct{
+    collider : Collider,
+    contact_point : [2]f32, // the collision point.
+    delta_displacement : [2]f32,//  vector to add move collided AABB back to non collided state.
+    contact_normal : [2]f32,
+    time : f32, //how far along the line the collision occurred (0,1)
+}   
+
+CollisionSweep :: struct{
+    hit : CollisionHit,
+    pos : [2]f32,
+    time : f32,
+}
+
+CollisionResolver :: struct{
+    collision_iteration : int,
+    used_iteration : int,
+}
+
+PhysicsContacts :: struct{
+    contacts : []PhysicsContact,
+}
+
+PhysicsContact :: struct{
+    collider : uint,
+    collided : uint,
+    collision_normal_x : f32,
+    collision_normal_y : f32,
+    collision_point_x : f32,
+    collision_point_y : f32,
+    restitution  : f32,
+    penetration : f32,
+}
 
 Collider :: struct{
     center_x : f32,
@@ -149,6 +208,8 @@ Collider :: struct{
 Velocity :: struct{
     x : f32,
     y : f32,
+    previous_x : f32,
+    previous_y : f32,
 }
 
 Acceleration :: struct{
@@ -191,11 +252,4 @@ GameController :: struct{
 }
 
 ///////////////////////////////////////////////////////
-
-// PhysicsContact :: struct{
-//     contacts : [2]Physics,
-//     contact_normal : mathematics.Vec2,
-//     penetration : f32,  
-// }
-
 
