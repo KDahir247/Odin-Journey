@@ -453,11 +453,7 @@ internal_sparse_has_index :: #force_inline proc(sparse_array : $SA/^$SparseArray
     if  page < len(sparse_array.sparse){
         sparse_page := sparse_array.sparse[page]
 
-        if sparse_page != nil{
-            sparse_id := ([^]int)(sparse_page)[page_id]
-    
-            return sparse_id - 1
-        }
+        return sparse_page != nil ? ([^]int)(sparse_page)[page_id] - 1 : -1
     }
 
     return -1
@@ -833,7 +829,6 @@ query_2 :: proc(world : $W/^$World,$a : typeid, $b : typeid, $chunk_size : int) 
                     a_mask := -normalize_value((sparse_index_a & -is_valid) +(-1 - group.start))
                     b_mask := -normalize_value((sparse_index_b & -is_valid) +(-1 - group.start))
                
-                    //fmt.println(entity, sparse_index_a, sparse_index_b, is_valid )
                     internal_sparse_swap(&sparse_set_a, group_start_entity_a, entity, a, a_mask)
                     internal_sparse_swap(&sparse_set_b, group_start_entity_b, entity, b, b_mask)
 

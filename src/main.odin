@@ -15,9 +15,6 @@ import "vendor:sdl2"
 
 import bt "../thirdparty/obacktracing"
 
-loop_fn :: #type proc(arg : ^GameLoop)
-event_fn :: #type proc(event : ^sdl2.Event)
-
 GameLoop :: struct{
 	current_time : u32,
 	previous_time : u32,
@@ -34,16 +31,15 @@ GameLoop :: struct{
 	fixed_deltatime : f32,
 	elapsed_fixed_time : f32,
  
- 
 	terminate_next_iteration : bool,
 
 	update_per_second : f32,
 }
 
-next_frame_window :: proc(#no_alias game_loop : ^GameLoop) -> bool{
+next_frame_window :: proc(game_loop : ^GameLoop) -> bool{
 	game_loop.current_time = sdl2.GetTicks()
 
-    game_loop.delta_time = clamp(f32(game_loop.current_time - game_loop.previous_time) / 1000, 0, game_loop.maximum_frame_time)
+    game_loop.delta_time = clamp(f32(game_loop.current_time - game_loop.previous_time) * 0.001, 0, game_loop.maximum_frame_time)
     game_loop.elapsed_time += game_loop.delta_time
 
     game_loop.accumulated_time += (game_loop.delta_time + game_loop.carry_over_time)
@@ -60,6 +56,7 @@ next_frame_window :: proc(#no_alias game_loop : ^GameLoop) -> bool{
 
 	update(game_loop)
 	on_animation(game_loop)
+	late_update(game_loop)
 
 	game_loop.previous_time = game_loop.current_time
 
@@ -67,11 +64,13 @@ next_frame_window :: proc(#no_alias game_loop : ^GameLoop) -> bool{
 }
 
 start_looping_game :: proc(game_loop : ^GameLoop, event : ^sdl2.Event){
-    for next_frame_window(game_loop){
+    for !game_loop.terminate_next_iteration{
         for sdl2.PollEvent(event){
             event_update(event)
             game_loop.terminate_next_iteration = event.type == sdl2.EventType.QUIT
         }
+
+		next_frame_window(game_loop)
     }
 }
 
@@ -115,7 +114,6 @@ string_hash :: proc($path : string) -> uint{
 	return hash
 }
 
-//TODO: the parameter will have EntityDescriptor
 create_game_entity :: proc($tex_path : string, $shader_cache : u32, $render_order : int, entity_desc : journey.EntityDescriptor) -> uint{
     world := cast(^journey.World)context.user_ptr
 	unique_entity := uint(context.user_index)
@@ -162,7 +160,7 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, $render_orde
 			f32(sprite_batch.texture_param.height & -i32(entity_desc.sprite_texture_type)),
 		},
 		color = entity_desc.color,
-		flip_bit = {f32(horizontal_bit),f32(vertical_bit)},
+		flip_bit = {f32(horizontal_bit), f32(vertical_bit)},
 		order_index = render_order,
 	})
 	
@@ -182,54 +180,52 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, $render_orde
 
 event_update :: proc(event : ^sdl2.Event){
 
-	world := cast(^journey.World)context.user_ptr
-	unique_entity := uint(context.user_index)
-	controller := journey.get_soa_component(world, unique_entity, journey.GameController)
-
-	safe_keycode_index := min(int(event.key.keysym.sym), len(controller.key_buffer) - 1)
-
-	if event.type == sdl2.EventType.KEYDOWN {
-		press_value := controller.sensitvity * 0.02
-		controller.key_buffer[safe_keycode_index] = min(controller.key_buffer[safe_keycode_index] + press_value, 1)
-
-	}else if event.type == sdl2.EventType.KEYUP{
-
-		//TODO: khal we later want to decrement this slowly rather the snaping to zero
-		controller.key_buffer[safe_keycode_index] = 0
-	}
 }
 
 fixed_update :: proc(global : ^GameLoop){
     world := cast(^journey.World)context.user_ptr
 	unique_entity := uint(context.user_index)
-	
-	game_controller := journey.get_soa_component(world, unique_entity, journey.GameController)
 
-	movement_query := journey.query(world, journey.AccumulatedForce)
+	player_movement_query := journey.query(world,journey.InverseMass, journey.AccumulatedForce, journey.GameController, 8)
+	npc_movement_offset := player_movement_query.len
+
+	all_accum_force_entites,all_accum_force,_ := journey.get_soa_component_with_id(world, journey.SOAType(journey.AccumulatedForce))
+	
+	npc_movement_forces := all_accum_force[npc_movement_offset:]
+	npc_movement_entities := all_accum_force_entites[npc_movement_offset:]
+
+	assert(len(npc_movement_entities) == len(npc_movement_forces), "Entites count doesn't equal to component count this is a logic error in ecs solution")
+
 	jump_query := journey.query(world, journey.Velocity)
 
-	for component_storage, index in journey.run(&movement_query){
+	for component_storage, index in journey.run(&player_movement_query){
 		mutable_component_storage := component_storage
-		
-		//Only adding a horizontal add force
-		player_input_x := game_controller.key_buffer[sdl2.Keycode.A] - game_controller.key_buffer[sdl2.Keycode.D]
-		//magic number 4000 for placeholder for player movement.
-		mutable_component_storage.component_a[index].x += player_input_x * 80000 * global.fixed_deltatime 
-		
+
+		player_input_x := component_storage.component_c[index].key_buffer[sdl2.Scancode.A] - component_storage.component_c[index].key_buffer[sdl2.Scancode.D]
+		mutable_component_storage.component_b[index].x += f32(player_input_x) * 80000 * global.fixed_deltatime 
 	}
 
+	for npc_movement, index in npc_movement_forces{
+
+	}
+
+	//TODO: optimize
 	for component_storage, index in journey.run(&jump_query){
 		mutable_component_storage := component_storage
 
 		acceleration := journey.get_soa_component(world, component_storage.entities[index], journey.Acceleration)
 		mass := journey.get_soa_component(world, component_storage.entities[index], journey.InverseMass)
 
-		if acceleration.y == 0{
-			mass := 1.0 / mass.val
-			impulse_direction := [2]f32{0, -game_controller.key_buffer[sdl2.Keycode.SPACE]}
-			impulse := impulse_direction * 40000 * mass * global.fixed_deltatime
-			
-			mutable_component_storage.component_a[index].y += impulse.y
+		if journey.has_soa_component(world, component_storage.entities[index], journey.GameController){
+			game_controller := journey.get_soa_component(world,component_storage.entities[index], journey.GameController )
+
+			if acceleration.y == 0{
+				mass := 1.0 / mass.val
+				impulse_direction := [2]f32{0, f32(-game_controller.key_buffer[sdl2.Scancode.SPACE])}
+				impulse := impulse_direction * 500 * mass * global.fixed_deltatime
+				
+				mutable_component_storage.component_a[index].y += impulse.y
+			}
 		}
 	}
 }
@@ -313,7 +309,7 @@ physics_simulate :: proc(global : ^GameLoop){
 					//restitution
 					//TODO: khal not yet implemented. This will be implemented when we get the ldtk parsing working.
 					//collision_hit.restitution = journey.get_soa_component(world, collision_hit.collided, journey.Restitution).val
-					collision_hit.restitution = 0.5
+					collision_hit.restitution = 0.0
 
 					//collided entity
 					collision_hit.collider = component_storage.entities[dynamic_index]
@@ -388,7 +384,7 @@ physics_simulate :: proc(global : ^GameLoop){
 						//restitution
 						//TODO: khal not yet implemented. This will be implemented when we get the ldtk parsing working.
 						//collision_hit.restitution = journey.get_soa_component(world, collision_hit.collided, journey.Restitution).val
-						collision_hit.restitution = 0.5
+						collision_hit.restitution = 0.0
 
 						//collided entity
 						collision_hit.collider = component_storage.entities[dynamic_index]
@@ -533,20 +529,37 @@ update :: proc(global : ^GameLoop){
 	
 	unique_entity := uint(context.user_index)
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
-	game_controller := journey.get_soa_component(world, unique_entity, journey.GameController)
 
-	//TODO:khal better component
-	sprite_flip_query := journey.query(world, journey.Velocity)
+	sprite_flip_query := journey.query(world, journey.GameController)
+	animation_query := journey.query(world, journey.Animator)
 
 	for component_storage, index in journey.run(&sprite_flip_query){
 
-		sprite := journey.get_soa_component(world, component_storage.entities[index], journey.RenderInstance)
+		sprite := journey.get_soa_component(world,component_storage.entities[index], journey.RenderInstance)
 		sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
 
-		if component_storage.component_a[index].x > 0.0{
-			sprite_batch.instances[sprite.instance_index].flip_bit[0] = 1
-		}else if component_storage.component_a[index].x < 0.0{
-			sprite_batch.instances[sprite.instance_index].flip_bit[0] = 0
+		left_input := component_storage.component_a[index].key_buffer[sdl2.SCANCODE_A]
+		right_input := component_storage.component_a[index].key_buffer[sdl2.SCANCODE_D]
+
+		if bool(left_input ~ right_input){
+			sprite_batch.instances[sprite.instance_index].flip_bit[0] = f32(1 - right_input)
+			sprite_batch.instances[sprite.instance_index].flip_bit[0] = f32(left_input)
+		}
+	}
+
+	for component_storage, index in journey.run(&animation_query){
+		mutable_component_storage := component_storage
+
+		if journey.has_soa_component(world, component_storage.entities[index], journey.Velocity){
+			velocity := journey.get_soa_component(world, component_storage.entities[index], journey.Velocity)
+
+			if velocity.y > 0{
+				mutable_component_storage.component_a[index].current_clip = 4
+			}else if velocity.y < 0{
+				mutable_component_storage.component_a[index].current_clip = 3
+			}else if velocity.previous_y == 0 {
+				mutable_component_storage.component_a[index].current_clip = int(abs(velocity.x) >= 0.5) 
+			}
 		}
 	}
 }
@@ -563,13 +576,9 @@ on_animation :: proc(global : ^GameLoop){
 
 	for component_storage, index in journey.run(&anim_sprite_query){
 		mutable_component_storage := component_storage
+
 		sprite := journey.get_soa_component(world, component_storage.entities[index], journey.RenderInstance)
-		
-		//TODO:khal do better implementation
-		if journey.has_soa_component(world, component_storage.entities[index], journey.Velocity){
-			velocity := journey.get_soa_component(world, component_storage.entities[index], journey.Velocity)
-			mutable_component_storage.component_a[index].current_clip = int(abs(velocity.x) >= 0.5)
-		}
+		sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
 		
 		animator := component_storage.component_a[index]
 
@@ -580,11 +589,34 @@ on_animation :: proc(global : ^GameLoop){
 		y :=current_clip.index * current_clip.height
 		x := (int(normalized_time) % current_clip.len) * current_clip.width
 		
-		sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
 		sprite_batch.instances[sprite.instance_index].src_rect = {
 			f32(x), f32(y), f32(current_clip.width), f32(current_clip.height),
 		} 
 	}
+}
+
+late_update :: proc(global : ^GameLoop){
+	//This is where updating the camera goes
+	world := cast(^journey.World)context.user_ptr
+	
+	unique_entity := uint(context.user_index)
+
+	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
+
+	player_entities := journey.get_id_soa_components(world,journey.GameController)
+
+	assert(len(player_entities) == 1, "There is no game controller or more then one game controller on a entity")
+
+	sprite := journey.get_soa_component(world, player_entities[0], journey.RenderInstance)
+	sprite_batch := resource.render_buffer.render_batch_groups[sprite.hash]
+
+	transform := sprite_batch.instances[sprite.instance_index].transform
+
+	resource.render_buffer.camera = journey.Camera{
+		look_at_x = transform[0,3],
+		look_at_y = transform[1,3],
+	}
+
 }
 
 main ::  proc()  {
@@ -603,18 +635,11 @@ main ::  proc()  {
 	window_info : sdl2.SysWMinfo 
 
 	//temp solution
+
 	resource : journey.ResourceCache = journey.ResourceCache{
 		render_buffer = new(journey.RenderBatchBuffer),
 	}
 	resource.render_buffer.render_batch_groups = make(map[uint]journey.RenderBatchGroup)
-
-	game_controller := journey.GameController{
-		key_buffer = make([]f32, 128),
-		sensitvity = 1.0,
-		dead = 0.001,
-		gravity = 1.0,
-		rcp_max_threshold = 0.01,
-	}
 
 	game_loop := init_game_loop_window(0, 1, journey.MAX_DELTA_TIME)
 
@@ -624,8 +649,8 @@ main ::  proc()  {
 
 	journey.register(world, journey.RenderInstance)
 	journey.register(world, journey.Animator)
-	journey.register(world, journey.ResourceCache)
 	journey.register(world, journey.GameController)
+	journey.register(world, journey.ResourceCache)
 
 	sdl2.InitSubSystem(sdl2.InitFlags{sdl2.InitFlag.EVENTS})
 
@@ -647,9 +672,10 @@ main ::  proc()  {
 	render_thread := journey.create_renderer(journey.RenderBackend.DX11,window_info.info.win.window, resource.render_buffer, context.allocator)
 
 	//TODO: khal this will change when resource is implement in journey_ecs
+	// Then the playable entity id will be stored in contect.user_index
 	context.user_index = int(journey.create_entity(world))
+
 	journey.add_soa_component(world, uint(context.user_index), resource)
-	journey.add_soa_component(world, uint(context.user_index), game_controller)
 	//
 
 	defer{	
@@ -659,8 +685,6 @@ main ::  proc()  {
 		context.user_ptr = nil
 
 		{
-			delete(game_controller.key_buffer)
-		
 			for _, group in resource.render_buffer.render_batch_groups{
 				delete(group.instances)
 			}
@@ -673,8 +697,8 @@ main ::  proc()  {
 		sdl2.Quit()
 
 		when ODIN_DEBUG{
-			bt.tracking_allocator_print_results(&bt_track)
-			bt.tracking_allocator_destroy(&bt_track)
+			// bt.tracking_allocator_print_results(&bt_track)
+			// bt.tracking_allocator_destroy(&bt_track)
 		}
 	}
 	////////////////////////////////////////////////////////////////////
@@ -717,6 +741,10 @@ main ::  proc()  {
 	journey.add_soa_component(world, player_entity_1, player_anim)
 	journey.add_soa_component(world, player_entity_2, player_anim)
 	journey.add_soa_component(world, player_entity_3, player_anim)
+
+	journey.add_soa_component(world, player_entity_1, journey.GameController{
+		key_buffer = transmute([]i8)sdl2.GetKeyboardStateAsSlice(),
+	})
 
 	journey.add_soa_component(world, player_entity_1, journey.Collider{})
 	journey.add_soa_component(world, player_entity_1, journey.Velocity{0, 1,0,0})

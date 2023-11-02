@@ -71,6 +71,7 @@ GlobalDynamicPSConstantBuffer :: struct #align (16){
 
 RenderBatchBuffer :: struct #align (64){
     changed_flag : bool,
+    camera : Camera,
     render_batch_groups : map[uint]RenderBatchGroup,
 }
 
@@ -115,7 +116,6 @@ TextureType :: enum i32{
     Individual = 1,
 
 }
-
 
 EntityDescriptor :: struct{
     position : [2]f32,
@@ -243,13 +243,15 @@ Force :: struct{
 
 /////////////////// RESOURCE DATA /////////////////////////
 
+Camera :: struct{
+    look_at_x : f32,
+    look_at_y : f32,
+}
+
 GameController :: struct{
-    key_buffer : []f32,
-    dead : f32,
-    sensitvity : f32,
-    gravity : f32,
-    rcp_max_threshold : f32,
+    key_buffer : []i8,
 }
 
 ///////////////////////////////////////////////////////
+
 

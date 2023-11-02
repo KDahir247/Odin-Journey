@@ -205,7 +205,6 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
     render_batch_buffer := cast(^RenderBatchBuffer)current_thread.data
 
-
     window := windows.HWND(current_thread.user_args[0])
     
     render_params := make([dynamic]RenderParam)
@@ -231,7 +230,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
     vs_buffer_data.viewport_height = viewport.Height
     //sdl2 positive Y direction is downward so we negate the viewport.Height
     vs_buffer_data.projection_matrix = dx11_ortho_lhs(viewport.Width,viewport.Height,viewport.MinDepth, viewport.MaxDepth)
-    vs_buffer_data.view_matrix = dx11_lookat_lhs(hlsl.float3{0.0, 0.0, 0.0}, hlsl.float3{0.0, 0.0, 1.0}, hlsl.float3{0.0, -1.0, 0.0})
+    vs_buffer_data.view_matrix = dx11_lookat_lhs(hlsl.float3{5.0, 0.0, 0.0}, hlsl.float3{5.0, 0.0, 1.0}, hlsl.float3{0.0, -1.0, 0.0})
 
     base_device : ^d3d11.IDevice
     base_device_context : ^d3d11.IDeviceContext
@@ -678,6 +677,11 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
             nil,
             true,
         )
+
+        look_at_x := render_batch_buffer.camera.look_at_x
+        look_at_y := render_batch_buffer.camera.look_at_y
+
+        vs_buffer_data.view_matrix = dx11_lookat_lhs(hlsl.float3{look_at_x,look_at_y, 0.0}, hlsl.float3{look_at_x,look_at_y, 1.0}, hlsl.float3{0.0, -1.0, 0.0})
 
         //TODO:khal rather can Map and Unmap every draw call only 
         intrinsics.mem_copy_non_overlapping(mapped_subresources[1].pData,vs_buffer_data, size_of(GlobalDynamicVSConstantBuffer))

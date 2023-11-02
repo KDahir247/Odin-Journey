@@ -17,6 +17,18 @@
                 "height": 41.0,
                 "index": 3,
                 "len": 17
+            },
+            {
+                "width":40.0,
+                "height":41.0,
+                "index":6,
+                "len":1
+            },
+            {
+                "width":40.0,
+                "height":41.0,
+                "index":7,
+                "len":1
             }
     ],
     "animation_duration_sec": 0.1000000,

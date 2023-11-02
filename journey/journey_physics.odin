@@ -33,21 +33,11 @@ init_physic_world :: proc(game_world : ^World, collision_iteration_count := 8){
         
     })
     
-
-
     //This will have more setup when the physics in the game is fleshed out.
 	//Set up fixed_deltatime here.
     //velocity iteration count, collision iteration count.
     //etc....
 
-}
-
-aabb_min :: proc(collider : Collider) -> [2]f32{
-    return [2]f32{collider.center_x - collider.extent_x, collider.center_y - collider.extent_y}
-}
-
-aabb_max :: proc(collider : Collider) -> [2]f32{
-    return [2]f32{collider.center_x + collider.extent_x, collider.center_y + collider.extent_y}
 }
 
 //the rate at which two objects are getting closer to each other.
@@ -174,8 +164,6 @@ friction_force :: proc(friction_coefficient : f32, inverse_mass : InverseMass, v
     friction_array := #simd[4]f32{mass, gravitational_acceleration, math.cos(incident_angle_rad), friction_coefficient}
     friction := simd.reduce_mul_ordered(friction_array)
     
-    
-    
     friction_force := Force{
         x = -velocity.x * friction,
         y = -velocity.y * friction,
@@ -220,13 +208,13 @@ aabb_segement_intersection :: proc (dynamic_collider : Collider, delta : Velocit
 
     hit.time = clamp(near_time, 0, 1)
 
-    dynamic_collider_min := aabb_min(dynamic_collider)
-    dynamic_collider_max := aabb_max(dynamic_collider)
-    static_collider_min := aabb_min(static_collider)
-    static_collider_max := aabb_max(static_collider)
+    // dynamic_collider_min := [2]f32{dynamic_collider.center_x - dynamic_collider.extent_x, dynamic_collider.center_y - dynamic_collider.extent_y}
+    // dynamic_collider_max := [2]f32{dynamic_collider.center_x + dynamic_collider.extent_x, dynamic_collider.center_y + dynamic_collider.extent_y}
+    // static_collider_min :=  [2]f32{static_collider.center_x - static_collider.extent_x, static_collider.center_y - static_collider.extent_y}
+    // static_collider_max := [2]f32{static_collider.center_x + static_collider.extent_x, static_collider.center_y + static_collider.extent_y}
 
-    overlap_x := min(dynamic_collider_max[0], static_collider_max[0]) - max(dynamic_collider_min[0], static_collider_min[0])
-    overlap_y := min(dynamic_collider_max[1], static_collider_max[1]) - max(dynamic_collider_min[1], static_collider_min[1])
+    overlap_x := min(dynamic_collider.center_x + dynamic_collider.extent_x, static_collider.center_x + static_collider.extent_x) - max(dynamic_collider.center_x - dynamic_collider.extent_x, static_collider.center_x - static_collider.extent_x)
+    overlap_y := min(dynamic_collider.center_y + dynamic_collider.extent_y, static_collider.center_y + static_collider.extent_y) - max(dynamic_collider.center_y - dynamic_collider.extent_y, static_collider.center_y - static_collider.extent_y)
 
     aabb_displacement := [2]f32{dynamic_collider.center_x, dynamic_collider.center_y} - [2]f32{static_collider.center_x, static_collider.center_y}
     
