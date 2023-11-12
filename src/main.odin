@@ -323,6 +323,7 @@ physics_simulate :: proc(global : ^GameLoop){
 	acceleration_integrate_query := journey.query(world, journey.Acceleration)
 
 	position_integrate_query := journey.query(world, journey.Velocity, journey.Collider, journey.Position, 8)
+	collider_reorientation_query := journey.query(world, journey.Velocity, journey.Collider, journey.Position, journey.Scale, 8)
 
 	/////////////////////////////// Collision Detection ///////////////////////////////
 	for component_storage, dynamic_index in journey.run(&collider_query){
@@ -570,8 +571,6 @@ physics_simulate :: proc(global : ^GameLoop){
 		mutable_component_storage.component_c[index].y += (component_storage.component_a[index].y * global.fixed_deltatime)
 	}
 
-	collider_reorientation_query := journey.query(world, journey.Velocity, journey.Collider, journey.Position, journey.Scale, 8)
-
 	for component_storage, index in journey.run(&collider_reorientation_query){
 		mutable_component_storage := component_storage
 		
@@ -654,42 +653,46 @@ late_update :: proc(global : ^GameLoop){
 	resource := journey.get_soa_component(world, unique_entity, journey.ResourceCache)
 
 	//TODO:khal render Sync Point. We will optimize the loops later.
-	position_rotation_query := journey.query(world, journey.Position, journey.Rotation, journey.RenderInstance, 16)
-	scale_flip_query := journey.query(world, journey.Scale, journey.Flip, journey.RenderInstance, 16)
+	position_scale_query := journey.query(world, journey.Position, journey.Scale, journey.RenderInstance, 16)
+	rotation_flip_query := journey.query(world, journey.Rotation, journey.Flip, journey.RenderInstance, 16)
 	rect := journey.query(world,journey.Animator, journey.Rect, journey.RenderInstance, 16)
 	
-
-	for component_storage, index in journey.run(&position_rotation_query){
+	for component_storage, index in journey.run(&rotation_flip_query){
 		sprite_hash := component_storage.component_c[index].hash
 		sprite_instance_index := component_storage.component_c[index].instance_index
-		
 		sprite_batch := resource.render_buffer.render_batch_groups[sprite_hash]
 
-		cos_rotation := math.cos(component_storage.component_b[index].z)
-		sin_rotation := math.sin(component_storage.component_b[index].z)
-		
-		sprite_batch.instances[sprite_instance_index].transform[0,3] = component_storage.component_a[index].x
-		sprite_batch.instances[sprite_instance_index].transform[1,3] = component_storage.component_a[index].y
+		cos_rotation := math.cos(component_storage.component_a[index].z)
+		sin_rotation := math.sin(component_storage.component_a[index].z)
 
 		sprite_batch.instances[sprite_instance_index].transform[0,0] = cos_rotation
 		sprite_batch.instances[sprite_instance_index].transform[1,1] = cos_rotation
 		sprite_batch.instances[sprite_instance_index].transform[0,1] = -sin_rotation
 		sprite_batch.instances[sprite_instance_index].transform[1,0] = sin_rotation
-	}
-
-	for component_storage, index in journey.run(&scale_flip_query){
-		sprite_hash := component_storage.component_c[index].hash
-		sprite_instance_index := component_storage.component_c[index].instance_index
-		sprite_batch := resource.render_buffer.render_batch_groups[sprite_hash]
-
-		sprite_batch.instances[sprite_instance_index].transform[0,0] *= component_storage.component_a[index].x
-		sprite_batch.instances[sprite_instance_index].transform[1,1] *= component_storage.component_a[index].y
 
 		sprite_batch.instances[sprite_instance_index].flip_bit = {
 			f32(component_storage.component_b[index].x),
 			1,//f32(component_storage.component_a[index].y),
 		}
 	}
+
+	for component_storage, index in journey.run(&position_scale_query){
+		sprite_hash := component_storage.component_c[index].hash
+		sprite_instance_index := component_storage.component_c[index].instance_index
+		
+		sprite_batch := resource.render_buffer.render_batch_groups[sprite_hash]
+
+
+		
+		sprite_batch.instances[sprite_instance_index].transform[0,3] = component_storage.component_a[index].x
+		sprite_batch.instances[sprite_instance_index].transform[1,3] = component_storage.component_a[index].y
+
+		sprite_batch.instances[sprite_instance_index].transform[0,0] *= component_storage.component_b[index].x
+		sprite_batch.instances[sprite_instance_index].transform[1,1] *= component_storage.component_b[index].y
+
+	}
+
+
 
 	for component_storage, index in journey.run(&rect){
 		sprite_hash := component_storage.component_c[index].hash
