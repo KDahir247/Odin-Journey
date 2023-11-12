@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Debug" type="OdinRunConfiguration" factoryName="OdinRunConfiguration" singleton="false">
+    <option name="compilerOptions" value="-debug" />
+    <option name="programArguments" />
+    <option name="projectDirectoryPath" value="$PROJECT_DIR$/src" />
+    <option name="workingDirectory" value="$PROJECT_DIR$" />
+    <method v="2" />
+  </configuration>
+</component>

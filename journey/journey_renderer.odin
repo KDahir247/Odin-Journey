@@ -38,6 +38,7 @@ create_renderer :: proc(backend : RenderBackend, render_param : rawptr, render_b
     render_thread.user_args[0] = render_param
     render_thread.user_args[1] = conditional_variable
     
+    
     thread.start(render_thread)
 
     {
@@ -328,8 +329,8 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
         {"TRANSFORM",3, dxgi.FORMAT.R32G32B32A32_FLOAT,1,48, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"SRC_RECT", 0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,64, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
         {"COLOR",    0, dxgi.FORMAT.R32G32B32A32_FLOAT,1,80, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
-        {"SPRITE", 0, dxgi.FORMAT.R32G32_FLOAT, 1, 96, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
-        {"SPRITE", 1, dxgi.FORMAT.R32G32_FLOAT, 1, 104, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"FLIP", 0, dxgi.FORMAT.R32G32_FLOAT, 1, 96, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
+        {"CENTER", 0, dxgi.FORMAT.R32G32_FLOAT, 1, 104, d3d11.INPUT_CLASSIFICATION.INSTANCE_DATA, 1},
     }
 
     index_buffer_descriptor := d3d11.BUFFER_DESC{
@@ -699,13 +700,7 @@ init_render_dx11_subsystem :: proc(current_thread : ^thread.Thread){
 
             temp_instance_slice := slice.clone(current_batch.instances[:], context.temp_allocator)
             slice.sort_by(temp_instance_slice[:],sort_by_render_order)
-            // if len(current_batch.sprite_batch) <= 0 {
-            //     //TODO: khal there is no batches we might want to filter out zero entity in batch in the game loop rather then
-            //     // check it in the render loop. 
-            //     break
-            // }
 
-            //handle the changes here.
 
             device_context->IASetInputLayout(render_param.layout_input)
     

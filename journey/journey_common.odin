@@ -1,5 +1,19 @@
 package journey
 
+
+//FNV-1a Hash
+string_hash :: proc(path : string) -> uint{
+	hash :uint=  0xcbf29ce484222325
+	prime :uint= 0x100000001b3
+
+	for char_rune in path{
+		hash ~= cast(uint)(char_rune)
+		hash *= prime
+	}
+	return hash
+}
+
+
 //////////////////// COMMAN MATH ///////////////////////
   
 IDENTITY : matrix[4,4]f32 :  {
@@ -20,8 +34,6 @@ CACHED_SHARED_PATH :[1]string = {
 DEFAULT_SPRITE_PATH :: "resource/sprite/*.png"
 
 DEFAULT_SHADER_PATH :: "resource/shader/*.hlsl"
-
-DEFAULT_LEVEL_PATH :: "resource/level/*.ldtk"
 
 //Quality 1, Size = 4
 DEFAULT_AUDIO_PATH_WAV :: "reosurce/audio/*.wav"
@@ -44,7 +56,7 @@ GRAVITY :: 9.81
 ///////////////////////////////////////////////////////
 
 /////////////////// RENDERER DATA /////////////////////
-INSTANCE_BYTE_WIDTH :: size_of(RenderInstanceData) << 11
+INSTANCE_BYTE_WIDTH :: size_of(RenderInstanceData) << 14
 
 ResourceCache :: struct{
     render_buffer : ^RenderBatchBuffer,
@@ -70,9 +82,10 @@ GlobalDynamicPSConstantBuffer :: struct #align (16){
 }
 
 RenderBatchBuffer :: struct #align (64){
-    changed_flag : bool,
-    camera : Camera,
     render_batch_groups : map[uint]RenderBatchGroup,
+    camera : Camera,
+    changed_flag : bool,
+
 }
 
 RenderBatchGroup :: struct{
@@ -84,9 +97,9 @@ RenderInstanceData :: struct #align (16){
     transform : matrix[4,4]f32,
     src_rect : [4]f32,
     color : [4]f32,
-    //-1 is true, 1 is false
+    //1 is true, 0 is false
     flip_bit : [2]f32,
-    pivot_point : [2]f32,
+    center : [2]f32,
     order_index : int,
 }
 
@@ -114,14 +127,13 @@ Direction :: enum u32{
 TextureType :: enum i32{
     SpriteSheet = 0,
     Individual = 1,
-
 }
 
 EntityDescriptor :: struct{
     position : [2]f32,
     scale : [2]f32,
     color : [4]f32,
-
+    rotation : f32,
     sprite_texture_type : TextureType,
     direction : Direction,
 
@@ -144,6 +156,26 @@ Rotation :: struct{
 Scale :: struct {
     x : f32,
     y : f32,
+}
+
+Rect :: struct{
+    x : f32,
+    y : f32,
+    width : f32,
+    height : f32,
+}
+
+Color :: struct{
+    r : f32,
+    g : f32,
+    b : f32,
+    a : f32,
+}
+
+//1 is true, 0 is false
+Flip :: struct{
+    x : i32,
+    y : i32,
 }
 
 Animator :: struct{
@@ -201,8 +233,8 @@ PhysicsContact :: struct{
 Collider :: struct{
     center_x : f32,
     center_y : f32,
-    extent_x : f32,
-    extent_y : f32,
+    half_extent_x : f32,
+    half_extent_y : f32,
 }
 
 Velocity :: struct{
@@ -217,7 +249,6 @@ Acceleration :: struct{
     y : f32,
 }
 
-//Mass val is represent as the inverse mass
 InverseMass :: struct{
     val : f32, 
 }
@@ -227,7 +258,11 @@ AccumulatedForce :: struct{
     y : f32,
 }
 
-Friction :: struct{
+DynamicFriction :: struct{
+    val : f32,
+}
+
+StaticFriction :: struct{
     val : f32,
 }
 
@@ -235,10 +270,22 @@ Restitution :: struct{
     val : f32,
 }
 
+RBlend :: enum u32{
+    Maximum = 0,
+    Minimum = 1,
+    Average = 2,
+    Multiply = 3,
+}
+
+RestitutionBlend :: struct{
+    val : RBlend,
+}
+
 Force :: struct{
     x : f32,
     y : f32,
 }
+
 ///////////////////////////////////////////////////////
 
 /////////////////// RESOURCE DATA /////////////////////////

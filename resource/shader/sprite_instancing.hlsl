@@ -39,10 +39,8 @@ struct VSIn{
     float4 src_rect : SRC_RECT;
     float4 color : COLOR;
     
-    //naming is bad will change, but it will hold 2 vec2 (flip x bit, flip y bit, pivot point x, pivot point y)
-    float4 sprite_detail : SPRITE;
-    uint spriteid : SV_INSTANCEID;
-    uint vertexid : SV_VERTEXID;
+    float2 flip_bit : FLIP;
+    float2 center_pivot : CENTER;
 };
 
 struct VsOut{
@@ -58,18 +56,18 @@ VsOut vs_main(in VSIn vs_in)
 {
     VsOut vso;
     
-    float4 scaled_quad = float4(vs_in.quadid * vs_in.src_rect.zw, 0.0, 1.0);
+    float4 scaled_quad = float4(vs_in.quadid.x * vs_in.src_rect[2], vs_in.quadid.y * vs_in.src_rect[3], 0.0, 1.0);
 
-    float4 center_pivot = float4(vs_in.src_rect.zw * 0.5, 0.0, 0.0);
+    float4 center_pivot = float4(vs_in.center_pivot, 0.0, 0.0);
 
-    float4 position = scaled_quad - center_pivot;
+    float4 position =( scaled_quad - center_pivot );
     position = mul(position, vs_in.transform);
     position = mul(position, view_matrix);
     position = mul(position, projection_matrix);
 
     float2 flipped_scaled_quad = float2(
-        (scaled_quad.x * vs_in.sprite_detail.x) + (vs_in.src_rect.z - scaled_quad.x) * (1 - vs_in.sprite_detail.x),
-        (scaled_quad.y * vs_in.sprite_detail.y) + (vs_in.src_rect.w - scaled_quad.y) * (1 - vs_in.sprite_detail.y)
+        (scaled_quad.x * vs_in.flip_bit.x) + (vs_in.src_rect[2] - scaled_quad.x) * (1 - vs_in.flip_bit.x),
+        (scaled_quad.y * vs_in.flip_bit.y) + (vs_in.src_rect[3] - scaled_quad.y) * (1 - vs_in.flip_bit.y)
     );
 
     vso.position = position;

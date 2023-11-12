@@ -7,38 +7,6 @@ import "core:simd"
 import "core:fmt"
 import "core:intrinsics"
 
-init_physic_world :: proc(game_world : ^World, collision_iteration_count := 8){
-    register(game_world, Collider)
-	register(game_world, Velocity)
-	register(game_world, Acceleration)
-	register(game_world, InverseMass)
-	register(game_world, AccumulatedForce)
-	register(game_world, Friction)
-	register(game_world, Restitution)
-
-    
-    register(game_world, PhysicsContacts)
-
-    register(game_world, CollisionResolver)
-
-    resource_entity := uint(context.user_index)
-
-    //collision iteration is the expect collision * 2
-    add_soa_component(game_world,resource_entity, CollisionResolver{
-        used_iteration = 0,
-        collision_iteration = collision_iteration_count,
-    })
-    
-    add_soa_component(game_world, resource_entity, PhysicsContacts{
-        
-    })
-    
-    //This will have more setup when the physics in the game is fleshed out.
-	//Set up fixed_deltatime here.
-    //velocity iteration count, collision iteration count.
-    //etc....
-
-}
 
 //the rate at which two objects are getting closer to each other.
 compute_seperation_speed :: proc(velocity : Velocity, collision_normal : [2]f32) ->f32{
@@ -133,9 +101,7 @@ compute_direction :: proc(velocity : Velocity) -> [2]f32{
     }
 }
 
-gravitational_force :: proc(inverse_mass : InverseMass, gravitational_acceleration : f32 = GRAVITY) -> f32{
-    mass := inverse_mass.val != 0 ? 1.0 / inverse_mass.val : 0
-
+gravitational_force :: proc(mass : f32, gravitational_acceleration : f32 = GRAVITY) -> f32{
     return gravitational_acceleration * mass
 }
 
@@ -159,8 +125,7 @@ linear_drag_force :: proc(drag_coefficent : f32, velocity : Velocity) -> Force{
     }
 }
 
-friction_force :: proc(friction_coefficient : f32, inverse_mass : InverseMass, velocity : Velocity, gravitational_acceleration : f32 = GRAVITY, incident_angle_rad : f32 = 0) ->Force{
-    mass := inverse_mass.val != 0 ? 1.0 / inverse_mass.val : 0
+friction_force :: proc(friction_coefficient : f32, mass : f32, velocity : Velocity, gravitational_acceleration : f32 = GRAVITY, incident_angle_rad : f32 = 0) ->Force{
     friction_array := #simd[4]f32{mass, gravitational_acceleration, math.cos(incident_angle_rad), friction_coefficient}
     friction := simd.reduce_mul_ordered(friction_array)
     
@@ -186,14 +151,14 @@ aabb_segement_intersection :: proc (dynamic_collider : Collider, delta : Velocit
     signed_delta_x := linalg.sign(scale_delta_x)
     signed_delta_y := linalg.sign(scale_delta_y)
 
-    total_extent_x := dynamic_collider.extent_x + static_collider.extent_x
-    total_extent_y := dynamic_collider.extent_y + static_collider.extent_y
+    total_half_extent_x := dynamic_collider.half_extent_x + static_collider.half_extent_x
+    total_half_extent_y := dynamic_collider.half_extent_y + static_collider.half_extent_y
 
-    near_time_x := (dynamic_collider.center_x - signed_delta_x * total_extent_x - static_collider.center_x) * scale_delta_x
-    near_time_y := (dynamic_collider.center_y - signed_delta_y * total_extent_y - static_collider.center_y) * scale_delta_y
+    near_time_x := (dynamic_collider.center_x - signed_delta_x * total_half_extent_x - static_collider.center_x) * scale_delta_x
+    near_time_y := (dynamic_collider.center_y - signed_delta_y * total_half_extent_y - static_collider.center_y) * scale_delta_y
 
-    far_time_x := (dynamic_collider.center_x + signed_delta_x * total_extent_x - static_collider.center_x) * scale_delta_x
-    far_time_y := (dynamic_collider.center_y + signed_delta_y * total_extent_y - static_collider.center_y) * scale_delta_y
+    far_time_x := (dynamic_collider.center_x + signed_delta_x * total_half_extent_x - static_collider.center_x) * scale_delta_x
+    far_time_y := (dynamic_collider.center_y + signed_delta_y * total_half_extent_y - static_collider.center_y) * scale_delta_y
 
     if near_time_x > far_time_y || near_time_y > far_time_x{
         return hit
@@ -208,13 +173,13 @@ aabb_segement_intersection :: proc (dynamic_collider : Collider, delta : Velocit
 
     hit.time = clamp(near_time, 0, 1)
 
-    // dynamic_collider_min := [2]f32{dynamic_collider.center_x - dynamic_collider.extent_x, dynamic_collider.center_y - dynamic_collider.extent_y}
-    // dynamic_collider_max := [2]f32{dynamic_collider.center_x + dynamic_collider.extent_x, dynamic_collider.center_y + dynamic_collider.extent_y}
-    // static_collider_min :=  [2]f32{static_collider.center_x - static_collider.extent_x, static_collider.center_y - static_collider.extent_y}
-    // static_collider_max := [2]f32{static_collider.center_x + static_collider.extent_x, static_collider.center_y + static_collider.extent_y}
+    // dynamic_collider_min := [2]f32{dynamic_collider.center_x - dynamic_collider.half_extent_x, dynamic_collider.center_y - dynamic_collider.half_extent_y}
+    // dynamic_collider_max := [2]f32{dynamic_collider.center_x + dynamic_collider.half_extent_x, dynamic_collider.center_y + dynamic_collider.half_extent_y}
+    // static_collider_min :=  [2]f32{static_collider.center_x - static_collider.half_extent_x, static_collider.center_y - static_collider.half_extent_y}
+    // static_collider_max := [2]f32{static_collider.center_x + static_collider.half_extent_x, static_collider.center_y + static_collider.half_extent_y}
 
-    overlap_x := min(dynamic_collider.center_x + dynamic_collider.extent_x, static_collider.center_x + static_collider.extent_x) - max(dynamic_collider.center_x - dynamic_collider.extent_x, static_collider.center_x - static_collider.extent_x)
-    overlap_y := min(dynamic_collider.center_y + dynamic_collider.extent_y, static_collider.center_y + static_collider.extent_y) - max(dynamic_collider.center_y - dynamic_collider.extent_y, static_collider.center_y - static_collider.extent_y)
+    overlap_x := min(dynamic_collider.center_x + dynamic_collider.half_extent_x, static_collider.center_x + static_collider.half_extent_x) - max(dynamic_collider.center_x - dynamic_collider.half_extent_x, static_collider.center_x - static_collider.half_extent_x)
+    overlap_y := min(dynamic_collider.center_y + dynamic_collider.half_extent_y, static_collider.center_y + static_collider.half_extent_y) - max(dynamic_collider.center_y - dynamic_collider.half_extent_y, static_collider.center_y - static_collider.half_extent_y)
 
     aabb_displacement := [2]f32{dynamic_collider.center_x, dynamic_collider.center_y} - [2]f32{static_collider.center_x, static_collider.center_y}
     
@@ -237,8 +202,8 @@ aabb_aabb_intersection :: proc (a,b : Collider) -> CollisionHit{
         time = 1,
     }
 
-    a_half := [2]f32{a.extent_x, a.extent_y}
-    b_half := [2]f32{b.extent_x, b.extent_y} 
+    a_half := [2]f32{a.half_extent_x, a.half_extent_y}
+    b_half := [2]f32{b.half_extent_x, b.half_extent_y} 
     a_origin := [2]f32{a.center_x, a.center_y} + a_half
     b_origin := [2]f32{b.center_x, b.center_y} + b_half
     
@@ -291,7 +256,7 @@ aabb_aabb_sweep :: proc (dynamic_collider : Collider, velocity : Velocity, stati
 
         direction := linalg.normalize([2]f32{velocity.x, velocity.y})
         
-        sweep.hit.contact_point = linalg.clamp(sweep.hit.contact_point + direction * [2]f32{static_collider.extent_x, static_collider.extent_y}, [2]f32{dynamic_collider.center_x, dynamic_collider.center_y} - [2]f32{dynamic_collider.extent_x , dynamic_collider.extent_y}, [2]f32{dynamic_collider.center_x, dynamic_collider.center_y} + [2]f32{dynamic_collider.extent_x, dynamic_collider.extent_y})
+        sweep.hit.contact_point = linalg.clamp(sweep.hit.contact_point + direction * [2]f32{static_collider.half_extent_x, static_collider.half_extent_y}, [2]f32{dynamic_collider.center_x, dynamic_collider.center_y} - [2]f32{dynamic_collider.half_extent_x , dynamic_collider.half_extent_y}, [2]f32{dynamic_collider.center_x, dynamic_collider.center_y} + [2]f32{dynamic_collider.half_extent_x, dynamic_collider.half_extent_y})
     }
 
     return sweep

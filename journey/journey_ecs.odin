@@ -100,14 +100,16 @@ where intrinsics.type_is_struct(component_type){
 
 get_soa_component_with_id :: proc(world : $W/^$World, $component_type : typeid/SOAType($E)) -> (entity_slice: []uint,soa_slice :# soa[]E, length : int)
 where intrinsics.type_is_struct(E){
-    soa_slice, length = get_soa_components(world, component_type)
-    entity_slice = get_id_soa_components(world, E)
+    component_info := world.component_stores.component_info[E] 
+
+    soa_slice, length = internal_sparse_fetch_components(& world.component_stores.component_sparse[component_info.sparse_index], component_type)
+    entity_slice = internal_sparse_fetch_entities(&world.component_stores.component_sparse[component_info.sparse_index], len(component_info.field_sizes))
     return
 }
 
 get_id_soa_components :: proc(world : $W/^$World, $component_type : typeid) -> []uint
 where intrinsics.type_is_struct(component_type){
-    component_info := world.component_stores.component_info[component_type]
+    component_info := world.component_stores.component_info[component_type] 
     return internal_sparse_fetch_entities(&world.component_stores.component_sparse[component_info.sparse_index], len(component_info.field_sizes))
 } 
 
@@ -421,6 +423,7 @@ internal_sparse_init :: proc() -> SparseArray{
     }
 }
 
+@(private)
 internal_sparse_deinit :: proc(sparse_array :  $SA/^$SparseArray){
     for sparse_page in sparse_array.sparse{
         if sparse_page != nil{
@@ -1010,6 +1013,7 @@ query_4 :: proc(world : $W/^$World,$a : typeid, $b : typeid, $c : typeid, $d : t
 run_1 :: proc(query : ^Query_1($a)) -> (iterator : Iter_1(a), idx : int, cond : bool) #no_bounds_check {
     iterator.entities = internal_sparse_fetch_entities_upto(&query.world.component_stores.component_sparse[query.a_sparse_index], query.len)
     iterator.component_a = internal_sparse_fetch_component_upto(&query.world.component_stores.component_sparse[query.a_sparse_index], SOAType(a), query.len)
+
 
     if cond = query.index < query.len; cond{
         idx = query.index
