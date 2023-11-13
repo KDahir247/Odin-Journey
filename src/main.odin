@@ -113,7 +113,7 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, $render_orde
 	width :i32= 0
 	height :i32= 0
 
-	path_hash := journey.string_hash(tex_path)
+	path_hash := journey.string_hash(tex_path)//uint(#load_hash(tex_path, "crc32"))
 
 	batch_group, valid := resource.render_buffer.render_batch_groups[path_hash]
 
@@ -817,6 +817,7 @@ main ::  proc()  {
 		key_buffer = transmute([]i8)sdl2.GetKeyboardStateAsSlice(),
 	})
 
+	journey.create_animator("resource/animation/player_anim.json", [1]string{"Idle"}, journey.LoadOperation.Runtime)
 	ground := create_game_entity("resource/sprite/test-block.png", 0,2, journey.EntityDescriptor{
 		position = {0,250},
 		scale = {1,1},
@@ -864,8 +865,8 @@ main ::  proc()  {
 	sdl2.Quit()
 
 	when ODIN_DEBUG{
-		bt.tracking_allocator_print_results(&bt_track)
-		bt.tracking_allocator_destroy(&bt_track)
+		// bt.tracking_allocator_print_results(&bt_track)
+		// bt.tracking_allocator_destroy(&bt_track)
 	}
 
 	///////////////////////////////////////////////////////////////////

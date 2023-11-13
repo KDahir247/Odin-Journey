@@ -1,0 +1,34 @@
+{
+    //Example of the new animation clip file
+
+    /*
+        Animation Clip Legend
+        constraint == 0 (Sudden) clip can change suddenly
+        constraint == 1 (TilComplete) next clip has to wait for this clip to finish it cycle
+
+        direction == 0 (Horizontal) sprite sheet is sliced horizontally
+        direction == 1 (Vertical) sprite sheet is sliced vertically
+        
+        index is the starting row for horizontal or column for vertical
+
+        wrapmode == 0 (PlayOnceFirst) play the animation clip in full cycle then play the first frame in the clip then stop
+        wrapmode == 1 (Loop) play the animation clip once it reaches the end move the clip position to the first frame and keep playing
+        wrapmode == 2 (PingPong) play the animation clip forward and backward when it reaches bounds
+        wrapmode == 3 (PlayOnceLast) player the animation clip in full cycle then stop at the end of the frame 
+    */
+
+
+    "Idle" : {
+        "len" : [7],
+        "x_half_bounds" : [4.5, 4.5, 4.5, 5, 5, 5, 4.5],
+        "y_half_bounds" : [7.5, 8, 8, 8, 7.5, 7, 7],
+        "width" : 39.0,
+        "height" : 43.0,
+        "index" : 0,
+        "animation_speed" : 1,
+        "constraint" : 0,
+        "direction" : 0,
+        "wrapmode" : 1
+        
+    }
+}
