@@ -1,18 +1,6 @@
 package journey
 
 
-//FNV-1a Hash
-string_hash :: proc(path : string) -> uint{
-	hash :uint=  0xcbf29ce484222325
-	prime :uint= 0x100000001b3
-
-	for char_rune in path{
-		hash ~= cast(uint)(char_rune)
-		hash *= prime
-	}
-	return hash
-}
-
 
 //////////////////// COMMAN MATH ///////////////////////
   
@@ -117,7 +105,7 @@ TextureParam :: struct{
 /////////////////// GAME DATA /////////////////////////
 
 //1 = Left, 0 = Right
-Direction :: enum u32{
+Direction :: enum i32{
     Left_Top = 0b11, //1,1 
     Right_Top = 0b01, //0,1
     Left_Bottom = 0b10, //1,0
@@ -136,7 +124,6 @@ EntityDescriptor :: struct{
     rotation : f32,
     sprite_texture_type : TextureType,
     direction : Direction,
-
 }
 
 RenderInstance :: struct{
@@ -165,6 +152,14 @@ Rect :: struct{
     height : f32,
 }
 
+PhysicsRect :: struct{
+    x : f32,
+    y : f32,
+    half_width : f32,
+    half_height : f32,
+}
+
+
 Color :: struct{
     r : f32,
     g : f32,
@@ -178,12 +173,13 @@ Flip :: struct{
     y : i32,
 }
 
-Animator :: struct{
-    clips :[]Animation,
-    animation_speed : f32,
-    current_clip : int,
-    animation_duration_sec : f32,
-}
+//TODO:khal remove
+// Animator :: struct{
+//     clips :[]Animation,
+//     animation_speed : f32,
+//     current_clip : int,
+//     animation_duration_sec : f32,
+// }
 
 Animation :: struct{
     width : int, // (the sprite width for the animation clip)
@@ -209,6 +205,7 @@ CollisionSweep :: struct{
     pos : [2]f32,
     time : f32,
 }
+//
 
 CollisionResolver :: struct{
     collision_iteration : int,

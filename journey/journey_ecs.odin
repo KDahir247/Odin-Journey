@@ -46,6 +46,7 @@ World :: struct{
 }
 
 init_world :: proc() -> ^World{
+
     world := new(World)
 
     world.entities_stores = init_entity_store()

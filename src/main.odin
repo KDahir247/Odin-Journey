@@ -7,6 +7,7 @@ import "core:os"
 import "core:encoding/json"
 import "core:math"
 import "core:slice"
+import "core:hash"
 
 import "../journey"
 
@@ -113,7 +114,7 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, $render_orde
 	width :i32= 0
 	height :i32= 0
 
-	path_hash := journey.string_hash(tex_path)//uint(#load_hash(tex_path, "crc32"))
+	path_hash := uint(hash.fnv32a(transmute([]u8)tex_path))//uint(#load_hash(tex_path, "crc32"))
 
 	batch_group, valid := resource.render_buffer.render_batch_groups[path_hash]
 
@@ -187,6 +188,7 @@ create_game_entity :: proc($tex_path : string, $shader_cache : u32, $render_orde
 	journey.add_soa_component(world, game_entity, rotation)
 	journey.add_soa_component(world, game_entity, color)
 	journey.add_soa_component(world, game_entity, rect)
+	journey.add_soa_component(world, game_entity, journey.PhysicsRect{})
 	journey.add_soa_component(world, game_entity, flip)
 	
 	sprite_batch := &resource.render_buffer.render_batch_groups[path_hash]
@@ -574,13 +576,14 @@ physics_simulate :: proc(global : ^GameLoop){
 	for component_storage, index in journey.run(&collider_reorientation_query){
 		mutable_component_storage := component_storage
 		
-		sprite_rect := journey.get_soa_component(world, component_storage.entities[index], journey.Rect)
+		physics_rect := journey.get_soa_component(world, component_storage.entities[index], journey.PhysicsRect)
 
-		mutable_component_storage.component_b[index].half_extent_x =  sprite_rect.width * 0.5 * component_storage.component_d[index].x
-		mutable_component_storage.component_b[index].half_extent_y = sprite_rect.height * 0.5 * component_storage.component_d[index].y
+		mutable_component_storage.component_b[index].half_extent_x =  physics_rect.half_width
+		mutable_component_storage.component_b[index].half_extent_y = physics_rect.half_height
 
-		mutable_component_storage.component_b[index].center_x = component_storage.component_c[index].x
-		mutable_component_storage.component_b[index].center_y = component_storage.component_c[index].y
+		mutable_component_storage.component_b[index].center_x = component_storage.component_c[index].x 
+		mutable_component_storage.component_b[index].center_y = component_storage.component_c[index].y + 20
+	
 	}
 }
 
@@ -588,7 +591,7 @@ update :: proc(global : ^GameLoop){
 	world := cast(^journey.World)context.user_ptr
 
 	sprite_flip_query := journey.query(world, journey.GameController)
-	animation_query := journey.query(world, journey.Animator)
+	animation_query := journey.query(world, journey.NewAnimator)
 
 	for component_storage, index in journey.run(&sprite_flip_query){
 
@@ -609,15 +612,17 @@ update :: proc(global : ^GameLoop){
 		mutable_component_storage := component_storage
 
 		if journey.has_soa_component(world, component_storage.entities[index], journey.Velocity){
-			velocity := journey.get_soa_component(world, component_storage.entities[index], journey.Velocity)
+			// velocity := journey.get_soa_component(world, component_storage.entities[index], journey.Velocity)
 
-			if velocity.y > 0{
-				mutable_component_storage.component_a[index].current_clip = 4
-			}else if velocity.y < 0{
-				mutable_component_storage.component_a[index].current_clip = 3
-			}else if velocity.previous_y == 0 {
-				mutable_component_storage.component_a[index].current_clip = int(abs(velocity.x) >= 0.5)
-			}
+			// if velocity.y > 0{
+			// 	f := "Fall"
+			// 	mutable_component_storage.component_a[index].clip_string_hash = hash.fnv32a(transmute([]u8)f)
+			// }else if velocity.y < 0{
+			// 	f := "Jump"
+			// 	mutable_component_storage.component_a[index].clip_string_hash = hash.fnv32a(transmute([]u8)f)
+			// }else if velocity.previous_y == 0 {
+			// 	mutable_component_storage.component_a[index].clip_string_hash = int(abs(velocity.x) >= 0.5)
+			// }
 		}
 	}
 }
@@ -625,22 +630,44 @@ update :: proc(global : ^GameLoop){
 on_animation :: proc(global : ^GameLoop){
     world := cast(^journey.World)context.user_ptr
 
-	anim_sprite_query := journey.query(world, journey.Animator, journey.Rect, 8)
+	anim_sprite_query := journey.query(world, journey.NewAnimator, journey.Rect, journey.PhysicsRect, 8)
+
+	animation_clips, len := journey.get_soa_components(world,journey.SOAType(journey.AnimationClip))
 
 	for component_storage, index in journey.run(&anim_sprite_query){
 		mutable_component_storage := component_storage
 
 		animator := component_storage.component_a[index]
 
-		current_clip := animator.clips[animator.current_clip]
+		current_animation_index := animator.clip_hash_map[animator.clip_string_hash] 
+		current_animation_clip := animation_clips[current_animation_index]
 
-		normalized_time := global.elapsed_time / animator.animation_duration_sec
+		delta_time := (global.elapsed_time - animator.animation_time) / animator.animation_duration_sec
+		frame_to_update := math.floor(delta_time * animator.animation_speed)
 
-		y :=current_clip.index * current_clip.height
-		x := (int(normalized_time) % current_clip.len) * current_clip.width
+		if frame_to_update > 0{
+			mutable_component_storage.component_a[index].previous_frame_index += int(frame_to_update)
+			mutable_component_storage.component_a[index].previous_frame_index %= int(current_animation_clip.len)
 
-		mutable_component_storage.component_b[index] = {
-			f32(x), f32(y), f32(current_clip.width), f32(current_clip.height),
+			y :=current_animation_clip.index * i32(animator.slice_size_height)
+			x := i32(animator.previous_frame_index) * i32(animator.slice_size_width)
+	
+			mutable_component_storage.component_b[index] = {
+				f32(x), f32(y), f32(animator.slice_size_width), f32(animator.slice_size_height),
+			}
+
+			mutable_component_storage.component_a[index].animation_time = global.elapsed_time
+
+			physics_bound_index := int(mutable_component_storage.component_a[index].previous_frame_index * 2)
+
+			mutable_component_storage.component_c[index] = {
+				x = 0,
+				y =  0,
+				half_width = current_animation_clip.half_bounds[physics_bound_index],
+				half_height = current_animation_clip.half_bounds[physics_bound_index + 1],
+				
+			}
+
 		}
 	}
 }
@@ -655,7 +682,7 @@ late_update :: proc(global : ^GameLoop){
 	//TODO:khal render Sync Point. We will optimize the loops later.
 	position_scale_query := journey.query(world, journey.Position, journey.Scale, journey.RenderInstance, 16)
 	rotation_flip_query := journey.query(world, journey.Rotation, journey.Flip, journey.RenderInstance, 16)
-	rect := journey.query(world,journey.Animator, journey.Rect, journey.RenderInstance, 16)
+	rect := journey.query(world,journey.NewAnimator, journey.Rect, journey.RenderInstance, 16)
 	
 	for component_storage, index in journey.run(&rotation_flip_query){
 		sprite_hash := component_storage.component_c[index].hash
@@ -691,8 +718,6 @@ late_update :: proc(global : ^GameLoop){
 		sprite_batch.instances[sprite_instance_index].transform[1,1] *= component_storage.component_b[index].y
 
 	}
-
-
 
 	for component_storage, index in journey.run(&rect){
 		sprite_hash := component_storage.component_c[index].hash
@@ -753,12 +778,15 @@ main ::  proc()  {
 		journey.register(world, journey.Restitution)
 		journey.register(world, journey.RestitutionBlend)
 		journey.register(world, journey.PhysicsContacts)
+		journey.register(world, journey.PhysicsRect)
 	}
 
 	{
 		journey.register(world, journey.RenderInstance)
 		journey.register(world, journey.ResourceCache)
-		journey.register(world, journey.Animator)
+		journey.register(world, journey.AnimationClip)		
+		journey.register(world, journey.NewAnimator)
+		//Remove below animation
 		journey.register(world, journey.GameController)
 		journey.register(world, journey.Position)
 		journey.register(world, journey.Scale)
@@ -817,7 +845,6 @@ main ::  proc()  {
 		key_buffer = transmute([]i8)sdl2.GetKeyboardStateAsSlice(),
 	})
 
-	journey.create_animator("resource/animation/player_anim.json", [1]string{"Idle"}, journey.LoadOperation.Runtime)
 	ground := create_game_entity("resource/sprite/test-block.png", 0,2, journey.EntityDescriptor{
 		position = {0,250},
 		scale = {1,1},
@@ -827,13 +854,13 @@ main ::  proc()  {
 		direction = journey.Direction.Left_Top,
 	})
 
-	//TODO:khal proof of implementation flesh it out.
-	data,_ := os.read_entire_file_from_filename("resource/animation/player_anim.json")
-	player_anim : journey.Animator
-	json.unmarshal(data, &player_anim)
-	delete(data)
-	journey.add_soa_component(world, main_player, player_anim)
-	//
+	player_animation, player_animation_clips := journey.create_animator("resource/animation/new_anim_legend.json", journey.LoadOperation.Runtime)
+	journey.add_soa_component(world, main_player, player_animation)
+
+	for clip in player_animation_clips{
+		animation_clip_entity := journey.create_entity(world)
+		journey.add_soa_component(world, animation_clip_entity, clip)
+	}
 
 	physics_body(main_player, 0.1, 0)
 	physics_body(ground,0, 0, 8, 8)

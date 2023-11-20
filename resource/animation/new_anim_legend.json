@@ -11,24 +11,68 @@
         
         index is the starting row for horizontal or column for vertical
 
-        wrapmode == 0 (PlayOnceFirst) play the animation clip in full cycle then play the first frame in the clip then stop
+        wrapmode == 0 (Single) play the animation clip in full cycle then stop
         wrapmode == 1 (Loop) play the animation clip once it reaches the end move the clip position to the first frame and keep playing
-        wrapmode == 2 (PingPong) play the animation clip forward and backward when it reaches bounds
-        wrapmode == 3 (PlayOnceLast) player the animation clip in full cycle then stop at the end of the frame 
     */
 
+    "starting_clip" : "Idle",
+    "width" : 663.0,
+    "height" : 400.0,
+    "max_len" : 17.0,
+    "max_index" : 10.0,
+    "animation_duration_seconds" : 0.1,
 
-    "Idle" : {
-        "len" : [7],
-        "x_half_bounds" : [4.5, 4.5, 4.5, 5, 5, 5, 4.5],
-        "y_half_bounds" : [7.5, 8, 8, 8, 7.5, 7, 7],
-        "width" : 39.0,
-        "height" : 43.0,
-        "index" : 0,
-        "animation_speed" : 1,
-        "constraint" : 0,
-        "direction" : 0,
-        "wrapmode" : 1
-        
-    }
+    "clips" : [
+        {
+            "name" : "Idle",
+            "half_bounds" : [
+                4.5, 7.5,
+                4.5, 8.0,
+                4.5, 8.0,
+                5.0, 8.0,
+                5.0, 7.5,
+                5.0, 7.0,
+                4.5, 7.0
+            ],
+            "len" : 7, 
+            "index" : 0,
+            "direction" : 0,
+            "wrapmode" : 1,
+            "constraint" : 0
+        },
+        {
+            "name" : "Walk",
+            "half_bounds" : [
+
+            ],
+            "len" : 8,
+            "index" : 1,
+            "direction" : 0,
+            "wrapmode" : 1,
+            "constraint" : 0
+        },
+        {
+            "name" : "Jump",
+            "half_bounds" : [
+
+            ],
+            "len" : 1,
+            "index" : 6,
+            "direction" : 0,
+            "wrapmode" :1,
+            "constraint" : 0
+        },
+        {
+            "name" : "Fall",
+            "half_bounds" : [
+
+            ],
+            "len" : 1,
+            "index" : 7,
+            "direction" : 0,
+            "wrapmode" : 1,
+            "constraint" : 0
+        }
+    ]
+    
 }

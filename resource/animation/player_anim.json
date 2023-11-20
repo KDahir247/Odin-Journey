@@ -3,31 +3,31 @@
     clips: [
             {
                     "width": 39.0,
-                    "height": 43.0,
+                    "height": 40.0,
                     "index": 0,
                     "len": 7
             },
             {
                     "width": 39.0,
-                    "height": 41.0,
+                    "height": 40.0,
                     "index": 1,
                     "len": 8
             },
             {
-                "width": 40.0,
-                "height": 41.0,
+                "width": 39.0,
+                "height": 40.0,
                 "index": 3,
                 "len": 17
             },
             {
-                "width":40.0,
-                "height":41.0,
+                "width":39.0,
+                "height":40.0,
                 "index":6,
                 "len":1
             },
             {
-                "width":40.0,
-                "height":41.0,
+                "width":39.0,
+                "height":40.0,
                 "index":7,
                 "len":1
             }
