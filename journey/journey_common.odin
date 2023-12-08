@@ -283,6 +283,39 @@ Force :: struct{
     y : f32,
 }
 
+
+UberWorld :: struct{
+    //Player?
+    //Game Controller?
+
+    //AOSSOA???
+    positions : []Position,
+    rotations : []Rotation,
+    scales : []Scale,
+    
+    rect : []Rect,
+    physic_rect : []PhysicsRect,
+    color : []Color,
+    flip : []Flip,
+
+    //animation?
+    //physicscontact
+
+    collider : []Collider,
+    velocity : []Velocity,
+    acceleration : []Acceleration,
+    inverse_mass : []InverseMass,
+    accum_force : []AccumulatedForce,
+    dynamic_friction : []DynamicFriction,
+    static_friction : []StaticFriction,
+    restitution : []Restitution,
+    restitution_blend : []RestitutionBlend,
+    force : []Force,
+
+
+    //Render
+}
+
 ///////////////////////////////////////////////////////
 
 /////////////////// RESOURCE DATA /////////////////////////

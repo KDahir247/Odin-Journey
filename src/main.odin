@@ -45,6 +45,7 @@ next_frame_window :: proc(game_loop : ^GameLoop) -> bool{
 
     game_loop.accumulated_time += (game_loop.delta_time + game_loop.carry_over_time)
 
+
     for game_loop.accumulated_time >= game_loop.fixed_deltatime{
 
 		fixed_update(game_loop)
@@ -315,7 +316,7 @@ physics_simulate :: proc(global : ^GameLoop){
 	static_collider_offset := collider_query.len
 	collider_entities, all_collider, collider_len := journey.get_soa_component_with_id(world, journey.SOAType(journey.Collider))
 
-	assert(static_collider_offset < collider_len, "Static collider offset is greater then the total amount of colliders in the game. This is a logical bug")
+	//assert(static_collider_offset < collider_len, "Static collider offset is greater then the total amount of colliders in the game. This is a logical bug")
 
 	static_colliders := all_collider[static_collider_offset:]
 	static_entites := collider_entities[static_collider_offset:]
@@ -660,13 +661,13 @@ on_animation :: proc(global : ^GameLoop){
 
 			physics_bound_index := int(mutable_component_storage.component_a[index].previous_frame_index * 2)
 
-			mutable_component_storage.component_c[index] = {
-				x = 0,
-				y =  0,
-				half_width = current_animation_clip.half_bounds[physics_bound_index],
-				half_height = current_animation_clip.half_bounds[physics_bound_index + 1],
+			// mutable_component_storage.component_c[index] = {
+			// 	x = 0,
+			// 	y =  0,
+			// 	half_width = current_animation_clip.half_bounds[physics_bound_index],
+			// 	half_height = current_animation_clip.half_bounds[physics_bound_index + 1],
 				
-			}
+			// }
 
 		}
 	}
@@ -744,6 +745,8 @@ late_update :: proc(global : ^GameLoop){
 		look_at_x = transform[0,3],
 		look_at_y = transform[1,3],
 	}
+
+
 }
 
 main ::  proc()  {
@@ -833,7 +836,7 @@ main ::  proc()  {
 
 	///////////////////////// Game Start ///////////////////////////////
 
-	main_player := create_game_entity("resource/sprite/padawan/pad.png", 0,4,journey.EntityDescriptor{
+	main_player := create_game_entity("resource/sprite/idle.png", 0,4,journey.EntityDescriptor{
 		position = {0,0},
 		scale = {1,1},
 		color = {0,0,0,0},
@@ -845,14 +848,6 @@ main ::  proc()  {
 		key_buffer = transmute([]i8)sdl2.GetKeyboardStateAsSlice(),
 	})
 
-	ground := create_game_entity("resource/sprite/test-block.png", 0,2, journey.EntityDescriptor{
-		position = {0,250},
-		scale = {1,1},
-		color = {0,0,0,0},
-
-		sprite_texture_type = journey.TextureType.Individual,
-		direction = journey.Direction.Left_Top,
-	})
 
 	player_animation, player_animation_clips := journey.create_animator("resource/animation/new_anim_legend.json", journey.LoadOperation.Runtime)
 	journey.add_soa_component(world, main_player, player_animation)
@@ -863,7 +858,6 @@ main ::  proc()  {
 	}
 
 	physics_body(main_player, 0.1, 0)
-	physics_body(ground,0, 0, 8, 8)
 
 	///////////////////////////////////////////////////////////////////
 
