@@ -1,0 +1,18 @@
+Feature Idea.
+
+Add a dead zone descriptor struct to hold the following data.
+
+- Radial Deadzone 
+- Axial Deadzone
+
+- Anti Radial Deadzone
+- Anti Axial Deadzone
+
+- Angular Anti Axial Deadzone
+
+- Outer Deadzone
+
+- response curve
+
+
+Dual Sense looks like it is around 250hz poll rate, while xbox one controller poll rate is 125hz

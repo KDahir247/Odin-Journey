@@ -1,0 +1,586 @@
+Target optimization Zen 2
+
+maximum number of load and store operations in 1 cycle is
+2 loads and 1 store operations
+
+2 load per cycle is only allowed if both loads are in different banks.
+The DC banks that are accessed by loads are determined by the address bit 5:2, the size of the load, and the way.
+
+
+The instruction fetch unit reads 32 bytes per cycle from a 32 KiB, 8-way set associative, parity protected L1 instruction cache (IC)
+So to fetch one cache line from the L1 I cache it will first fetch 32 byte in once cycle and then the other 32 byte in the next cycle?
+So it fetches half a cache line every cycle in the L1 I cache to place to the Picker 
+
+If the four instructions span more than 
+two 16-byte windows, only those instructions that are wholly contained in the two windows are 
+decoded. Are instruction that spans more than two 16-byte placed in the next window?
+
+
+The Op cache can send 64 bytes per cycle (8 macro ops) to the micro op queue bypassing the picker and decoder step. 
+A transition from IC to OC mode is only possible at a branch target, and the machine generally remains in OC mode until an op cache miss occurs on a fetch address
+So in other words if the code is in a loop and the instruction within the loop is large, causing thrashing to the Op cache.
+The Op cache is 8 way set associative where each entry contains up to 8 sequential instruction ending in the same
+64 byte alignment memory region, resulting in a max capacity of 4096 macro ops 
+One an op cache hit the op cache receives a fetch address and enters macro ops into the micro op queue. If the machine was not in OC mode already the op cache stalls until
+the instruction decoding pipeline is empty.
+Op cache entry limit are:
+1) 8 macro ops (instruction)
+2) 8 32 bit immediate/displacement (64 bit immediate/displacement take two slots)
+3) 4 microcode instruction
+
+
+So in other words make sure that the macro ops in the loop is less than the maximum capacity of the op cache (4096)
+and make sure there isn't any eviction due to maximum way capacity if possible.
+
+// TODO: khal specify the instruction lay out [rex (1), opcode(1),]
+
+There is 4 integer ALU scheduler, 2 AGU (Address Generation unit) sheduler, and a unified FP scheduler that
+can issue up to 10 micro ops simultaneously to the ALU pipes (4), AGU pipes (2), and FP pipes (4) per cycle at maximum efficency 
+The scheduler tracks operand availability and dependency information as part of its task of issuing micro ops to be executed.
+
+So each Pipe works with only micro ops and not macro ops.
+Making ADD qword ptr [rax + 0x8], IMM  use possible 3 micro ops (not 100 percent sure if it is 3 or 2).
+1) move immediate
+2) load memory
+3) add
+
+An integer pipe can execute two micro ops from different macro ops (one in the ALU and one in the AGU) at the same time.
+
+
+L3 cache is chuncked between CCX (4 core sharing a slice of L3 cache).
+When there is an L3 cache hit, the line is invalid from the L3 if the access was a store.
+It is invalid from the L3 cache if the access was a load and the line was read by just one core.
+It stays valid in the L3 if it was a code fetch.
+It stays valid in the L3 if it was a load and the line has been read by more than one core.
+The L3 cache maintain shadow tag for each L2 cache in the complex to allow probing L2 cache in the CCX.
+Shadow tag are consulted if there is a L3 miss which check other core's L2 cache for data in the same CCX. If there is then a 
+cache to cache transfer is initiated.
+
+Calls and return are not eligible to be stored in the zero bubble predictor (L0 BTB). Therefore, function calls within hot loops 
+can be inlined for better performance
+
+Only the first pick slot (of 4) can pick instruction greater than eight bytes in length. Avoid having more than one instruction in a sequence
+of four that is greater than 8 bytes in length.
+
+SIMD
+Avoid mixing packed integer operation with packed float point operation
+Emphasize instruction that can be executed multiple pipes over those that can only be executed on a single pipe.
+Keep store out of inner loops if possible
+Use load execute instruction instead of discrete load and execute instruction when performing SIMD integer, SIMD floating point
+
+
+Optimization tips
+
+Reduce reduntant constant calculation (loop invariant calculation)
+eg.
+
+for i in 0..<20{
+    if (SOMETHING0){
+        //logic
+    }else{
+        //logic
+    }
+}
+
+can be switch to 
+
+if (SOMETHING0){
+    for i in 0..<20{
+        //logic
+    }
+}else{
+    for i in 0..<20{
+        //logic 
+    }
+}
+
+
+Pad the struct so the size of the struct is a multiple of the largest member's type size
+
+Use unsigned integer for the following:
+1) Division, remainders, and multiplication
+2) Loop counter
+3) Array index 
+
+Use signed integer for the following:
+1) Integer to floating point conversion
+2) Disabling overflow check 
+
+The conversion between signed and unsigned integer is costless.
+
+Use 32 bit GPR instead of their 64 bit extension if the required size is less then 32 bits.
+In 64-bit mode, the machine-language representation of many instructions that operate on unsigned 
+64-bit register operands requires a REX prefix byte, which increases the size of the code. Make sure that register (R8D-R15D) are
+not used since they require REX prefix, otherwise use 64 bit register instead.
+
+
+When performing integer computation, use load execute instruction instead of discrete load & execute instructions.
+Use descrete load & execute instructions only under one or more of the following:
+1) Explicitly schedule load & execute instructions
+2) Avoiding scheduler stalls for longer executing instructions
+3) The load target will be used multiple times in different instructions
+
+Using load execute instruction improves performance for the following reason:
+1) Dense code allows more work to be held in the I Cache 
+2) Dense code generate fewer internal macro ops. allowing the scheduler to hold more work, which increases the chances
+   of extracting parallelism from the code.
+
+Use load execute instruction if register contention is high, leave it otherwise.
+
+Use instruction forms with shorter encoding rather those with longer encoding.  Using shorter instructions increases the number of instruction 
+that can fit into the L1 I cache and increases the average decode rate.
+
+Avoid instruction that write less than 32 bits of a general purpose integer register
+Avoid instruction that write less than 128 bits of an XMM register when using legacy SIMD instruction.
+Avoid mixing legacy SIMD with AVX instruction. Legacy SIMD has merge dependency on the upper of the YMM destination while AVX doesn't
+
+Avoid memory size mismatches when different instruction operate on the same data. Keep the loads/stores of each operand the same size.
+Eg.
+    mov dword ptr [rsp+0x10], eax 
+    mov dword ptr [rsp+0x14], edx
+    mov rcx, qword ptr [rsp+0x10]
+
+A store-buffer entry cannot retire and 
+write to the data cache until every instruction before the store has completed and retired from the 
+reorder buffer
+The implication of this restriction is that all instructions in the reorder buffer, up to and 
+including the store, must complete and retire out of the reorder buffer before the load can complete. 
+Effectively, the load has a false dependency on every instruction up to the store.
+
+A load isn't allowed to read data from the store buffer entry if any of the following condition occur:
+1) The start address of the load doesn't match the start address of the store.
+2) The load operand size is greater than the store operand size.
+3) Either the load or store is misaligned.
+4) A high byte (or word) store and a low byte (or word) store in the same algined dword are followed by either a low or high byte (or word) load.
+
+Interleave Load and store.
+Load, Store, Load, Store, Load, Store, etc....
+
+Reduce the size of instructions when possible.
+Use shorter instruction that fastpath single - not fastpath double instructions.
+
+Avoid conditional branches that depend on random data since it will be quite hard and inefficient to predict.
+
+Prefer branches not taken to branches taken.
+Correctly predicted taken branch have at least one prediction based bubble while not taken branches do not. In addition, taken branches consume more
+branch resources.
+
+If the loop has less than 40 micro ops total in all the branch legs that are executed, the micro op loop buffer will engage (Family 15).
+Note that the 40 op restriction is a restriction on ops, not on instructions. 
+Most XMM instruction are fast-path single, but YMM instruction are generally fast-path double. 
+
+Inline a function that is called from just one site in the code and if the function contains fewer than 25 machine instruction.
+
+Loop with a repeat count of up to 12 are predicted very well on Zen 1,2 and 3, 4 can predict loop with a count of up to 64.
+Aim to have no function call in a branch to allow it to be in the BTB L0 
+
+The execution units in the vector unit are divided into two domains, and integer vector domain and a floating point vector domain.
+There is an extra latency of one clock cycle when the output of a uop in the integer vector domain goes to the input of a uop in the 
+floating point domain, or vice versa.
+
+There is a false dependency when the address of a memory read is spaced a multiple of 0x10000 bytes from a preceding write.
+This effect is rarely seen on zen2 
+
+Automatic hardware prefetching is more efficient than explicit software prefetching in most cases.
+
+On Zen2 the Uops cache throughput is 5 to 6 instruction (macro ops) per cycle 0
+
+String constant and Floating point constant are often stored in static memory, while integer constants are usually included as part of 
+the instruction code (instruction bytes)
+
+So integer constant may increase the instruction byte which may decrease I cache performance and Floating point constant
+may use up cache space the D cache which may decrease caching performance.
+
+Integer division is faster the smaller the integer size is on AMD processor, but not on intel processor.
+
+Do not mix single & double precision in the same expression.
+Converting from single to double and vice versa take around 2 to 15 clock cycles, so avoid converting floating point type.
+Converting from single integer to a float or double takes around 4 to 16 clock cycle
+Converting from floating point to integer takes around 50 to 100 clock cycle
+
+A branch instruction take around 0 to 2 clock cycle in the case where it predicted correctly otherwise it will take around 12 to 25 clock cycle.
+
+The return type of a function preferable be a simple type, a pointer, a reference, or void. 
+Returning a objects of a composite type is more complex and often inefficient.
+
+Instead of returning a composite object, you may consider the following alternative.
+1) Make the function a constructor for the object.
+2) Make the function modify an existing object rather than making a new one. (pass by pointer or reference)
+3) make the function return a pointer or reference to a static object defined inside the function. (efficient, but risky)
+4) Make the function construct an object with new and return to a pointer to it. (inefficient)
+
+The code for accessing a data member is more compact if the offset of the member relative to the beginning of the struct or class is less than 128
+because the offset can be expressed as an 8 bit signed number. Following this Big array or big structure should be placed in the last in the structure declaration
+and most often used come first.
+
+
+Use break mode on release mode to debug the assembly output.
+
+The use of vector operations is more advantageous the smaller the data elements are. It also save space on the instruction byte
+
+The size of each object (struct) should preferably be power of two.
+eg.
+
+Tester :: struct{
+        a : i64,
+        b : i64,
+        c : i64,
+        padding : i64,
+}
+
+Instruction with multiple prefixes can slow down decoding. There is a maximum number of prefixes that an instruction can have without slowing down decoding, depending on the CPU.
+
+CPU have uop cache o a tiny loopback buffer for small loops. Avoid unecessary loop unrolling if there isn't a benfit to it even on small loops.
+
+The fetching of code after an unconditional jump or a taken condition jump is delayed by typically 1-3 clock cycles depending on the microprocessor.
+The delay is worst if the target is near the end of a 16 or 32 byte code fetch block.
+
+On most processor, branches can interfere with each other in the global branch pattern history table & branch histroy register.
+
+Use shorter constants and addresses. Many jump addresses, and data constant can be expressed as signed extended 8 bit constants.
+This saves a lot of space, A signed extended byte can only be used if the value is within the interval from -128 to 127
+
+For jump addresses. This means that short jumps take two bytes of code, whereas jumps beyond 127 bytes take 5 bytes if unconditional and 6 bytes if conditional
+Likewise, data address take less space if they can be expressed as a pointer and a displacement between -128 and 127
+
+Data constans may also take less space if they are between -128 adn 127. Most instruction wqith immediate operands have short form where the operand is a sign extended single byte.
+The only instruction with an exception to this are the MOV, TEST, CALL and RET instruction.
+
+In 64 bit mode, there are three ways to move a constant into a 64 bit register.
+pefer moving a constant into a register with a 32 bit zero extended constant.
+mov eax, 1000
+
+mov rax, 12355436758790h ; is 10 bytes 
+mov rax, -1000 ; is 7 bytes 
+mov eax, 1000 ; is 5 bytes
+
+64 bit code should preferably use 64 bit register size for base & index in addresses, and 32 bit register size for everything else.
+If there is a 8 bit version which uses the 32 bit version of the register perfer this over 32 bit.
+such as ADD (R32, I8) ; is 3 bytes without prefix verses ADD (R32, I32) ; is 6 bytes without prefix
+
+Reading or writing to any data if in memory will result it to be cached in the L1 cache. It will fetch a cache line size, even if only a single byte is read from or written to.
+Use all the fetched cache line as much as possible, since it will be hot in cache.
+
+The caching of data works best if critical data are contained in small contigous area of memory.
+The best place to store critical data is on the stack.
+
+constant tables area typically stored in the data segment. It may be advantageous to copy such a table from the data segement to the stack outside the innermost loop. If this improve caching inside the loop.
+static variable are typically store in the data segement.
+
+Rarely accesed code such as error handling routines should be kept seperate from the critical hot spot code.
+
+float compare instruction are less efficient than integer compare instructions.
+
+The calculation of any expression that doesn't change inside the loop should be moved out of the loop.
+The same applies to if else branches with a condition that doesn't change inside the loop.
+This should be moved out and have loop/s inside the conditional statement/s
+
+Jumps & calls inside the loop should be avoided because it can delay code fetching.
+Procedure that are called inside the loop should be inlined if possible.
+Braches inside the loop should be avoided if possible because they interfere with the prediction of the loop exit branch.
+However, branches should not be replaced by conditional moves because this increase the length of the loop carry dependency chain.
+
+The number of array accesed in the loop should not exceed the number of read/write buffer in the microprocessor.
+One way of reducing the number of data streams is to combine multiple arrays into a single array of structure.
+
+
+
+
+
+odin is a tool for managing Odin source code.
+Usage:
+        odin run [arguments]
+
+        run     Same as 'build', but also then runs the newly compiled executable.
+                Append an empty flag and then the args, '-- <args>', to specify args for the output.
+                Examples:
+                        odin run .                     Builds and runs package in current directory.
+                        odin run <dir>                 Builds and runs package in <dir>.
+                        odin run filename.odin -file   Builds and runs single-file package, must contain entry point.
+
+        Flags
+
+        -file
+                Tells `odin run` to treat the given file as a self-contained package.
+                This means that `<dir>/a.odin` won't have access to `<dir>/b.odin`'s contents.
+
+        -out:<filepath>
+                Sets the file name of the outputted executable.
+                Example: -out:foo.exe
+
+        -o:<string>
+                Sets the optimization mode for compilation.
+                Available options:
+                        -o:none
+                        -o:minimal
+                        -o:size
+                        -o:speed
+                        -o:aggressive
+                The default is -o:minimal.
+
+        -show-timings
+                Shows basic overview of the timings of different stages within the compiler in milliseconds.
+
+        -show-more-timings
+                Shows an advanced overview of the timings of different stages within the compiler in milliseconds.
+
+        -show-system-calls
+                Prints the whole command and arguments for calls to external tools like linker and assembler.
+
+        -export-timings:<format>
+                Exports timings to one of a few formats. Requires `-show-timings` or `-show-more-timings`.
+                Available options:
+                        -export-timings:json   Exports compile time stats to JSON.
+                        -export-timings:csv    Exports compile time stats to CSV.
+
+        -export-timings-file:<filename>
+                Specifies the filename for `-export-timings`.
+                Example: -export-timings-file:timings.json
+
+        -export-dependencies:<format>
+                Exports dependencies to one of a few formats. Requires `-export-dependencies-file`.
+                Available options:
+                        -export-dependencies:make   Exports in Makefile format
+                        -export-dependencies:json   Exports in JSON format
+
+        -export-dependencies-file:<filename>
+                Specifies the filename for `-export-dependencies`.
+                Example: -export-dependencies-file:dependencies.d
+
+        -thread-count:<integer>
+                Overrides the number of threads the compiler will use to compile with.
+                Example: -thread-count:2
+
+        -keep-temp-files
+                Keeps the temporary files generated during compilation.
+
+        -collection:<name>=<filepath>
+                Defines a library collection used for imports.
+                Example: -collection:shared=dir/to/shared
+                Usage in Code:
+                        import "shared:foo"
+
+        -define:<name>=<value>
+                Defines a scalar boolean, integer or string as global constant.
+                Example: -define:SPAM=123
+                Usage in code:
+                        #config(SPAM, default_value)
+
+        -show-defineables
+                Shows an overview of all the #config/#defined usages in the project.
+
+        -export-defineables:<filename>
+                Exports an overview of all the #config/#defined usages in CSV format to the given file path.
+                Example: -export-defineables:defineables.csv
+
+        -target:<string>
+                Sets the target for the executable to be built in.
+
+        -debug
+                Enables debug information, and defines the global constant ODIN_DEBUG to be 'true'.
+
+        -disable-assert
+                Disables the code generation of the built-in run-time 'assert' procedure, and defines the global constant ODIN_DISABLE_ASSERT to be 'true'.
+
+        -no-bounds-check
+                Disables bounds checking program wide.
+
+        -no-type-assert
+                Disables type assertion checking program wide.
+
+        -no-crt
+                Disables automatic linking with the C Run Time.
+
+        -no-thread-local
+                Ignores @thread_local attribute, effectively treating the program as if it is single-threaded.
+
+        -lld
+                Uses the LLD linker rather than the default.
+
+        -use-separate-modules
+                The backend generates multiple build units which are then linked together.
+                Normally, a single build unit is generated for a standard project.
+                This is the default behaviour on Windows for '-o:none' and '-o:minimal' builds.
+
+        -no-threaded-checker
+                Disables multithreading in the semantic checker stage.
+
+        -vet
+                Does extra checks on the code.
+                Extra checks include:
+                        -vet-unused
+                        -vet-unused-variables
+                        -vet-unused-imports
+                        -vet-shadowing
+                        -vet-using-stmt
+
+        -vet-unused
+                Checks for unused declarations.
+
+        -vet-unused-variables
+                Checks for unused variable declarations.
+
+        -vet-unused-imports
+                Checks for unused import declarations.
+
+        -vet-shadowing
+                Checks for variable shadowing within procedures.
+
+        -vet-using-stmt
+                Checks for the use of 'using' as a statement.
+                'using' is considered bad practice outside of immediate refactoring.
+
+        -vet-using-param
+                Checks for the use of 'using' on procedure parameters.
+                'using' is considered bad practice outside of immediate refactoring.
+
+        -vet-style
+                Errs on missing trailing commas followed by a newline.
+                Errs on deprecated syntax.
+                Does not err on unneeded tokens (unlike -strict-style).
+
+        -vet-semicolon
+                Errs on unneeded semicolons.
+
+        -vet-cast
+                Errs on casting a value to its own type or using `transmute` rather than `cast`.
+
+        -vet-tabs
+                Errs when the use of tabs has not been used for indentation.
+
+        -custom-attribute:<string>
+                Add a custom attribute which will be ignored if it is unknown.
+                This can be used with metaprogramming tools.
+                Examples:
+                        -custom-attribute:my_tag
+                        -custom-attribute:my_tag,the_other_thing
+                        -custom-attribute:my_tag -custom-attribute:the_other_thing
+
+        -ignore-unknown-attributes
+                Ignores unknown attributes.
+                This can be used with metaprogramming tools.
+
+        -no-entry-point
+                Removes default requirement of an entry point (e.g. main procedure).
+
+        -minimum-os-version:<string>
+                Sets the minimum OS version targeted by the application.
+                Default: -minimum-os-version:11.0.0
+                Only used when target is Darwin, if given, linking mismatched versions will emit a warning.
+
+        -extra-linker-flags:<string>
+                Adds extra linker specific flags in a string.
+
+        -extra-assembler-flags:<string>
+                Adds extra assembler specific flags in a string.
+
+        -microarch:<string>
+                Specifies the specific micro-architecture for the build in a string.
+                Examples:
+                        -microarch:sandybridge
+                        -microarch:native
+                        -microarch:"?" for a list
+
+        -target-features:<string>
+                Specifies CPU features to enable on top of the enabled features implied by -microarch.
+                Examples:
+                        -target-features:atomics
+                        -target-features:"sse2,aes"
+                        -target-features:"?" for a list
+
+        -strict-target-features
+                Makes @(enable_target_features="...") behave the same way as @(require_target_features="...").
+                This enforces that all generated code uses features supported by the combination of -target, -microarch, and -target-features.
+
+        -reloc-mode:<string>
+                Specifies the reloc mode.
+                Available options:
+                        -reloc-mode:default
+                        -reloc-mode:static
+                        -reloc-mode:pic
+                        -reloc-mode:dynamic-no-pic
+
+        -disable-red-zone
+                Disables red zone on a supported freestanding target.
+
+        -dynamic-map-calls
+                Uses dynamic map calls to minimize code generation at the cost of runtime execution.
+
+        -disallow-do
+                Disallows the 'do' keyword in the project.
+
+        -default-to-nil-allocator
+                Sets the default allocator to be the nil_allocator, an allocator which does nothing.
+
+        -strict-style
+                This enforces parts of same style as the Odin compiler, prefer '-vet-style -vet-semicolon' if you do not want to match it exactly.
+
+                Errs on unneeded tokens, such as unneeded semicolons.
+                Errs on missing trailing commas followed by a newline.
+                Errs on deprecated syntax.
+                Errs when the attached-brace style in not adhered to (also known as 1TBS).
+                Errs when 'case' labels are not in the same column as the associated 'switch' token.
+
+        -ignore-warnings
+                Ignores warning messages.
+
+        -warnings-as-errors
+                Treats warning messages as error messages.
+
+        -terse-errors
+                Prints a terse error message without showing the code on that line and the location in that line.
+
+        -json-errors
+                Prints the error messages as json to stderr.
+
+        -error-pos-style:<string>
+                Available options:
+                        -error-pos-style:unix      file/path:45:3:
+                        -error-pos-style:odin      file/path(45:3)
+                        -error-pos-style:default   (Defaults to 'odin'.)
+
+        -max-error-count:<integer>
+                Sets the maximum number of errors that can be displayed before the compiler terminates.
+                Must be an integer >0.
+                If not set, the default max error count is 36.
+
+        -min-link-libs
+                If set, the number of linked libraries will be minimized to prevent duplications.
+                This is useful for so called "dumb" linkers compared to "smart" linkers.
+
+        -foreign-error-procedures
+                States that the error procedures used in the runtime are defined in a separate translation unit.
+
+        -obfuscate-source-code-locations
+                Obfuscate the file and procedure strings, and line and column numbers, stored with a 'runtime.Source_Code_Location' value.
+
+        -sanitize:<string>
+                Enables sanitization analysis.
+                Available options:
+                        -sanitize:address
+                        -sanitize:memory
+                        -sanitize:thread
+                NOTE: This flag can be used multiple times.
+
+        -ignore-vs-search
+                [Windows only]
+                Ignores the Visual Studio search for library paths.
+
+        -resource:<filepath>
+                [Windows only]
+                Defines the resource file for the executable.
+                Example: -resource:path/to/file.rc
+                or:      -resource:path/to/file.res for a precompiled one.
+
+        -pdb-name:<filepath>
+                [Windows only]
+                Defines the generated PDB name when -debug is enabled.
+                Example: -pdb-name:different.pdb
+
+        -subsystem:<option>
+                [Windows only]
+                Defines the subsystem for the application.
+                Available options:
+                        -subsystem:console
+                        -subsystem:windows
+

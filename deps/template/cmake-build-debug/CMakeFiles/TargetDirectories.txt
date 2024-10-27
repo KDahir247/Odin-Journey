@@ -1,0 +1,3 @@
+C:/Users/Dahir/Desktop/GitHub/Odin-Journey/deps/template/cmake-build-debug/CMakeFiles/template.dir
+C:/Users/Dahir/Desktop/GitHub/Odin-Journey/deps/template/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/Dahir/Desktop/GitHub/Odin-Journey/deps/template/cmake-build-debug/CMakeFiles/rebuild_cache.dir
