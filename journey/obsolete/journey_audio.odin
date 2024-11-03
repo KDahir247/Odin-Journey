@@ -12,7 +12,6 @@ data_callback :: proc "c"(device : ^miniaudio.device, output_buffer, input_buffe
 	
 	miniaudio.decoder_read_pcm_frames(decoder, output_buffer, u64(frame_count), nil)
 
-	
 
 }
 

@@ -6,15 +6,30 @@
  * All cpus using this library support the following intrinsics;
  * SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, AVX, AVX2, FMA3 (Skylake : Zen)
  *
- * All Audio file passed through are 48000 or 441000 not higher nor lower.
+ * All Audio file passed through are 48000 or 44100 not higher nor lower.
  * Channel count is either 1 or 2
  * The Audio format is WAVE_FORMAT_PCM (integer) or WAVE_FORMAT_IEEE_FLOAT (floating)
  * The common precision of the audio format is 16 (integer) and 32 (floating point)
  *
- * integer I16, float 32
+ * Integer I16, float 32
+ *
+ * The allocation in this api will be done upright using a callback. There will be not re-allocation for this library, thus
+ * The user will have to allocate a bigger buffer than needed or otherwise use linked list allocation where each link is an allocation.
+ * API support (Allocation, Free)
+ * Reason why we are not going to support re-allocation. Firstly it can free your allocation and re allocate it to another address. Secondly it quite inefficient (Copy all the data over to the newly allocated block) If it needs
+ * re-allocated continually then there will be a lot of fragmentation or bug due to freeing block,and it is inefficient.
+ * So we need to keep the allocated capacity, which will be the upper limit of the allocation buffer. The length or rather current index which will be where we are in the buffer and lastly the actual pointer.
+ *
+ * Since the audio buffer is quite large at times. We will Append the audio buffer than when it reaches close to the end we will clear it and re append to it.
  *
  * */
 
+/*
+ * In Windows 7, a new feature called low-latence mode has been added for streams in share mode.
+ * In this mode, the audio engine runs in pull mode, in which there a significant reduction in latency.
+ * This is very useful for communication applications that require low audio stream latency for faster streaming.
+ *
+ * */
 
 /*
  *
@@ -56,6 +71,12 @@ typedef DWORD BOOL32;
 typedef float FLOAT32;
 typedef double FLOAT64;
 
+typedef struct ja_static_allocator{
+    VOID* buffer;
+    QWORD index;
+    QWORD limit;
+}JASAllocator;
+
 //The IAudioClient object is not initialized.
 #define JA_AUDIOCLNT_NOT_INITIALIZED ((HRESULT)0x88890001)
 
@@ -77,9 +98,91 @@ typedef double FLOAT64;
 //The previous IAudioRenderClient::GetBuffer procedure call is still in effect.
 #define JA_AUDIOCLNT_OUT_OF_ORDER ((HRESULT)0x88890007)
 
-//
-#define JA_AUDIOCLNT_UNSUPPORTED_FORMAT ((HRESULT)
+//The audio engine doesn't support the specified format.
+#define JA_AUDIOCLNT_UNSUPPORTED_FORMAT ((HRESULT)0x88890008)
+
+//The NumFramesWritten value exceeds the NumFrameRequested value specified in the previous IAudioRenderClient::GetBuffer procedure call.
+#define JA_AUDIOCLNT_INVALID_SIZE ((HRESULT)0x88890009)
+
+//The endpoint device is already in use. The device is being used in shared mode and the caller asked to use the device in exclusive or vis versa.
+#define JA_AUDIOCLNT_DEVICE_IN_USE ((HRESULT)0x8889000A)
+
+//Buffer cannot be accessed because a stream reset is in progress.
+#define JA_AUDIOCLNT_BUFFER_OPERATION_PENDING ((HRESULT)0x8889000B)
+
+//The thread is not registered.
+#define JA_AUDIOCLNT_THREAD_NOT_REGISTERED ((HRESULT)0x8889000C)
+
+//Indicates that the session spans more than one process.
+#define JA_AUDIOCLNT_NO_SINGLE_PROCESS ((HRESULT)0x8889000D)
+
+//The caller is requesting exclusive mode use of the endpoint device, but the user has disabled exclusive mode use of the device.
+#define JA_AUDIOCLNT_EXLUSIVE_MODE_NOT_ALLOWED ((HRESULT)0x8889000E)
+
+//The procedure failed to create the audio endpoint for either render or capture device. This occurs either if the audio endpoint device has been unplugged or the audio hardware or associated hardware resources have been tampered with
+//(Reconfigured, disabled, removed, or otherwise made unavailable for use)
+#define JA_AUDIOCLNT_ENDPOINT_CREATE_FAILED ((HRESULT)0x8889000F)
+
+//The Windows audio service is not running.
+#define JA_AUDIOCLNT_SERVICE_NOT_RUNNING ((HRESULT)0x88890010)
+
+//The audio stream was not initialized for event-driven buffering.
+#define JA_AUDIOCLNT_EVENTHANDLE_NOT_EXPECTED ((HRESULT)0x88890011)
+
+//Exclusive mode only
+#define JA_AUDIOCLNT_EXCLUSIVE_MODE_ONLY ((HRESULT)0x88890012)
+
+//The AUDCLNT_STREAMFLAGS_EVENTCALLBACK flag is set but parameters hnsBufferDuration and hnsPeriodicity are not equal.
+#define JA_AUDIOCLNT_BUFBURATION_PERIOD_NOT_EQUAL ((HRESULT)0x88890013)
+
+//The audio stream is configured to use event-driven buffering, but the caller has not called IAudioClient::SetEventHandle to set the event handle on the stream.
+#define JA_AUDIOCLNT_EVENTHANDLE_NOT_SET ((HRESULT)0x88890014)
+
+//Indicates that the buffer has an incorrect size.
+#define JA_AUDIOCLNT_INCORRECT_BUFFER_SIZE ((HRESULT)0x88890015)
+
+//The audio endpoint device has been unplugged, or the audio hardware or associated hardware rIndicates that the process-pass duration exceeded the maximum CPU usage
+#define JA_AUDIOCLNT_CPUUSAGE_EXCEEDED ((HRESULT)0x88890017)
+
+//GetBuffer procedure failed to retrieve a data buffer and *ppData point to null.
+#define JA_AUDIOCLNT_BUFFER_ERROR ((HRESULT)0x88890018)
+
+//The requested buffer size is not aligned. Error may be returned from AUDCLNT_SHAREMODE_EXCLUSIVE and the AUDCLNT_STREAMFLAGS_EVENTCALLBACK flags.
+#define JA_AUDIOCLNT_BUFFER_SIZE_NOT_ALIGNED ((HRESULT)0x88890019)
+
+enum AudioFormat : DWORD{
+    S16,
+    F32,
+};
+
+static DWORD SupportedSampleRates[2] = {
+        48000,
+        44100,
+};
+
+static DWORD SupportedChannelCount[2] = {
+        2,
+        1,
+};
+
+static DWORD SupportedFormatTypes[2] = {
+        F32,
+        S16,
+};
+
+JA_LFORCE_INLINE BOOL32 ChannelSupported(DWORD channel){
+    return (channel != SupportedChannelCount[0] || channel != SupportedChannelCount[1]);
+}
+
+//sample rate standard difference.
 ///////////////////////////////////////////WIN32/////////////////////////////////////////////////////////
+
+#define JA_AVRT_CRITICAL = 0x0000000000000002;
+#define JA_AVRT_HIGH = 0x0000000000000001;
+#define JA_AVRT_NORMAL = 0x0000000000000000;
+#define JA_AVRT_LOW = 0xFFFFFFFFFFFFFFFF;
+#define JA_AVRT_VERYLOW = 0xFFFFFFFFFFFFFFFE;
+
 
 #define JA_DONT_RESOLVE_DLL_REFERENCES 0x00000001
 #define JA_LOAD_IGNORE_CODE_AUTHZ_LEVEL 0x00000010
@@ -107,30 +210,120 @@ typedef HRESULT (WINAPI * JA_FreePropVariantArray)(DWORD count, PROPVARIANT * pr
 typedef HRESULT (WINAPI * JA_PropVariantClear)(PROPVARIANT * prop_variant);
 typedef HRESULT (WINAPI * JA_PropVariantCopy)(PROPVARIANT * dst_prop_variant, const PROPVARIANT * src_prop_variant);
 
-JA_LINLINE BOOL32 JAFileOpen(FILE** file, const char* path, const char* open_mode){
-    errno_t err = fopen_s(file, path, open_mode);
 
-    if (err != JA_SUCCESS){
-        //Convert the error to JAError
-    }
+typedef BOOL (WINAPI * JA_AvSetMmThreadPriority)(HANDLE avrt_handle, DWORD priority);
+typedef HANDLE (WINAPI * JA_AvSetMmThreadCharacteristicsW)(LPCWSTR task_name, LPDWORD task_index);
+typedef BOOL (WINAPI * JA_AvQuerySystemResponsiveness)(HANDLE avrt_handle, PULONG sys_responsive);
+typedef BOOL (WINAPI * JA_AvRevertMmThreadCharacteristics)(HANDLE avrt_handle);
+
+JA_LINLINE BOOL32 DisableDenormal(){
+    DWORD previous_csr_flag = _mm_getcsr();
+    _mm_setcsr(previous_csr_flag | _MM_FLUSH_ZERO_ON | _MM_DENORMALS_ZERO_ON);
+    return 0;
+}
+
+JA_LINLINE BOOL32 EnableDenormal(){
+
 
     return 0;
 }
 
-JA_LINLINE BOOL32 JAWFileOpen(FILE** file, const wchar_t* path, const wchar_t* open_mode){
+//////////////////////////////////////////Allocator///////////////////////////////////////////////////////
+//We won't be using malloc and similar allocation procedure calls. Rather we will require the API to pass a buffer and the
+//allocation in this api will use the buffer as a static arena allocation. Once the memory runs out then there is issues.
 
-    errno_t err = _wfopen_s(file, path, open_mode);
+//Should we add align forward for the JASAllocator, since the alignment might be defaulted to 8 bytes, but
+//this pointer buffer will contain a lot of data, such as sample buffer for the audio we want it to be aligned to
+//YMM register (32 bytes)
 
-    if (err != JA_SUCCESS){
-        //Convert the error to JAError
-    }
 
-    return JA_SUCCESS;
+//We are going to do a virtual alloc.
+
+#define DEFAULT_PAGE_SIZE (1 << 12)
+
+JA_LFORCE_INLINE BOOL32 IsPowerOfTwo(QWORD x){
+    return (x & (x-1)) == 0;
 }
 
-//////////////////////////////////////////Allocator///////////////////////////////////////////////////////
+
+JA_LFORCE_INLINE BOOL32 IsAligned(QWORD x, const QWORD alignment){
+    QWORD modulo = alignment - 1;
+
+    if (alignment & modulo){
+        return 0;
+    }
+
+    return (x & modulo) == 0;
+}
+
+
+JA_LFORCE_INLINE QWORD RoundDownPowerTwo(QWORD x){
+    x = x | (x >> 1);
+    x = x | (x >> 2);
+    x = x | (x >> 4);
+    x = x | (x >> 8);
+    x = x | (x >> 16);
+    return x - (x >> 1);
+}
+
+JA_LFORCE_INLINE QWORD RoundUpPowerTwo(QWORD x){
+    x = x -1;
+    x = x | (x >> 1);
+    x = x | (x >> 2);
+    x = x | (x >> 4);
+    x = x | (x >> 8);
+    x = x | (x >> 16);
+    return x + 1;
+}
+
+
+JA_LFORCE_INLINE BOOL32 InitAllocator(QWORD commit, QWORD reserved){
+    //We will do a virtual allocation
+    SYSTEM_INFO sys_info;
+    GetSystemInfo(&sys_info);
+
+    DWORD page_size = sys_info.dwAllocationGranularity;
+
+    if (commit < page_size){
+
+    }
+
+
+}
+
+JA_LFORCE_INLINE BOOL32 ReleaseAllocator(){
+
+}
+
+JA_LFORCE_INLINE BOOL32 ClearAllocate(JASAllocator allocator){
+    if (allocator.limit <= 0){
+        return 1;
+    }
+    allocator.index = 0;
+
+    return 0;
+}
+
 
 //Allocate, Free, ReAlloc, Copy
+JA_LFORCE_INLINE BOOL32 AppendAllocate(JASAllocator allocator, QWORD size, QWORD alignment){
+
+    if (allocator.index + size >= allocator.limit){
+        return 1;
+    }
+
+
+
+}
+
+
+JA_LFORCE_INLINE BOOL32 PopAllocate(JASAllocator allocator, QWORD size){
+
+
+}
+
+
+
 
 
 ///////////////////////////////////////////DECODE////////////////////////////////////////////////////////
@@ -154,6 +347,13 @@ JA_LINLINE BOOL32 JAWFileOpen(FILE** file, const wchar_t* path, const wchar_t* o
  * S16
  *
  */
+
+typedef enum mmcss_task_key {
+    Audio,
+    Games,
+    Playback,
+    ProAudio,
+}MMCSSTaskKey;
 
 static const PROPERTYKEY JA_PKEY_Device_FriendlyName = {{0xA45C254E, 0xDF1C, 0x4EFD, {0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0}}, 0x0E};
 
@@ -188,17 +388,115 @@ static const IID IID_DEV_INTERFACE_AUDIO_CAPTURE = {0x2EEF81BE, 0x33FA, 0x4800, 
 static const IID JA_CLSID_MMDeviceEnumerator = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
 static const IID JA_IID_IMMDeviceEnumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
 
-//If the count is going to be greater than the max (4) then wrap around
-typedef struct ja_device_buffer{
-    //pointer devices_identifier[4]
-    //pointer devices_name[4]
-    QWORD count;
-    //QWORD the type of buffer (render, capture, etc...)
-}JA_DeviceBuffer;
+JA_LFORCE_INLINE LPCWSTR MMCSSRegisterTaskToWide(MMCSSTaskKey key){
+    switch (key){
+        case Audio:
+        {
+            return L"Audio";
+        }
+        case Games:
+        {
+            return L"Games";
+        }
+        case Playback:
+        {
+            return L"Playback";
+        }
+        case ProAudio:
+        {
+            return L"Pro Audio";
+        }
+    }
+}
 
-//HRESULT (STDMETHODCALLTYPE * Stop)             (ma_IAudioClient* pThis);
+
+typedef enum ja_EDataFlow{
+    Render = 0,
+    Capture,
+    All,
+    EDataFlow_count
+}ja_EDataFlow;
+
+typedef enum ja_ERole{
+    Console = 0,
+    Multimedia,
+    Communications,
+    ERole_count
+}ja_ERole;
 
 
+typedef struct ja_IMMDeviceEnumerator ja_IMMDeviceEnumerator;
+typedef struct ja_IMMDeviceCollection ja_IMMDeviceCollection;
+typedef struct ja_IMMDevice ja_IMMDevice;
+typedef struct ja_IMMNotificationClient ja_IMMNotificationClient;
+typedef struct ja_IPropertyStore ja_IPropertyStore;
+
+struct ja_IMMDeviceEnumerator{
+    struct ja_IMMDeviceEnumeratorVtbl* lpVtbl;
+};
+
+struct ja_IMMDeviceCollection{
+    struct ja_IMMDeviceCollectionVtbl* lpVtbl;
+};
+
+struct ja_IMMDevice{
+    struct ja_IMMDeviceEnumeratorVtbl* lpVtbl;
+};
+
+struct ja_IMMNotificationClient{
+    struct ja_IMMNotificationClientVtbl* lpVtbl;
+};
+
+struct ja_IPropertyStore{
+    struct ja_IPropertyStoreVtbl* lpVtbl;
+};
+
+typedef struct ja_IMMDeviceCollectionVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDeviceCollection* this, const IID* riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDeviceCollection* this);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDeviceCollection* this);
+
+    HRESULT (STDMETHODCALLTYPE * ja_GetCount)(ja_IMMDeviceCollection* this, UINT* pcDevice);
+    HRESULT (STDMETHODCALLTYPE * ja_Item)(IMMDeviceCollection* this, UINT nDevice, ja_IMMDevice** ppDevice);
+
+}ja_IMMDeviceCollectionVtbl;
+
+typedef struct ja_IMMDeviceEnumeratorVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDeviceEnumerator* this, const IID* riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDeviceEnumerator* this);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDeviceEnumerator* this);
+
+    HRESULT (STDMETHODCALLTYPE * ja_EnumAudioEndpoints)(ja_IMMDeviceEnumerator* this, ja_EDataFlow dataFlow, DWORD dwStateMask, ja_IMMDeviceCollection** ppDevices);
+    HRESULT (STDMETHODCALLTYPE * ja_GetDefaultAudioEndpoint)(ja_IMMDeviceEnumerator* this, ja_EDataFlow dataFlow, ja_ERole role, IMMDevice** ppEndpoint);
+    HRESULT (STDMETHODCALLTYPE * ja_GetDevice)(ja_IMMDeviceEnumerator* this, LPCWSTR pwstrId, IMMDevice** ppDevice);
+    HRESULT (STDMETHODCALLTYPE * ja_RegisterEndpointNotificationCallback)(ja_IMMDeviceEnumerator* this, IMMNotificationClient* pClient);
+    HRESULT (STDMETHODCALLTYPE * ja_UnregisterEndpointNotificationCallback)(ja_IMMDeviceEnumerator* this, IMMNotificationClient* pClient);
+
+} ja_IMMDeviceEnumeratorVtbl;
+
+
+typedef struct ja_IMMDeviceVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDevice* this, const IID* riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDevice* this);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDevice* this);
+
+
+    HRESULT (STDMETHODCALLTYPE * ja_Activate)(IMMDevice* this, const IID* iid, DWORD dwClsCtx, PROPVARIANT pActivationParams, void** ppInterface);
+    HRESULT (STDMETHODCALLTYPE * ja_OpenPropertyStore)(IMMDevice* this, DWORD stgmAccess, ja_IPropertyStore** ppProperties);
+    HRESULT (STDMETHODCALLTYPE * ja_GetId)(IMMDevice * this, LPWSTR* ppstrId);
+    HRESULT (STDMETHODCALLTYPE * ja_GetState)(IMMDevice* this, DWORD* pwState);
+
+}ja_IMMDeviceVtbl;
+
+
+typedef struct ja_IMMNotificationClientVtbl{
+
+}ja_IMMNotificationClientVtbl;
+
+
+typedef struct ja_IPropertyStoreVtbl{
+
+}ja_IPropertyStoreVtbl;
 /*
  * Dither only applies when we are reducing the bit depth (truncating the word length).
  *
@@ -222,10 +520,10 @@ typedef struct ja_device_buffer{
  *                     0
  * */
 
-#define LCG_MOD 2_147_483_647
-#define LCG_MUL 48_271
-#define LCG_INC 0
-
+//minstd_rand c++11
+#define DEFAULT_LCG_MOD 2_147_483_647
+#define DEFAULT_LCG_MUL 48_271
+#define DEFAULT_LCG_INC 0
 
 enum ja_dither_mode{
     RECTANGLE = 0,
@@ -262,11 +560,22 @@ JA_LFORCE_INLINE FLOAT JALinearInterpolation(float low, float high, float x){
 //We will optimize this.
 JA_LFORCE_INLINE VOID JABitDepthF32ToS16Reference(void* dst, const void* src, QWORD count, JADithering* param){
 
+
+    if (IsAligned((QWORD) dst, 32) & IsAligned((QWORD) src, 32)){
+        //YMM register
+
+
+        return;
+    }
+
+
+    //Default
+
     short* dst_samples = (short*)dst;
     const FLOAT32* src_samples = (FLOAT32*)src;
 
-    FLOAT32 dither_min = 1.0f / -32768.0f;
-    FLOAT32 dither_max = 1.0f / 32767.0f;
+    FLOAT32 dither_min = -0.000030517578125f; // (1.0f / -32768.0f)
+    FLOAT32 dither_max = 0.0000305185f; // (1.0f / 32767.0f)
 
     FLOAT32 noise_shape_coef = param->boxcar_constant; //clamp this to 0.0 to 1.0
 
@@ -295,6 +604,17 @@ JA_LFORCE_INLINE VOID JABitDepthF32ToS16Reference(void* dst, const void* src, QW
 //We will optimize this.
 JA_LFORCE_INLINE VOID JABitDepthS16ToF32Reference(void* dst,const void* src, QWORD count, JADithering* param){
     FLOAT* dst_samples = (FLOAT32*)dst;
+
+    if (IsAligned((QWORD) src, 32) & IsAligned((QWORD) dst, 32)){
+        //We can use YMM register
+
+
+
+        return;
+    }
+
+    //Default
+
     const short* src_samples = (short*)src;
 
     for (int i = 0; i < count; i+=1){
@@ -316,7 +636,19 @@ typedef struct ja_context{
 
     HMODULE ole_module;
 
+
+    JA_AvSetMmThreadPriority av_set_mm_thread_priority;
+    JA_AvSetMmThreadCharacteristicsW  av_set_mm_thread_characteristic;
+    JA_AvQuerySystemResponsiveness av_query_system_responsiveness;
+    JA_AvRevertMmThreadCharacteristics av_revert_thread_characteristic;
+
+
+    HMODULE avrt_module;
+
+
+    JASAllocator static_allocator;
     JADithering dither;
+
 
 }JAContext;
 
@@ -324,11 +656,13 @@ typedef struct ja_context{
 JA_LFORCE_INLINE BOOL32 JAInitContextWin32(JAContext *context) {
 
     HMODULE ole_module = LoadLibraryExW(L"ole32.dll", NULL, JA_LOAD_LIBRARY_SEARCH_SYSTEM32);
+    HMODULE avrt_module = LoadLibraryExW(L"avrt.dll", NULL, JA_LOAD_LIBRARY_SEARCH_SYSTEM32);
 
     if (ole_module == NULL){
         return 1;
     }
 
+    //OLE32
     context->co_initialize = (JA_CoInitializeEx) GetProcAddress(ole_module, "CoInitializeEx");
     context->co_create_instance = (JA_CoCreateInstance) GetProcAddress(ole_module, "CoCreateInstance");
     context->co_uninitialize = (JA_CoUninitialize) GetProcAddress(ole_module, "CoUninitialize");
@@ -341,6 +675,15 @@ JA_LFORCE_INLINE BOOL32 JAInitContextWin32(JAContext *context) {
 
     context->ole_module = ole_module;
 
+    //AVRT
+    context->av_set_mm_thread_priority = (JA_AvSetMmThreadPriority) GetProcAddress(avrt_module, "AvSetMmThreadPriority");
+    context->av_set_mm_thread_characteristic = (JA_AvSetMmThreadCharacteristicsW) GetProcAddress(avrt_module, "AvSetMmThreadCharacteristicsW");
+    context->av_query_system_responsiveness = (JA_AvQuerySystemResponsiveness) GetProcAddress(avrt_module, "AvQuerySystemResponsiveness");
+    context->av_revert_thread_characteristic = (JA_AvRevertMmThreadCharacteristics) GetProcAddress(avrt_module, "AvRevertMmThreadCharacteristics");
+
+
+    context->avrt_module = avrt_module;
+
     //Other module load below if needed.
 
     return 0;
@@ -351,8 +694,6 @@ JA_LFORCE_INLINE BOOL32 JAUnInitContextWin32(JAContext *context){
     BOOL32 result = 0;
 
     result |= FreeLibrary(context->ole_module);
-
-
 
 
     return result;
@@ -444,18 +785,12 @@ JA_LINLINE BOOL32 JAFetchDevices(){
 //    return 1;
 //}
 
-JA_LINLINE BOOL32 DisableDenormal(){
-    DWORD previous_csr_flag = _mm_getcsr();
-    _mm_setcsr(previous_csr_flag | _MM_FLUSH_ZERO_ON | _MM_DENORMALS_ZERO_ON);
-    return 0;
-}
 
 BOOL32 JAInitContext(JAContext * context){
     BOOL32 return_res = 0;
 
     return_res |= JAInitContextWin32(context);
     DisableDenormal();
-
 
     HRESULT res = context->co_initialize(NULL, JA_COINIT_DEFAULT);
 
