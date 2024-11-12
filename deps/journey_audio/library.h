@@ -1061,7 +1061,7 @@ BOOL32 JAInitContext(JAContext* context, const DWORD profile, const DWORD commit
     JAContext* ctx = context;
     JASAllocator allocator;
 
-    InitAllocator(&allocator, commit_size, reserve_size);
+    InitAllocator(&allocator, commit_size, reserve_size, 8);
 
     if (ctx == NULL){
       //ctx = (JAContext*)AppendAllocate(&allocator, sizeof(JAContext), 8);
