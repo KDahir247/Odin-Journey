@@ -1,11 +1,18 @@
 #ifndef JOURNEY_AUDIO_LIBRARY_H
 #define JOURNEY_AUDIO_LIBRARY_H
 
+//TODO: -[T]khal -----------------------------------------------------------------------------------
+#pragma comment(lib, "mincore.lib")
+
 /*
  * Assumption:
+ *
+ *
+ * Instruction Set:
  * All cpus using this library support the following intrinsics;
  * SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, AVX, AVX2, FMA3 (Skylake : Zen)
  *
+ * Format Constraint:
  * All Audio file passed through are 48000 or 44100 not higher nor lower.
  * Channel count is either 1 or 2
  * The Audio format is WAVE_FORMAT_PCM (integer) or WAVE_FORMAT_IEEE_FLOAT (floating)
@@ -13,14 +20,13 @@
  *
  * Integer I16, float 32
  *
- * The allocation in this api will be done upright using a callback. There will be not re-allocation for this library, thus
- * The user will have to allocate a bigger buffer than needed or otherwise use linked list allocation where each link is an allocation.
- * API support (Allocation, Free)
- * Reason why we are not going to support re-allocation. Firstly it can free your allocation and re allocate it to another address. Secondly it quite inefficient (Copy all the data over to the newly allocated block) If it needs
- * re-allocated continually then there will be a lot of fragmentation or bug due to freeing block,and it is inefficient.
- * So we need to keep the allocated capacity, which will be the upper limit of the allocation buffer. The length or rather current index which will be where we are in the buffer and lastly the actual pointer.
+ * Allocation:
  *
- * Since the audio buffer is quite large at times. We will Append the audio buffer than when it reaches close to the end we will clear it and re append to it.
+ *
+ * Error handling:
+ * Procedure calls that take parameter will not check if the parameter/s are valid. The procedure will assume that all the parameters
+ * are valid and with the range that is considered valid.
+ *
  *
  * */
 
@@ -29,14 +35,6 @@
  * In this mode, the audio engine runs in pull mode, in which there a significant reduction in latency.
  * This is very useful for communication applications that require low audio stream latency for faster streaming.
  *
- * */
-
-/*
- *
- * Thoughts:
- *
- * Most Allocation will be handled on odin lang, but if the function take in an allocation then it will do allocation on the data returned.
- * Should we add wasapi low latency mode? What is it used for? The advantages and dis-advantages.
  * */
 
 /*
@@ -59,23 +57,23 @@
 #define JA_LFORCE_INLINE static __forceinline
 #define JA_LINLINE static __inline
 
-#define JA_COINIT_DEFAULT 0x0000000C /* COINIT_MULTITHREADED |  COINIT_DISABLE_OLE1DDE | COINIT_SPEED_OVER_MEMORY */
 #define JA_SUCCESS 0
-
 
 typedef unsigned long long QWORD;
 
-//BOOL32 = TRUE if it is 0 otherwise it is false (can't be negative)
-//specified bits in BOOL32 will report the specific error type in the library.
+//Not really used as a 32 bit boolean.
 typedef DWORD BOOL32;
 typedef float FLOAT32;
 typedef double FLOAT64;
 
-typedef struct ja_static_allocator{
-    VOID* buffer;
-    QWORD index;
-    QWORD limit;
-}JASAllocator;
+#define JA_BYTE ((QWORD)(1))
+#define JA_KILOBYTE ((QWORD(1) << 10)
+#define JA_MEGABYTE ((QWORD)(1) << 20)
+#define JA_GIGABYTE ((QWORD)(1) << 30)
+#define JA_TERABYTE ((QWORD)(1) << 40)
+
+///////////////////////////////////////////WIN32/////////////////////////////////////////////////////////
+#define JA_COINIT_DEFAULT 0x0000000C /* COINIT_MULTITHREADED |  COINIT_DISABLE_OLE1DDE | COINIT_SPEED_OVER_MEMORY */
 
 //The IAudioClient object is not initialized.
 #define JA_AUDIOCLNT_NOT_INITIALIZED ((HRESULT)0x88890001)
@@ -150,32 +148,11 @@ typedef struct ja_static_allocator{
 //The requested buffer size is not aligned. Error may be returned from AUDCLNT_SHAREMODE_EXCLUSIVE and the AUDCLNT_STREAMFLAGS_EVENTCALLBACK flags.
 #define JA_AUDIOCLNT_BUFFER_SIZE_NOT_ALIGNED ((HRESULT)0x88890019)
 
-enum AudioFormat : DWORD{
-    S16,
-    F32,
-};
+#define JA_STGM_READ 0x00000000L
+#define JA_STGM_WRITE 0x00000001L
+#define JA_STGM_READWRITE 0x00000002L
 
-static DWORD SupportedSampleRates[2] = {
-        48000,
-        44100,
-};
 
-static DWORD SupportedChannelCount[2] = {
-        2,
-        1,
-};
-
-static DWORD SupportedFormatTypes[2] = {
-        F32,
-        S16,
-};
-
-JA_LFORCE_INLINE BOOL32 ChannelSupported(DWORD channel){
-    return (channel != SupportedChannelCount[0] || channel != SupportedChannelCount[1]);
-}
-
-//sample rate standard difference.
-///////////////////////////////////////////WIN32/////////////////////////////////////////////////////////
 
 #define JA_AVRT_CRITICAL = 0x0000000000000002;
 #define JA_AVRT_HIGH = 0x0000000000000001;
@@ -198,9 +175,23 @@ JA_LFORCE_INLINE BOOL32 ChannelSupported(DWORD channel){
 #define JA_LOAD_LIBRARY_REQUIRE_SIGNED_TARGET 0x00000080
 #define JA_LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
 
+typedef struct ja_IUnknown ja_IUnknown;
+
+typedef struct ja_IUnknownVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IUnknown* self, const IID* const riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IUnknown* self);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IUnknown* self);
+} ja_IUnknownVtbl;
+
+
+struct ja_IUnknown{
+    struct ja_IUnknownVtbl* lpVtbl;
+};
+
+
 //procedure pointers
 typedef HRESULT (WINAPI * JA_CoInitializeEx)(void* pvReserved, DWORD dwCoInit);
-typedef HRESULT (WINAPI * JA_CoCreateInstance)(const IID* ref_clsid, void* unknown_outer, DWORD cls_context, IID* iid, void* ppv);
+typedef HRESULT (WINAPI * JA_CoCreateInstance)(const IID* const ref_clsid, ja_IUnknown* unknown_outer, DWORD cls_context, const IID* const iid, void* ppv);
 //A thread must call CoUninitialize once for each successful call it has made to the CoInitialize or CoInitializeEx function, including any call that returns S_FALSE.
 typedef void (WINAPI * JA_CoUninitialize)();
 typedef void* (WINAPI * JA_CoTaskMemAlloc)(QWORD byte_size);
@@ -216,17 +207,26 @@ typedef HANDLE (WINAPI * JA_AvSetMmThreadCharacteristicsW)(LPCWSTR task_name, LP
 typedef BOOL (WINAPI * JA_AvQuerySystemResponsiveness)(HANDLE avrt_handle, PULONG sys_responsive);
 typedef BOOL (WINAPI * JA_AvRevertMmThreadCharacteristics)(HANDLE avrt_handle);
 
-JA_LINLINE BOOL32 DisableDenormal(){
+#define ja_FLUSH_ZERO_ENABLE 0x00008000
+#define ja_DENORMALS_ENABLE 0x00000040
+#define ja_FLUSH_ZERO_DISABLE 0xFFFF7FFF
+#define ja_DENORMALS_DISABLE 0xFFFFFFBF
+
+JA_LFORCE_INLINE BOOL32 DisableDenormal(){
     DWORD previous_csr_flag = _mm_getcsr();
-    _mm_setcsr(previous_csr_flag | _MM_FLUSH_ZERO_ON | _MM_DENORMALS_ZERO_ON);
+    _mm_setcsr(previous_csr_flag | ja_FLUSH_ZERO_ENABLE | ja_DENORMALS_ENABLE);
     return 0;
 }
 
-JA_LINLINE BOOL32 EnableDenormal(){
-
+JA_LFORCE_INLINE BOOL32 EnableDenormal(){
+    DWORD previous_csr_flag = _mm_getcsr();
+    _mm_setcsr(previous_csr_flag & ja_FLUSH_ZERO_DISABLE & ja_DENORMALS_DISABLE);
 
     return 0;
 }
+
+#define GUIDMatch(x,y) !memcpy(x,y, sizeof(GUID))
+
 
 //////////////////////////////////////////Allocator///////////////////////////////////////////////////////
 //We won't be using malloc and similar allocation procedure calls. Rather we will require the API to pass a buffer and the
@@ -237,14 +237,24 @@ JA_LINLINE BOOL32 EnableDenormal(){
 //YMM register (32 bytes)
 
 
-//We are going to do a virtual alloc.
+#define JA_DEFAULT_COMMIT (JA_MEGABYTE * 64)
+#define JA_DEFAULT_RESERVE (JA_GIGABYTE * 6)
+#define JA_DEFAULT_ALIGNMENT (1 << 3)
 
-#define DEFAULT_PAGE_SIZE (1 << 12)
+typedef struct ja_static_allocator{
+    QWORD index;
+    QWORD length;
+    QWORD capacity;
+    QWORD alignment;
+
+    VOID* buffer;
+    QWORD unused[3];
+
+}JASAllocator;
 
 JA_LFORCE_INLINE BOOL32 IsPowerOfTwo(QWORD x){
     return (x & (x-1)) == 0;
 }
-
 
 JA_LFORCE_INLINE BOOL32 IsAligned(QWORD x, const QWORD alignment){
     QWORD modulo = alignment - 1;
@@ -276,18 +286,66 @@ JA_LFORCE_INLINE QWORD RoundUpPowerTwo(QWORD x){
     return x + 1;
 }
 
+JA_LFORCE_INLINE BOOL32 InitCircularBuffer(){
 
-JA_LFORCE_INLINE BOOL32 InitAllocator(QWORD commit, QWORD reserved){
+}
+
+JA_LFORCE_INLINE BOOL32 ClearCircularBuffer(){
+
+}
+
+JA_LFORCE_INLINE BOOL32 ReleaseCircularBuffer(){
+
+}
+
+
+
+JA_LFORCE_INLINE BOOL32 InitAllocator(JASAllocator* allocator, const QWORD commit, const QWORD reserved, const QWORD alignment){
     //We will do a virtual allocation
+    //If the memory is being reserved, the specified address is rounded down to the nearest multiple of the allocation granularity
+    //If the memory is already reserved and is being committed, the address is rounded down to the next page boundary
+    //Memory allocated by this function is automatically initialized to zero.
+    QWORD target_commit_size = JA_DEFAULT_COMMIT;
+    QWORD target_reserve_size = JA_DEFAULT_RESERVE;
+    QWORD target_alignment = JA_DEFAULT_ALIGNMENT;
+
     SYSTEM_INFO sys_info;
     GetSystemInfo(&sys_info);
 
-    DWORD page_size = sys_info.dwAllocationGranularity;
+    DWORD page_size = sys_info.dwPageSize;
+    DWORD granularity = sys_info.dwAllocationGranularity;
 
-    if (commit < page_size){
-
+    if (commit != 0){
+        QWORD pages = (commit + page_size - 1) >> 12;
+        target_commit_size = pages << 12;
     }
 
+    if (reserved != 0) {
+        QWORD reservation = (reserved + granularity - 1) >> 16;
+        target_reserve_size = reservation << 16;
+    }
+
+    if (alignment != 0){
+        QWORD forward_alignment = RoundUpPowerTwo(alignment);
+        target_alignment = forward_alignment;
+    }
+
+    if(target_commit_size > target_reserve_size){
+        //return an error code.
+        return 1;
+    }
+
+    VOID* reserved_ptr = VirtualAlloc2(NULL, NULL, target_reserve_size, MEM_RESERVE, PAGE_READWRITE, NULL, 0);
+    VOID* ptr = VirtualAlloc2(NULL, reserved_ptr, target_commit_size, MEM_COMMIT, PAGE_READWRITE, NULL, 0);
+
+    allocator->index = 0;
+    allocator->length = target_commit_size;
+    allocator->capacity =  target_reserve_size;
+    allocator->alignment = target_alignment;
+
+    allocator->buffer = ptr;
+
+    return 0;
 
 }
 
@@ -295,21 +353,18 @@ JA_LFORCE_INLINE BOOL32 ReleaseAllocator(){
 
 }
 
-JA_LFORCE_INLINE BOOL32 ClearAllocate(JASAllocator allocator){
-    if (allocator.limit <= 0){
-        return 1;
-    }
-    allocator.index = 0;
+JA_LFORCE_INLINE BOOL32 ClearAllocate(JASAllocator* allocator){
+    allocator->index = 0;
 
     return 0;
 }
 
 
 //Allocate, Free, ReAlloc, Copy
-JA_LFORCE_INLINE BOOL32 AppendAllocate(JASAllocator allocator, QWORD size, QWORD alignment){
+JA_LFORCE_INLINE VOID* PushAllocate(JASAllocator* allocator,const QWORD size,const QWORD alignment){
 
-    if (allocator.index + size >= allocator.limit){
-        return 1;
+    if (allocator->index + size >= allocator->length){
+        return NULL;
     }
 
 
@@ -317,14 +372,14 @@ JA_LFORCE_INLINE BOOL32 AppendAllocate(JASAllocator allocator, QWORD size, QWORD
 }
 
 
-JA_LFORCE_INLINE BOOL32 PopAllocate(JASAllocator allocator, QWORD size){
+JA_LFORCE_INLINE BOOL32 PopAllocate(JASAllocator* allocator,const QWORD size){
 
 
 }
 
+JA_LFORCE_INLINE DWORD GetAllocatePos(JASAllocator* allocator){
 
-
-
+}
 
 ///////////////////////////////////////////DECODE////////////////////////////////////////////////////////
 
@@ -341,6 +396,47 @@ JA_LFORCE_INLINE BOOL32 PopAllocate(JASAllocator allocator, QWORD size){
 #define MinChannel 1
 #define MaxChannel 2
 
+#define ja_WAVE_FORMAT_IEEE_FLOAT 0x0003
+#define ja_WAVE_FORMAT_PCM 0x0001
+#define ja_WAVE_FORMAT_EXTENSIBLE 0xFFFE
+
+
+#define ja_FORM_FACTOR_REMOTENETWORKDEVICE 0x00000000
+#define ja_FORM_FACTOR_SPEAKERS 0x00000001
+#define ja_FORM_FACTOR_LINELEVEL 0x00000002
+#define ja_FORM_FACTOR_HEADPHONE 0x00000003
+#define ja_FORM_FACTOR_MICROPHONE 0x00000004
+#define ja_FORM_FACTOR_HEADSET 0x00000005
+#define ja_FORM_FACTOR_HANDSET 0x00000006
+#define ja_FORM_FACTOR_UNKNOWN_DP 0x00000007
+#define ja_FORM_FACTOR_SPDIF 0x00000008
+#define ja_FORM_FACTOR_DADD 0x00000009
+#define ja_FORM_FACTOR_UNKNOWN 0x0000000A
+
+//Query Masks
+#define ja_AUDIO_FORMAT_U8 0x00000001
+#define ja_AUDIO_FORMAT_S16 0x00000002
+#define ja_AUDIO_FORMAT_S24 0x00000003
+#define ja_AUDIO_FORMAT_S32 0x00000004
+#define ja_AUDIO_FORMAT_F32 0x00000008
+#define ja_AUDIO_FORMAT_F64 0x00000010
+#define ja_AUDIO_SPEAKER_MONO 0x00000020
+#define ja_AUDIO_SPEAKER_STEREO 0x00000040
+#define ja_AUDIO_EVENT_DRIVEN 0x00000080
+#define ja_AUDIO_SPEAKERS 0x00000100
+#define ja_AUDIO_HEADPHONE 0x00000200
+#define ja_AUDIO_MICROPHONE 0x00000400
+#define ja_AUDIO_HEADSET 0x00000800
+
+
+
+#define ja_DEVICE_STATE_ACTIVE 0x0000000000000001
+#define ja_DEVICE_STATE_DISABLE 0x0000000000000002
+#define ja_DEVICE_STATE_NOTPRESENT 0x0000000000000004
+#define ja_DEVICE_STATE_UNPLUGGED 0x0000000000000008
+#define ja_DEVICE_STATEMASK_ALL 0x000000000000000F
+
+
 /*
  *
  * Audio format type:
@@ -348,12 +444,32 @@ JA_LFORCE_INLINE BOOL32 PopAllocate(JASAllocator allocator, QWORD size){
  *
  */
 
-typedef enum mmcss_task_key {
+typedef enum ja_audio_format{
+    U8 = 0x00000001,
+    S16 = 0x00000002,
+    S24 = 0x00000003,
+    S32 = 0x00000004,
+    F32 = 0x00000008,
+    F64 = 0x00000010,
+}ja_AudioFormat;
+
+typedef enum ja_audio_channel{
+    Unknown_Channel = 0x00000000,
+    Mono = 0x00000001,
+    Stereo = 0x00000002,
+}ja_AudioChannel;
+
+typedef enum ja_mmcss_task_key {
     Audio,
     Games,
     Playback,
     ProAudio,
-}MMCSSTaskKey;
+}ja_MMCSSTaskKey;
+
+typedef enum ja_query_profile{
+    TEMP,
+
+}ja_QueryProfile;
 
 static const PROPERTYKEY JA_PKEY_Device_FriendlyName = {{0xA45C254E, 0xDF1C, 0x4EFD, {0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0}}, 0x0E};
 
@@ -388,7 +504,133 @@ static const IID IID_DEV_INTERFACE_AUDIO_CAPTURE = {0x2EEF81BE, 0x33FA, 0x4800, 
 static const IID JA_CLSID_MMDeviceEnumerator = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
 static const IID JA_IID_IMMDeviceEnumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
 
-JA_LFORCE_INLINE LPCWSTR MMCSSRegisterTaskToWide(MMCSSTaskKey key){
+static const GUID JA_KSDATAFORMAT_SUBTYPE_PCM = {0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
+static const GUID JA_KSDATA_FORMAT_SUBTYPE_IEEE_FLOAT = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 } };
+
+typedef enum ja_EDataFlow{
+    Render = 0,
+    Capture,
+    All,
+    EDataFlow_count
+}ja_EDataFlow;
+
+typedef enum ja_ERole{
+    Console = 0,
+    Multimedia,
+    Communications,
+    ERole_count
+}ja_ERole;
+
+typedef struct ja_IMMDeviceEnumerator ja_IMMDeviceEnumerator;
+typedef struct ja_IMMDeviceCollection ja_IMMDeviceCollection;
+typedef struct ja_IMMDevice ja_IMMDevice;
+typedef struct ja_IMMNotificationClient ja_IMMNotificationClient;
+typedef struct ja_IPropertyStore ja_IPropertyStore;
+
+
+typedef struct ja_IMMDeviceEnumeratorVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDeviceEnumerator* self, const IID* const riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDeviceEnumerator* self);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDeviceEnumerator* self);
+
+    HRESULT (STDMETHODCALLTYPE * ja_EnumAudioEndpoints)(ja_IMMDeviceEnumerator* self, ja_EDataFlow dataFlow, DWORD dwStateMask, ja_IMMDeviceCollection** ppDevices);
+    HRESULT (STDMETHODCALLTYPE * ja_GetDefaultAudioEndpoint)(ja_IMMDeviceEnumerator* self, ja_EDataFlow dataFlow, ja_ERole role, IMMDevice** ppEndpoint);
+    HRESULT (STDMETHODCALLTYPE * ja_GetDevice)(ja_IMMDeviceEnumerator* self, LPCWSTR pwstrId, IMMDevice** ppDevice);
+    HRESULT (STDMETHODCALLTYPE * ja_RegisterEndpointNotificationCallback)(ja_IMMDeviceEnumerator* self, IMMNotificationClient* pClient);
+    HRESULT (STDMETHODCALLTYPE * ja_UnregisterEndpointNotificationCallback)(ja_IMMDeviceEnumerator* self, IMMNotificationClient* pClient);
+
+} ja_IMMDeviceEnumeratorVtbl;
+
+typedef struct ja_IMMDeviceCollectionVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDeviceCollection* self, const IID* const riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDeviceCollection* self);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDeviceCollection* self);
+
+    HRESULT (STDMETHODCALLTYPE * ja_GetCount)(ja_IMMDeviceCollection* self, UINT* pcDevice);
+    HRESULT (STDMETHODCALLTYPE * ja_Item)(ja_IMMDeviceCollection* self, UINT nDevice, ja_IMMDevice** ppDevice);
+
+}ja_IMMDeviceCollectionVtbl;
+
+typedef struct ja_IMMDeviceVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDevice* self, const IID* const riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDevice* self);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDevice* self);
+
+
+    HRESULT (STDMETHODCALLTYPE * ja_Activate)(ja_IMMDevice* self, const IID* const iid, DWORD dwClsCtx, PROPVARIANT pActivationParams, void** ppInterface);
+    HRESULT (STDMETHODCALLTYPE * ja_OpenPropertyStore)(ja_IMMDevice* self, DWORD stgmAccess, ja_IPropertyStore** ppProperties);
+    HRESULT (STDMETHODCALLTYPE * ja_GetId)(IMMDevice* self, LPWSTR* ppstrId);
+    HRESULT (STDMETHODCALLTYPE * ja_GetState)(IMMDevice* self, DWORD* pwState);
+
+}ja_IMMDeviceVtbl;
+
+
+typedef struct ja_IMMNotificationClientVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMNotificationClient* self, const IID* const riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMNotificationClient* self);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMNotificationClient* self);
+
+    HRESULT (STDMETHODCALLTYPE * ja_OnDeviceStateChanged)(IMMNotificationClient* self, LPCWSTR pwstrDeviceId, DWORD dwNewState);
+    HRESULT (STDMETHODCALLTYPE * ja_OnDeviceAdded)(IMMNotificationClient* self, LPCWSTR pwstrDeviceId);
+    HRESULT (STDMETHODCALLTYPE * ja_OnDeviceRemoved)(IMMNotificationClient* self, LPCWSTR pwstrDeviceId);
+    HRESULT (STDMETHODCALLTYPE * ja_OnDefaultDeviceChanged)(IMMNotificationClient* self, ja_EDataFlow flow, ja_ERole role, LPCWSTR pwstrDefaultDeviceId);
+    HRESULT (STDMETHODCALLTYPE * ja_OnPropertyValueChanged)(IMMNotificationClient* self, LPCWSTR pwstrDeviceId, const PROPERTYKEY key);
+
+}ja_IMMNotificationClientVtbl;
+
+
+typedef struct ja_IPropertyStoreVtbl{
+    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IPropertyStore* self, const IID* const riid, void** ppvObject);
+    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IPropertyStore* self);
+    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IPropertyStore* self);
+
+    HRESULT (STDMETHODCALLTYPE * ja_GetCount)(ja_IPropertyStore* self, DWORD* cProps);
+    HRESULT (STDMETHODCALLTYPE * ja_GetAt)(ja_IPropertyStore* self, DWORD iProp, PROPERTYKEY* pKey);
+    HRESULT (STDMETHODCALLTYPE * ja_GetValue)(ja_IPropertyStore* self, const PROPERTYKEY* const key, PROPVARIANT* pvariant);
+    HRESULT (STDMETHODCALLTYPE * ja_SetValue)(ja_IPropertyStore* self, const PROPERTYKEY* const key, const PROPVARIANT* const propvar);
+    HRESULT (STDMETHODCALLTYPE * ja_Commit)(ja_IPropertyStore* self);
+
+}ja_IPropertyStoreVtbl;
+
+
+struct ja_IMMDeviceEnumerator{
+    struct ja_IMMDeviceEnumeratorVtbl* lpVtbl;
+};
+
+struct ja_IMMDeviceCollection{
+    struct ja_IMMDeviceCollectionVtbl* lpVtbl;
+};
+
+struct ja_IMMDevice{
+    struct ja_IMMDeviceVtbl* lpVtbl;
+};
+
+struct ja_IMMNotificationClient{
+    struct ja_IMMNotificationClientVtbl* lpVtbl;
+};
+
+struct ja_IPropertyStore{
+    struct ja_IPropertyStoreVtbl* lpVtbl;
+};
+
+
+JA_LFORCE_INLINE BOOL32 FormatSupported(DWORD format){
+
+
+
+}
+
+JA_LFORCE_INLINE BOOL32 ChannelSupported(DWORD channel){
+
+
+}
+
+JA_LFORCE_INLINE BOOL32 SampleRateSupported(DWORD sample_rate){
+
+
+}
+
+JA_LFORCE_INLINE LPCWSTR MMCSSRegisterTaskToWide(ja_MMCSSTaskKey key){
     switch (key){
         case Audio:
         {
@@ -409,94 +651,6 @@ JA_LFORCE_INLINE LPCWSTR MMCSSRegisterTaskToWide(MMCSSTaskKey key){
     }
 }
 
-
-typedef enum ja_EDataFlow{
-    Render = 0,
-    Capture,
-    All,
-    EDataFlow_count
-}ja_EDataFlow;
-
-typedef enum ja_ERole{
-    Console = 0,
-    Multimedia,
-    Communications,
-    ERole_count
-}ja_ERole;
-
-
-typedef struct ja_IMMDeviceEnumerator ja_IMMDeviceEnumerator;
-typedef struct ja_IMMDeviceCollection ja_IMMDeviceCollection;
-typedef struct ja_IMMDevice ja_IMMDevice;
-typedef struct ja_IMMNotificationClient ja_IMMNotificationClient;
-typedef struct ja_IPropertyStore ja_IPropertyStore;
-
-struct ja_IMMDeviceEnumerator{
-    struct ja_IMMDeviceEnumeratorVtbl* lpVtbl;
-};
-
-struct ja_IMMDeviceCollection{
-    struct ja_IMMDeviceCollectionVtbl* lpVtbl;
-};
-
-struct ja_IMMDevice{
-    struct ja_IMMDeviceEnumeratorVtbl* lpVtbl;
-};
-
-struct ja_IMMNotificationClient{
-    struct ja_IMMNotificationClientVtbl* lpVtbl;
-};
-
-struct ja_IPropertyStore{
-    struct ja_IPropertyStoreVtbl* lpVtbl;
-};
-
-typedef struct ja_IMMDeviceCollectionVtbl{
-    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDeviceCollection* this, const IID* riid, void** ppvObject);
-    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDeviceCollection* this);
-    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDeviceCollection* this);
-
-    HRESULT (STDMETHODCALLTYPE * ja_GetCount)(ja_IMMDeviceCollection* this, UINT* pcDevice);
-    HRESULT (STDMETHODCALLTYPE * ja_Item)(IMMDeviceCollection* this, UINT nDevice, ja_IMMDevice** ppDevice);
-
-}ja_IMMDeviceCollectionVtbl;
-
-typedef struct ja_IMMDeviceEnumeratorVtbl{
-    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDeviceEnumerator* this, const IID* riid, void** ppvObject);
-    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDeviceEnumerator* this);
-    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDeviceEnumerator* this);
-
-    HRESULT (STDMETHODCALLTYPE * ja_EnumAudioEndpoints)(ja_IMMDeviceEnumerator* this, ja_EDataFlow dataFlow, DWORD dwStateMask, ja_IMMDeviceCollection** ppDevices);
-    HRESULT (STDMETHODCALLTYPE * ja_GetDefaultAudioEndpoint)(ja_IMMDeviceEnumerator* this, ja_EDataFlow dataFlow, ja_ERole role, IMMDevice** ppEndpoint);
-    HRESULT (STDMETHODCALLTYPE * ja_GetDevice)(ja_IMMDeviceEnumerator* this, LPCWSTR pwstrId, IMMDevice** ppDevice);
-    HRESULT (STDMETHODCALLTYPE * ja_RegisterEndpointNotificationCallback)(ja_IMMDeviceEnumerator* this, IMMNotificationClient* pClient);
-    HRESULT (STDMETHODCALLTYPE * ja_UnregisterEndpointNotificationCallback)(ja_IMMDeviceEnumerator* this, IMMNotificationClient* pClient);
-
-} ja_IMMDeviceEnumeratorVtbl;
-
-
-typedef struct ja_IMMDeviceVtbl{
-    HRESULT (STDMETHODCALLTYPE * ja_QueryInterface)(ja_IMMDevice* this, const IID* riid, void** ppvObject);
-    ULONG (STDMETHODCALLTYPE * ja_AddRef)(ja_IMMDevice* this);
-    ULONG (STDMETHODCALLTYPE * ja_Release)(ja_IMMDevice* this);
-
-
-    HRESULT (STDMETHODCALLTYPE * ja_Activate)(IMMDevice* this, const IID* iid, DWORD dwClsCtx, PROPVARIANT pActivationParams, void** ppInterface);
-    HRESULT (STDMETHODCALLTYPE * ja_OpenPropertyStore)(IMMDevice* this, DWORD stgmAccess, ja_IPropertyStore** ppProperties);
-    HRESULT (STDMETHODCALLTYPE * ja_GetId)(IMMDevice * this, LPWSTR* ppstrId);
-    HRESULT (STDMETHODCALLTYPE * ja_GetState)(IMMDevice* this, DWORD* pwState);
-
-}ja_IMMDeviceVtbl;
-
-
-typedef struct ja_IMMNotificationClientVtbl{
-
-}ja_IMMNotificationClientVtbl;
-
-
-typedef struct ja_IPropertyStoreVtbl{
-
-}ja_IPropertyStoreVtbl;
 /*
  * Dither only applies when we are reducing the bit depth (truncating the word length).
  *
@@ -520,16 +674,10 @@ typedef struct ja_IPropertyStoreVtbl{
  *                     0
  * */
 
-//minstd_rand c++11
-#define DEFAULT_LCG_MOD 2_147_483_647
-#define DEFAULT_LCG_MUL 48_271
+#define DEFAULT_LCG_MOD 2147483647
+#define DEFAULT_LCG_MUL 48271
 #define DEFAULT_LCG_INC 0
-
-enum ja_dither_mode{
-    RECTANGLE = 0,
-    TRIANGLE = 1,
-}DitherMode;
-
+#define DEFAULT_BOXCAR_CONSTANT 0.8
 
 typedef struct ja_dither{
     //Linear congruential generator dither parameters
@@ -542,6 +690,32 @@ typedef struct ja_dither{
     FLOAT32 quantization_error;
     FLOAT32 boxcar_constant;
 }JADithering;
+
+JA_LFORCE_INLINE JADithering JAInitDitherParamDefault(){
+    JADithering dither_param;
+
+    dither_param.lcg_random = 0;
+    dither_param.lcg_multiplier = DEFAULT_LCG_MUL;
+    dither_param.lcg_increment = DEFAULT_LCG_INC;
+    dither_param.lcg_modulo = DEFAULT_LCG_MOD;
+    dither_param.quantization_error = 0;
+    dither_param.boxcar_constant = DEFAULT_BOXCAR_CONSTANT;
+
+    return dither_param;
+}
+
+JA_LFORCE_INLINE JADithering JAInitDitherParam(const DWORD multiplier,const DWORD increment,const DWORD modulo,const FLOAT32 boxcar_coef){
+    JADithering dither_param;
+
+    dither_param.lcg_random = 0;
+    dither_param.lcg_multiplier = multiplier;
+    dither_param.lcg_increment =  increment;
+    dither_param.lcg_modulo = modulo;
+    dither_param.quantization_error = 0;
+    dither_param.boxcar_constant = boxcar_coef;
+
+    return  dither_param;
+}
 
 JA_LFORCE_INLINE DWORD JARandomLCG(JADithering* dithering){
     dithering->lcg_random = (dithering->lcg_multiplier * dithering->lcg_random + dithering->lcg_increment) % dithering->lcg_modulo;
@@ -624,29 +798,24 @@ JA_LFORCE_INLINE VOID JABitDepthS16ToF32Reference(void* dst,const void* src, QWO
 
 typedef struct ja_context{
 
-    JA_CoInitializeEx co_initialize;
-    JA_CoCreateInstance co_create_instance;
-    JA_CoUninitialize co_uninitialize;
-    JA_CoTaskMemAlloc co_mem_alloc;
-    JA_CoTaskMemFree co_mem_free;
-    JA_CoTaskMemRealloc co_mem_realloc;
-    JA_FreePropVariantArray co_free_prop_variants;
-    JA_PropVariantClear co_clear_prop_variant;
-    JA_PropVariantCopy co_copy_prop_variant;
+    JA_CoInitializeEx ja_CoInitialize;
+    JA_CoCreateInstance ja_CoCreateInstance;
+    JA_CoUninitialize ja_CoUninitialize;
+    JA_CoTaskMemAlloc ja_CoMemAlloc;
+    JA_CoTaskMemFree ja_CoMemFree;
+    JA_CoTaskMemRealloc ja_CoMemRealloc;
+    JA_FreePropVariantArray ja_CoFreePropVariants;
+    JA_PropVariantClear ja_CoClearPropVariant;
+    JA_PropVariantCopy ja_CoCopyPropVariant;
 
     HMODULE ole_module;
 
-
-    JA_AvSetMmThreadPriority av_set_mm_thread_priority;
-    JA_AvSetMmThreadCharacteristicsW  av_set_mm_thread_characteristic;
-    JA_AvQuerySystemResponsiveness av_query_system_responsiveness;
-    JA_AvRevertMmThreadCharacteristics av_revert_thread_characteristic;
-
+    JA_AvSetMmThreadPriority ja_AvSetMmThreadPriority;
+    JA_AvSetMmThreadCharacteristicsW  ja_AvSetMmThreadCharacteristic;
+    JA_AvQuerySystemResponsiveness ja_AvQuerySystemResponsiveness;
+    JA_AvRevertMmThreadCharacteristics ja_AvRevertThreadCharacteristic;
 
     HMODULE avrt_module;
-
-
-    JASAllocator static_allocator;
     JADithering dither;
 
 
@@ -658,54 +827,156 @@ JA_LFORCE_INLINE BOOL32 JAInitContextWin32(JAContext *context) {
     HMODULE ole_module = LoadLibraryExW(L"ole32.dll", NULL, JA_LOAD_LIBRARY_SEARCH_SYSTEM32);
     HMODULE avrt_module = LoadLibraryExW(L"avrt.dll", NULL, JA_LOAD_LIBRARY_SEARCH_SYSTEM32);
 
-    if (ole_module == NULL){
+    if (ole_module == NULL || avrt_module == NULL){
         return 1;
     }
 
     //OLE32
-    context->co_initialize = (JA_CoInitializeEx) GetProcAddress(ole_module, "CoInitializeEx");
-    context->co_create_instance = (JA_CoCreateInstance) GetProcAddress(ole_module, "CoCreateInstance");
-    context->co_uninitialize = (JA_CoUninitialize) GetProcAddress(ole_module, "CoUninitialize");
-    context->co_mem_alloc = (JA_CoTaskMemAlloc) GetProcAddress(ole_module, "CoTaskMemAlloc");
-    context->co_mem_free = (JA_CoTaskMemFree) GetProcAddress(ole_module, "CoTaskMemFree");
-    context->co_mem_realloc = (JA_CoTaskMemRealloc) GetProcAddress(ole_module, "CoTaskMemRealloc");
-    context->co_free_prop_variants = (JA_FreePropVariantArray) GetProcAddress(ole_module, "FreePropVariantArray");
-    context->co_clear_prop_variant = (JA_PropVariantClear) GetProcAddress(ole_module, "PropVariantClear");
-    context->co_copy_prop_variant = (JA_PropVariantCopy) GetProcAddress(ole_module, "PropVariantCopy");
+    context->ja_CoInitialize = (JA_CoInitializeEx) GetProcAddress(ole_module, "CoInitializeEx");
+    context->ja_CoCreateInstance = (JA_CoCreateInstance) GetProcAddress(ole_module, "CoCreateInstance");
+    context->ja_CoUninitialize = (JA_CoUninitialize) GetProcAddress(ole_module, "CoUninitialize");
+    context->ja_CoMemAlloc = (JA_CoTaskMemAlloc) GetProcAddress(ole_module, "CoTaskMemAlloc");
+    context->ja_CoMemFree = (JA_CoTaskMemFree) GetProcAddress(ole_module, "CoTaskMemFree");
+    context->ja_CoMemRealloc = (JA_CoTaskMemRealloc) GetProcAddress(ole_module, "CoTaskMemRealloc");
+    context->ja_CoFreePropVariants = (JA_FreePropVariantArray) GetProcAddress(ole_module, "FreePropVariantArray");
+    context->ja_CoClearPropVariant = (JA_PropVariantClear) GetProcAddress(ole_module, "PropVariantClear");
+    context->ja_CoCopyPropVariant = (JA_PropVariantCopy) GetProcAddress(ole_module, "PropVariantCopy");
 
     context->ole_module = ole_module;
 
     //AVRT
-    context->av_set_mm_thread_priority = (JA_AvSetMmThreadPriority) GetProcAddress(avrt_module, "AvSetMmThreadPriority");
-    context->av_set_mm_thread_characteristic = (JA_AvSetMmThreadCharacteristicsW) GetProcAddress(avrt_module, "AvSetMmThreadCharacteristicsW");
-    context->av_query_system_responsiveness = (JA_AvQuerySystemResponsiveness) GetProcAddress(avrt_module, "AvQuerySystemResponsiveness");
-    context->av_revert_thread_characteristic = (JA_AvRevertMmThreadCharacteristics) GetProcAddress(avrt_module, "AvRevertMmThreadCharacteristics");
-
+    context->ja_AvSetMmThreadPriority = (JA_AvSetMmThreadPriority) GetProcAddress(avrt_module, "AvSetMmThreadPriority");
+    context->ja_AvSetMmThreadCharacteristic = (JA_AvSetMmThreadCharacteristicsW) GetProcAddress(avrt_module, "AvSetMmThreadCharacteristicsW");
+    context->ja_AvQuerySystemResponsiveness = (JA_AvQuerySystemResponsiveness) GetProcAddress(avrt_module, "AvQuerySystemResponsiveness");
+    context->ja_AvRevertThreadCharacteristic = (JA_AvRevertMmThreadCharacteristics) GetProcAddress(avrt_module, "AvRevertMmThreadCharacteristics");
 
     context->avrt_module = avrt_module;
 
     //Other module load below if needed.
 
+    return context->ja_CoInitialize(NULL, JA_COINIT_DEFAULT);
+}
+
+JA_LFORCE_INLINE ja_AudioChannel WaveFormatexToChannel(WAVEFORMATEX* waveformatex){
+    return (ja_AudioChannel)((DWORD)(waveformatex->nChannels) & 0x00000003);
+}
+
+JA_LFORCE_INLINE ja_AudioFormat WaveFormatexToFormat(WAVEFORMATEX* waveformatex){
+    DWORD sub_format_type = 0x00000000;
+
+    if (waveformatex->wFormatTag == ja_WAVE_FORMAT_EXTENSIBLE && waveformatex->cbSize >= 0x0016){
+        WAVEFORMATEXTENSIBLE* waveformat_extensible = (WAVEFORMATEXTENSIBLE*)(waveformatex);
+
+        if (waveformat_extensible->Samples.wValidBitsPerSample % 0x0008 > 0){
+            return 0;
+        }
+
+        sub_format_type = waveformat_extensible->SubFormat.Data1;
+    }
+
+    DWORD format_mask = (DWORD)(waveformatex->wBitsPerSample) >> 0x00000003;
+
+    if (waveformatex->wFormatTag == ja_WAVE_FORMAT_IEEE_FLOAT || sub_format_type == 0x00000003){
+        format_mask <<= 1;
+    }
+
+    return (ja_AudioFormat)(format_mask);
+}
+
+
+
+
+//This will be used as initializing a specific audio endpoint that matches the profile.
+JA_LFORCE_INLINE BOOL32 JAQueryEndpoints(JAContext* ctx, ja_EDataFlow role, const DWORD profile){
+    //void* satisfied_endpoints = AppendAllocate(ctx->static_allocator, 36, 8);
+
+    UINT endpoint_device_count;
+    ja_IMMDeviceEnumerator* device_enumerator;
+    ja_IMMDeviceCollection* device_collection;
+
+    ctx->ja_CoCreateInstance(&JA_CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &JA_IID_IMMDeviceEnumerator, (LPVOID*)(&device_enumerator));
+    device_enumerator->lpVtbl->ja_EnumAudioEndpoints(device_enumerator, role, ja_DEVICE_STATE_ACTIVE, &device_collection);
+    device_collection->lpVtbl->ja_GetCount(device_collection, &endpoint_device_count);
+
+    for (int i = 0; i < endpoint_device_count; i += 1) {
+        DWORD valid_device_mask = 0x00000000;
+
+        ja_IMMDevice* endpoint_device;
+        ja_IPropertyStore* prop_store;
+        PROPVARIANT prop_variant;
+
+        memset(&prop_variant, 0, sizeof(PROPVARIANT));
+
+        device_collection->lpVtbl->ja_Item(device_collection, i, &endpoint_device);
+        endpoint_device->lpVtbl->ja_OpenPropertyStore(endpoint_device, JA_STGM_READ, &prop_store);
+
+        prop_store->lpVtbl->ja_GetValue(prop_store, &JA_PKEY_AudioEngine_OEMFormat, &prop_variant);
+
+        if (prop_variant.vt == VT_BLOB){
+            WAVEFORMATEX* device_wave_format = (WAVEFORMATEX*)prop_variant.blob.pBlobData;
+
+            ja_AudioFormat format = WaveFormatexToFormat(device_wave_format);
+            ja_AudioChannel channel = WaveFormatexToChannel(device_wave_format);
+
+            valid_device_mask = format | (channel << 0x05);
+        }
+
+        prop_store->lpVtbl->ja_GetValue(prop_store, &JA_PKEY_AudioEndpoint_Supports_EventDriven_Mode, &prop_variant);
+
+        if (prop_variant.vt == VT_UI4){
+            valid_device_mask |= (prop_variant.uintVal << 0x07);
+        }
+
+        prop_store->lpVtbl->ja_GetValue(prop_store, &JA_PKEY_AudioEndpoint_FormFactor, &prop_variant);
+
+        if (prop_variant.vt == VT_UI4){
+            switch (prop_variant.uintVal) {
+                case ja_FORM_FACTOR_SPEAKERS:
+                {
+                    valid_device_mask |= 0x00000100;
+                    break;
+                }
+                case ja_FORM_FACTOR_HEADPHONE:
+                {
+                    valid_device_mask |= 0x00000200;
+                    break;
+                }
+                case ja_FORM_FACTOR_MICROPHONE:
+                {
+                    valid_device_mask |= 0x00000400;
+                    break;
+                }
+                case ja_FORM_FACTOR_HEADSET:
+                {
+                    valid_device_mask |= 0x00000800;
+                    break;
+                }
+            }
+        }
+
+
+        printf(" %lu\n", valid_device_mask);
+
+        if (valid_device_mask == profile){
+            //if all the condition query are meet
+            //endpoint_device->lpVtbl->ja_GetId(endpoint_device,id)
+            //satisfied_endpoints[?] = id //Copy id to the satisfied endpoints
+        }
+
+        ctx->ja_CoClearPropVariant(&prop_variant);
+
+        prop_store->lpVtbl->ja_Release(prop_store);
+        endpoint_device->lpVtbl->ja_Release(endpoint_device);
+    }
+
+    device_collection->lpVtbl->ja_Release(device_collection);
+    device_enumerator->lpVtbl->ja_Release(device_enumerator);
+
+    //return the satisfied endpoints
     return 0;
 }
 
 
-JA_LFORCE_INLINE BOOL32 JAUnInitContextWin32(JAContext *context){
-    BOOL32 result = 0;
-
-    result |= FreeLibrary(context->ole_module);
-
-
-    return result;
-}
-
-
-
-JA_LINLINE BOOL32 JAFetchDevices(){
-
-
-
-}
 //
 ////Buffer
 //BOOL32 ja_fetch_devices(const DWORD audio_flow){
@@ -786,22 +1057,48 @@ JA_LINLINE BOOL32 JAFetchDevices(){
 //}
 
 
-BOOL32 JAInitContext(JAContext * context){
-    BOOL32 return_res = 0;
+BOOL32 JAInitContext(JAContext* context, const DWORD profile, const DWORD commit_size, const DWORD reserve_size){
+    JAContext* ctx = context;
+    JASAllocator allocator;
 
-    return_res |= JAInitContextWin32(context);
+    InitAllocator(&allocator, commit_size, reserve_size);
+
+    if (ctx == NULL){
+      //ctx = (JAContext*)AppendAllocate(&allocator, sizeof(JAContext), 8);
+    }
+
+    if (JAInitContextWin32(context)){
+        return 1;
+    }
+
+
     DisableDenormal();
 
-    HRESULT res = context->co_initialize(NULL, JA_COINIT_DEFAULT);
+    if (profile){
+        JAQueryEndpoints(context, Render, profile);
+        //Get the first one
+    }else{
+        //Get the first default device endpoint.
+    }
 
 
-    printf("%li", res);
-    //return_res |= ja_fetch_devices(0);
-
-    return  return_res;
+    return 0;
 }
 
 BOOL32 JAFreeContext(JAContext * context){
+    BOOL32 result = 0;
+
+    EnableDenormal();
+
+    context->ja_CoUninitialize();
+
+    result |= FreeLibrary(context->ole_module);
+    result |= FreeLibrary(context->avrt_module);
+
+
+
+    return result;
+
     return 0;
 }
 

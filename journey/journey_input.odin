@@ -497,7 +497,7 @@ InternalApplyPostProcess :: proc(controller : ^GameController){
 		//8 way
 		if right_analog_abs_x > (right_analog_abs_y + right_analog_abs_y){
 			controller.right_analog_y = 0
-		}else if right_analog_abs_y > (rightanalog_abs_x + right_analog_abs_x){
+		}else if right_analog_abs_y > (right_analog_abs_x + right_analog_abs_x){
 			controller.right_analog_x = 0
 		}else{
 			controller.right_analog_x = axial_right_analog_x
@@ -801,7 +801,7 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 
 	ctx : AudioContext
 	
-	JAInitContext(&ctx)
+	JAInitContext(&ctx, 1)
 	
 
 	game_input.mouse_buttons.delta_threshold_ms = 300 //mouse_threshold_ms

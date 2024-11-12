@@ -76,7 +76,6 @@ main ::  proc()  {
 
 	//We will use GetMessageW for blocking to avoid spin wait.
 	for{
-
 		ret_code := windows.GetMessageW(&msg,nil, 0x0, 0x0)
 
 		if ret_code == 0{
