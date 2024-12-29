@@ -24,7 +24,7 @@ WND_CALLBACK :: proc "stdcall" (window_handle : windows.HWND, message : windows.
 
 main ::  proc()  {
 	///////////////////////// Initialization /////////////////////////
-	
+
 	global_arena: virtual.Arena
 	err := virtual.arena_init_static(&global_arena) //we will change reserve and commit size later.
 
@@ -44,15 +44,15 @@ main ::  proc()  {
 	display_info : windows.DEVMODEW
 
 	windows.EnumDisplaySettingsW(nil, windows.ENUM_CURRENT_SETTINGS, &display_info)
-	
+
 	window_class : windows.WNDCLASSEXW = windows.WNDCLASSEXW{
 		cbSize = size_of(windows.WNDCLASSEXW),
 		lpfnWndProc = WND_CALLBACK,
-		hInstance = hinstance, 	
+		hInstance = hinstance,
 		lpszClassName = wclass_name,
 	}
-	
-	windows.RegisterClassExW(&window_class) 
+
+	windows.RegisterClassExW(&window_class)
 
 	window_handle := windows.CreateWindowExW(
 		0,
@@ -90,5 +90,5 @@ main ::  proc()  {
 	thread.destroy(input_thread)
 
 	windows.CloseHandle(input_event)
-	windows.DestroyWindow(window_handle)	
+	windows.DestroyWindow(window_handle)
 }

@@ -1,3 +1,0 @@
-C:/Users/Dahir/Desktop/GitHub/Odin-Journey/deps/journey_audio/cmake-build-debug/CMakeFiles/journey_audio.dir
-C:/Users/Dahir/Desktop/GitHub/Odin-Journey/deps/journey_audio/cmake-build-debug/CMakeFiles/edit_cache.dir
-C:/Users/Dahir/Desktop/GitHub/Odin-Journey/deps/journey_audio/cmake-build-debug/CMakeFiles/rebuild_cache.dir

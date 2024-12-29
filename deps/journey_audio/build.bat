@@ -1,2 +1,6 @@
+mkdir build
+pushd build
 
-cmake.exe --build C:\Users\Dahir\Desktop\GitHub\Odin-Journey\journey --target journey_audio -j 30
+clang -c -Wall -o journey_audio.lib ../library.c
+
+popd
