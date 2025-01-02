@@ -799,9 +799,9 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 		}
 	}
 
-	ctx : AudioContext
+	//ctx : AudioContext
 	
-	JAInitContext(&ctx, 1)
+	//JAInitContext(&ctx, 1)
 	
 
 	game_input.mouse_buttons.delta_threshold_ms = 300 //mouse_threshold_ms

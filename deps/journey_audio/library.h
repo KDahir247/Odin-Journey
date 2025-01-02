@@ -7,28 +7,62 @@
 /*
 2024-12-23 create the ja_WinMem struct for holding proc ptr to VirtualAlloc2 and equivalent calls. [Complete]
 2024-12-23 swap out windows HANDLE for an opaque handle type. the type will be a QWORD to capture the pointer size. [Complete]
-2024-12-23 create the structure for the allocation. Type of allocation: static arena, static circular buffer 
-
+2024-12-23 create the structure for the allocation. Type of allocation: static arena, static circular buffer  [Complete]
+  2024-12-29 fold the JA_InitContext parameter into descriptors. We don't need ja_Context as well. We can just index the static allocator. [Complete]
+2024-12-29 verify that InitContext work and rename. [Complete]
 */
 
+
 /*
- * Assumption:
- *
- *
- * Instruction Set:
- * All cpus using this library support the following intrinsics;
- * SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, AVX, AVX2, FMA3 (Skylake : Zen)
- *
- * Format Constraint:
- * All Audio file passed through are 48000 or 44100 not higher nor lower.
- * Channel count is either 1 or 2
- * The Audio format is WAVE_FORMAT_PCM (integer) or WAVE_FORMAT_IEEE_FLOAT (floating)
- * The common precision of the audio format is 16 (integer) and 32 (floating point)
+      We want to use the correct audio category so it maps to the correct audio mode resulting in the best  APO is used on the stream in the audio engine.
+We want the audio signal to be mapped to the correct audio modes defined by the driver to provide the best user experience.
+
+Should we use Real-Time Work Queue API or MFCreateMFByteStreamOnStreamEx, msdn is recommending it, instead of using threads. https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/low-latency-audio
+To avoid interference with non audio subsystems
+
+    msdn
+Also note that Desktop applications cannot use the offloading capabilities of audio adapters that support hardware-offloaded audio. These applications can still render audio, but only through the host pin which makes use of the software audio engine.
+
+who will be responsible for setting up the  architecture of the library, such as rtwq (if used)
+who will be responsible for rerouting (It seem like the device would be the best, since we want to get the new device and it has nothing to do with buffer or mixing nor the backend side of things)
+
+InitBackend (responsible for creating the ring buffer,static allocator for the mixer in the engine and a buffer for streaming read, and possible another static allocator for the allocation that occur during setup, setup the dynamic linking)
+InitDevice (responsible for getting the target endpoint device and for setting it up, and rerouting)
+InitEngine (resampling, mixing and other buffer related things)
+
+
+    
+    
+    */
+
+
+/*
+* Assumption:
+*
+*
+* Instruction Set:
+* All cpus using this library support the following intrinsics;
+* SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, AVX, AVX2, FMA3 (Skylake : Zen)
+*
+* Format Constraint:
+* All Audio file passed through are 48000 or 44100 not higher nor lower.
+* The client must open the stream in the mix format that is currently in use by the audio engine (or a format that is similar to the mix format)
+* The audio engine's input streams and the output mix from the engine are all in this format
+* The audio engine can mix only PCM streams.
+* Channel count is either 1 or 2
+* The Audio format is WAVE_FORMAT_PCM (integer) or WAVE_FORMAT_IEEE_FLOAT (floating)
+* The common precision of the audio format is 16 (integer) and 32 (floating point)
     * We will use Wide (W) for msdn procedure, since odin lang only has wide procedure call of windows and we don't want to mash ansi and wide or do conversions if required.
+*Drivers can use the low latency DDIs to report the supported sizes of the buffer that is used to transfer data between Windows and the hardware. Data transfers don't have to always use 10-ms buffers, as they did in previous Windows versions. Instead, the driver can specify if it can use small buffers, for example, 5 ms, 3 ms, 1 ms, etc.
+*
     *
+* Query the buffer size from driver in wasapi  and use that. Don't predefine and create a random size buffer.
     * Integer I16, float 32
 * We will not downsample the audio for example from f32 to I16, but we may up sample the audio from S8 to I16 or from S8 to F32 thus we don't need to account for dithering, only is supported upsampling.
-    *
+* Stream routing will be supported? (switching devices on play
+* The audio engine can convert between a standard PCM sample size used by the application and the floating-point samples that the engine uses for its internal processing, but not sample rate, channel count and other important audio information.
+* The GetMixFormat method retrieves the stream format that the audio engine uses for its internal processingbvb of shared-mode streams. The method always uses a WAVEFORMATEXTENSIBLE structure, instead of a stand-alone WAVEFORMATEX structure, to specify the format.
+*The mix format that the audio engine uses for its internal processing of shared-mode streams is closely related to, but is not necessarily identical to, the stream format that the audio endpoint device uses in shared mode. Through the Windows multimedia control panel (Mmsys.cpl)
     * Allocation:
     *
     *
@@ -172,11 +206,11 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_STGM_WRITE 0x00000001L
 #define JA_STGM_READWRITE 0x00000002L
 
-#define JA_AVRT_CRITICAL 0x0000000000000002
-#define JA_AVRT_HIGH 0x0000000000000001
-#define JA_AVRT_NORMAL 0x0000000000000000
-#define JA_AVRT_LOW 0xFFFFFFFFFFFFFFFF
-#define JA_AVRT_VERYLOW 0xFFFFFFFFFFFFFFFE
+#define JA_MMCSS_CRITICAL 0x0000000000000002
+#define JA_MMCSS_HIGH 0x0000000000000001
+#define JA_MMCSS_NORMAL 0x0000000000000000
+#define JA_MMCSS_LOW 0xFFFFFFFFFFFFFFFF
+#define JA_MMCSS_VERYLOW 0xFFFFFFFFFFFFFFFE
 
 #define JA_MEM_COMMIT 0x00001000
 #define JA_MEM_RESERVE 0x00002000
@@ -184,6 +218,12 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_MEM_RESERVE_PLACEHOLDER 0x00040000
 #define JA_MEM_RESET 0x00080000
 #define JA_MEM_RESET_UNDO 0x1000000
+
+#define JA_MEM_DECOMMIT 0x00004000
+#define JA_MEM_RELEASE 0x00008000
+#define JA_COALESCE_PLACEHOLDERS 0x00000001
+#define JA_MEM_PRESERVE_PLACEHOLDER 0x00000002
+
 
 #define JA_PAGE_NOACCESS 0x01
 #define JA_PAGE_READONLY 0x02
@@ -267,12 +307,8 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_DEVICE_STATE_UNPLUGGED 0x0000000000000008
 #define JA_DEVICE_STATEMASK_ALL 0x000000000000000F
 
-
-#define JA_DEFAULT_LCG_MOD 2147483647
-#define JA_DEFAULT_LCG_MUL 48271
-#define JA_DEFAULT_LCG_INC 0
-#define JA_DEFAULT_BOXCAR_CONSTANT 0.8
-
+//10ms
+#define JA_DEFAULT_BUFFER_SIZE_NANOSECOND 10000000
 
 typedef struct ja_GUID ja_GUID;
 typedef struct ja_Blob ja_Blob;
@@ -554,6 +590,18 @@ struct ja_WinMem{
     QWORD _unused_;
 };
 
+
+struct ja_Proc{
+    struct ja_WinMem mem;
+    struct ja_WinCOM com;
+    struct ja_WinAvrt avrt;
+    
+    ja_HandleO kernelbase_handle;
+    ja_HandleO ole32_handle;
+    ja_HandleO avrt_handle;
+    QWORD _unused_;
+};
+
 JA_LFORCE_INLINE ja_HandleO
 JA_LoadLibrary(const P16 lib_name){
     return LoadLibraryW(lib_name);
@@ -665,31 +713,48 @@ JA_SetAlignerAllocate(struct ja_StaticAllocator * allocator, QWORD alignment){
 JA_LFORCE_INLINE void
 JA_ClearAllocate(struct ja_StaticAllocator * allocator){
     allocator->offset = sizeof(struct ja_StaticAllocator);
+    
 }
 
 
+struct ja_RingBuffer{
+    void * buffer;
+    QWORD size;
+    QWORD write_index;
+    QWORD read_index;
+};
 
-struct ja_Context{
-    struct ja_WinMem mem_proc;
-    struct ja_WinCOM com_proc;
-    struct ja_WinAvrt avrt_proc;
-    
-    ja_HandleO kernelbase_handle;
-    ja_HandleO ole32_handle;
-    ja_HandleO avrt_handle;
-    QWORD _unused_;
+struct ja_Resource{
+    struct ja_StaticAllocator * global_allocator;
+    struct ja_RingBuffer ring;
+};
+
+struct ja_MemoryDescriptor{
+    QWORD static_reserve;
+    QWORD static_commit;
+    QWORD ring_size;
+    QWORD ring_repetition;
+};
+
+
+struct ja_AudioDescriptor{
+    QWORD ring_period;
+    DWORD mask;
+    DWORD category;
 };
 
 
 BOOL32 
-JAInitContext(struct ja_Context * context, const DWORD profile, const QWORD commit_size, const QWORD reserve_size){
+JA_InitBackend(const struct ja_AudioDescriptor audio_desc, const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res){
     //Remeber zero is initialization.
     
-    struct ja_Context * ctx = context;
+    //Rather then pass a Context we can pass the allocator and just get the value in the static allocator.
+    struct ja_Proc * proc = NULL;
     struct ja_StaticAllocator * allocator = NULL;
+    struct ja_RingBuffer * ring = NULL;
     
-    DWORD previous_csr_flag = _mm_getcsr();
-    _mm_setcsr(previous_csr_flag | JA_FLUSH_ZERO_ENABLE | JA_DENORMALS_ENABLE);
+    DWORD current_csr_flag = _mm_getcsr();
+    _mm_setcsr(current_csr_flag | JA_FLUSH_ZERO_ENABLE | JA_DENORMALS_ENABLE);
     
     ja_HandleO kernelbase_module_handle = {};
     ja_HandleO ole32_module_handle = {};
@@ -725,6 +790,7 @@ JAInitContext(struct ja_Context * context, const DWORD profile, const QWORD comm
         win_com_proc.ja_PropVariantClear = (PropVariantClear)JA_GetProcAddress(ole32_module_handle, "PropVariantClear");
         win_com_proc.ja_PropVariantCopy = (PropVariantCopy)JA_GetProcAddress(ole32_module_handle, "PropVariantCopy");
         
+        //TODO:Khal maybe use rtwq rather then avrt.
         //avrt.dll (MMCSS)
         win_avrt_proc.ja_AvSetMmThreadCharacteristicsW = (AvSetMmThreadCharacteristicsW)JA_GetProcAddress(avrt_module_handle, "AvSetMmThreadCharacteristicsW");
         win_avrt_proc.ja_AvRevertMmThreadCharacteristics = (AvRevertMmThreadCharacteristics)JA_GetProcAddress(avrt_module_handle, "AvRevertMmThreadCharacteristics");
@@ -736,15 +802,15 @@ JAInitContext(struct ja_Context * context, const DWORD profile, const QWORD comm
     
     {
         //Static Allocator
-        QWORD pages = (commit_size + JA_PAGESIZE - 1) >> 12;
-        QWORD reservation = (reserve_size + JA_ALLOCATION_GRANULARITY - 1) >> 16 ;
+        QWORD reservation = (mem_desc->static_reserve + JA_ALLOCATION_GRANULARITY - 1) >> 16 ;
+        QWORD pages = (mem_desc->static_commit + JA_PAGESIZE - 1) >> 12;
         
-        QWORD target_commit_size = pages << 12;
+        
         QWORD target_reserve_size = reservation << 16;
+        QWORD target_commit_size = pages << 12;
         
         void * reserved_ptr = win_mem_proc.ja_VirtualAlloc2((ja_HandleO){.opaque = 0}, NULL, target_reserve_size, JA_MEM_RESERVE, JA_PAGE_READWRITE, NULL, 0);
         void * ptr = win_mem_proc.ja_VirtualAlloc2((ja_HandleO){.opaque = 0}, reserved_ptr, target_commit_size, JA_MEM_COMMIT, JA_PAGE_READWRITE, NULL, 0);
-        
         
         allocator = (struct ja_StaticAllocator *)ptr;
         allocator->offset = sizeof(struct ja_StaticAllocator);
@@ -753,49 +819,69 @@ JAInitContext(struct ja_Context * context, const DWORD profile, const QWORD comm
         allocator->reserved = target_reserve_size;
         
         
-        //Ring Buffer
+        QWORD buffer_backend_size = JA_ALLOCATION_GRANULARITY  * ((mem_desc->ring_size + 65535) >> 16);
+        QWORD buffer_virtual_size = mem_desc->ring_repetition * buffer_backend_size;
+        
+        DWORD high_buffer_size = (buffer_backend_size >> 32) & 0xFFFFFFFF;
+        DWORD low_buffer_size = buffer_backend_size & 0xFFFFFFFF;
+        
+        ja_HandleO backend_mapping = win_mem_proc.ja_CreateFileMappingW((ja_HandleO){.opaque = -1}, NULL, JA_PAGE_READWRITE, high_buffer_size, low_buffer_size, NULL);
+        
+        BYTE* ring_buffer = win_mem_proc.ja_VirtualAlloc2((ja_HandleO){.opaque = 0}, NULL, buffer_virtual_size, JA_MEM_RESERVE | JA_MEM_RESERVE_PLACEHOLDER, JA_PAGE_NOACCESS, NULL, 0);
         
         
+        for (QWORD repetition_index = 0; repetition_index < mem_desc->ring_repetition; repetition_index++){
+            
+            win_mem_proc.ja_VirtualFree(ring_buffer + repetition_index * buffer_backend_size, buffer_backend_size, JA_MEM_RELEASE | JA_MEM_PRESERVE_PLACEHOLDER);
+            win_mem_proc.ja_MapViewOfFile3(backend_mapping, (ja_HandleO){.opaque = 0}, ring_buffer + repetition_index * buffer_backend_size, 0, buffer_backend_size, JA_MEM_REPLACE_PLACEHOLDER, JA_PAGE_READWRITE, NULL, 0);
+            
+        }
         
+        ring->buffer = ring_buffer;
+        ring->size =  buffer_virtual_size;
+        ring->write_index = 0;
+        ring->read_index = 0;
     }
     
-    ctx = JA_PushAllocate(allocator, sizeof(struct ja_Context));
+    proc = JA_PushAllocate(allocator, sizeof(struct ja_Proc));
     
-    ctx->mem_proc = win_mem_proc;
-    ctx->com_proc = win_com_proc;
-    ctx->avrt_proc = win_avrt_proc;
+    proc->mem = win_mem_proc;
+    proc->com = win_com_proc;
+    proc->avrt = win_avrt_proc;
     
-    ctx->kernelbase_handle = kernelbase_module_handle;
-    ctx->ole32_handle = ole32_module_handle;
-    ctx->avrt_handle = avrt_module_handle;
-    
-    
-    
-    if (profile){
-        //JAQueryEndpoints(context, Render, profile);
-        //Get the first one
-    }else{
-        //Get the first default device endpoint.
-    }
-    
-    
-    
-    
-    
-    
-    {
-        //De-allocation and reset the csr register.
-        
-        
-        
-        
-        
-    }
+    proc->kernelbase_handle = kernelbase_module_handle;
+    proc->ole32_handle = ole32_module_handle;
+    proc->avrt_handle = avrt_module_handle;
     
     
     
     
     return JA_SUCCESS;
 }
+
+
+BOOL32
+JA_InitDevice(struct ja_Resource * res){
+    
+    ja_IMMDeviceEnumerator * device_enumerator;
+    
+    BYTE * alloc = (BYTE*)(res->global_allocator);
+    struct ja_Proc * proc = (struct ja_Proc*)(alloc + sizeof(struct ja_StaticAllocator));
+    
+    proc->com.ja_CoInitializeEx(NULL, JA_COINIT_DEFAULT);
+    proc->com.ja_CoCreateInstance(&JA_IID_IMMDeviceEnumerator, NULL, 0x04, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
+    
+    
+    
+    
+    
+    
+    return JA_SUCCESS;
+}
+
+
+
+
+
 
 #endif //JOURNEY_AUDIO_LIBRARY_H
