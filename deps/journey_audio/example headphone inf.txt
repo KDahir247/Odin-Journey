@@ -1,0 +1,47 @@
+;
+; AudioEndpoint.INF - Microsoft Windows Audio Endpoint Driver Package
+;                     No driver is installed for these devices
+;
+
+[Version]
+Signature="$Windows NT$"
+Provider=%MSFT%
+ClassGUID={C166523C-FE0C-4A94-A586-F1A80CFBBF3E}
+Class=AudioEndpoint
+PnpLockdown=1
+DriverVer = 03/31/2024,10.0.26100.1
+
+[ControlFlags]
+BasicDriverOk=*
+ExcludeFromSelect=*
+PreConfigureDriver=*
+
+[ClassInstall32]
+AddReg = ClassInstall_AddReg
+
+[ClassInstall_AddReg]
+HKR,,,0,%ClassName%
+HKR,,NoInstallClass,,1
+HKR,,SilentInstall,,1
+HKR,,IconPath,%REG_MULTI_SZ%,"%%SystemRoot%%\system32\mmres.dll,-3004"
+
+[Manufacturer]
+%MSFT%=Microsoft, NTamd64
+
+[Microsoft.NTamd64]
+%MSFT.AudioEndpoint%        = NO_DRV,MMDEVAPI\AudioEndpoints
+
+[NO_DRV]
+
+[NO_DRV.Services]
+AddService = , %SPSVCINST_ASSOCSERVICE%   ; null service install
+
+[strings]
+;Localizable Strings
+MSFT                       = "Microsoft"
+ClassName                  = "Audio inputs and outputs"
+MSFT.AudioEndpoint         = "Audio Endpoint"
+
+;Non-Localizable Strings
+SPSVCINST_ASSOCSERVICE     = 0x00000002
+REG_MULTI_SZ               = 0x00010000

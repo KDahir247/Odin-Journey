@@ -8,8 +8,10 @@
 2024-12-23 create the ja_WinMem struct for holding proc ptr to VirtualAlloc2 and equivalent calls. [Complete]
 2024-12-23 swap out windows HANDLE for an opaque handle type. the type will be a QWORD to capture the pointer size. [Complete]
 2024-12-23 create the structure for the allocation. Type of allocation: static arena, static circular buffer  [Complete]
-  2024-12-29 fold the JA_InitContext parameter into descriptors. We don't need ja_Context as well. We can just index the static allocator. [Complete]
+  2024-12-29 fold the JA_InitContext parameter into descriptors. We don't need ja_Context as well7. We can just index the static allocator. [Complete]
 2024-12-29 verify that InitContext work and rename. [Complete]
+2024-01-02 stub out Init Device where we initialize the device but not play it.
+2024-01-02 create a structure for the device initialization to pass to the engine.
 */
 
 
@@ -300,6 +302,16 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_AUDIO_MICROPHONE 0x00000400
 #define JA_AUDIO_HEADSET 0x00000800
 
+#define JA_ENDPOINT_SYSFX_ENABLED 0
+#define JA_ENDPOINT_SYSFX_DISABLED 1
+
+#define JA_AUDCLNT_STREAMFLAGS_CROSSPROCESS 0x00010000
+#define JA_AUDCLNT_STREAMFLAGS_LOOPBACK 0x00020000
+#define JA_AUDCLNT_STREAMFLAGS_EVENTCALLBACK 0x00040000
+#define JA_AUDCLNT_STREAMFLAGS_NOPERSIST 0x00080000
+#define JA_AUDCLNT_STREAMFLAGS_RATEADJUST 0x00100000
+#define JA_AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM 0x80000000
+#define JA_AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY 0x08000000
 
 #define JA_DEVICE_STATE_ACTIVE 0x0000000000000001
 #define JA_DEVICE_STATE_DISABLE 0x0000000000000002
@@ -335,7 +347,6 @@ struct ja_Blob{
 };
 
 
-//Create PropVariant struct
 struct ja_PropVariant{
     WORD vt;
     WORD reserved_1;
@@ -344,6 +355,7 @@ struct ja_PropVariant{
     
     union{
         ja_Blob blob;
+        DWORD dval;
         //Other data when needed refer to https://learn.microsoft.com/en-us/windows/win32/api/propidlbase/ns-propidlbase-propvariant
         BYTE padding[16];
     };
@@ -370,6 +382,62 @@ struct ja_MemExtendedParameter{
     
 };
 
+typedef enum ja_VARENUM {
+    VT_EMPTY = 0,
+    VT_NULL = 1,
+    VT_I2 = 2,
+    VT_I4 = 3,
+    VT_R4 = 4,
+    VT_R8 = 5,
+    VT_CY = 6,
+    VT_DATE = 7,
+    VT_BSTR = 8,
+    VT_DISPATCH = 9,
+    VT_ERROR = 10,
+    VT_BOOL = 11,
+    VT_VARIANT = 12,
+    VT_UNKNOWN = 13,
+    VT_DECIMAL = 14,
+    VT_I1 = 16,
+    VT_UI1 = 17,
+    VT_UI2 = 18,
+    VT_UI4 = 19,
+    VT_I8 = 20,
+    VT_UI8 = 21,
+    VT_INT = 22,
+    VT_UINT = 23,
+    VT_VOID = 24,
+    VT_HRESULT = 25,
+    VT_PTR = 26,
+    VT_SAFEARRAY = 27,
+    VT_CARRAY = 28,
+    VT_USERDEFINED = 29,
+    VT_LPSTR = 30,
+    VT_LPWSTR = 31,
+    VT_RECORD = 36,
+    VT_INT_PTR = 37,
+    VT_UINT_PTR = 38,
+    VT_FILETIME = 64,
+    VT_BLOB = 65,
+    VT_STREAM = 66,
+    VT_STORAGE = 67,
+    VT_STREAMED_OBJECT = 68,
+    VT_STORED_OBJECT = 69,
+    VT_BLOB_OBJECT = 70,
+    VT_CF = 71,
+    VT_CLSID = 72,
+    VT_VERSIONED_STREAM = 73,
+    VT_BSTR_BLOB = 0xfff,
+    VT_VECTOR = 0x1000,
+    VT_ARRAY = 0x2000,
+    VT_BYREF = 0x4000,
+    VT_RESERVED = 0x8000,
+    VT_ILLEGAL = 0xffff,
+    VT_ILLEGALMASKED = 0xfff,
+    VT_TYPEMASK = 0xfff
+}ja_VARENUM;
+
+
 typedef enum ja_EDataFlow{
     eRender = 0,
     eCapture,
@@ -385,14 +453,41 @@ typedef enum ja_ERole{
     ERole_enum_count
 }ja_ERole;
 
+typedef enum ja_ShareMode{
+    Shared,
+    Exclusive,
+}ja_ShareMode;
+
+typedef enum ja_StreamCategory{
+    Other = 0,
+    ForegroundOnlyMedia,
+    BackgroundCapableMedia,
+    Communications,
+    Alerts,
+    SoundEffects,
+    GameEffects,
+    GameMedia,
+    GameChat,
+    Speech,
+    Movie,
+    Media,
+}ja_StreamCategory;
+
+typedef enum ja_StreamOptions{
+    None = 0x0,
+    Raw = 0x1,
+    Match_format = 0x2,
+    Ambisonics = 0x4,
+}ja_StreamOptions;
 
 typedef struct ja_IUnknown ja_IUnknown;
+typedef struct ja_WaveFormatex ja_WaveFormatex;
 typedef struct ja_IMMDeviceEnumerator ja_IMMDeviceEnumerator;
 typedef struct ja_IMMDeviceCollection ja_IMMDeviceCollection;
 typedef struct ja_IMMDevice ja_IMMDevice;
 typedef struct ja_IMMNotificationClient ja_IMMNotificationClient;
 typedef struct ja_IPropertyStore ja_IPropertyStore;
-
+typedef struct ja_IAudioClient3 ja_IAudioClient3;
 
 struct ja_IUnknown{
     struct ja_IUnknownVtbl * lpVtbl;
@@ -405,8 +500,26 @@ typedef struct ja_IUnknownVtbl{
 } ja_IUnknownVtbl;
 
 
+typedef struct ja_WaveFormatex{
+    WORD format_tag;
+    WORD channels;
+    DWORD samples_per_sec; //sample rate
+    DWORD avg_byte_per_sec;
+    WORD block_align;
+    WORD bits_per_sample;
+    WORD byte_size;
+}ja_WaveFormatex;
+
+
+typedef struct ja_AudioClientProperties{
+    DWORD cbSize;
+    DWORD bIsOffload;
+    ja_StreamCategory eCategory;
+    ja_StreamOptions Options;
+}ja_AudioClientProperties;
+
 struct ja_IMMDeviceEnumerator{
-    struct ja_IMMDeviceEnumeratorVtbl * lpVtbl;
+    struct ja_IMMDeviceEnumeratorVtbl * vtbl;
 };
 
 typedef struct ja_IMMDeviceEnumeratorVtbl{
@@ -424,7 +537,7 @@ typedef struct ja_IMMDeviceEnumeratorVtbl{
 
 
 struct ja_IMMDeviceCollection{
-    struct ja_IMMDeviceCollectionVtbl * lpVtbl;
+    struct ja_IMMDeviceCollectionVtbl * vtbl;
 };
 
 typedef struct ja_IMMDeviceCollectionVtbl{
@@ -439,7 +552,7 @@ typedef struct ja_IMMDeviceCollectionVtbl{
 
 
 struct ja_IMMDevice{
-    struct ja_IMMDeviceVtbl * lpVtbl;
+    struct ja_IMMDeviceVtbl * vtbl;
 };
 
 typedef struct ja_IMMDeviceVtbl{
@@ -457,7 +570,7 @@ typedef struct ja_IMMDeviceVtbl{
 
 
 struct ja_IMMNotificationClient{
-    struct ja_IMMNotificationClientVtbl * lpVtbl;
+    struct ja_IMMNotificationClientVtbl * vtbl;
 };
 
 typedef struct ja_IMMNotificationClientVtbl{
@@ -475,7 +588,7 @@ typedef struct ja_IMMNotificationClientVtbl{
 
 
 struct ja_IPropertyStore{
-    struct ja_IPropertyStoreVtbl * lpVtbl;
+    struct ja_IPropertyStoreVtbl * vtbl;
 };
 
 typedef struct ja_IPropertyStoreVtbl{
@@ -490,6 +603,45 @@ typedef struct ja_IPropertyStoreVtbl{
     DWORD (JA_WINAPI * ja_Commit)(ja_IPropertyStore * self);
     
 }ja_IPropertyStoreVtbl;
+
+
+struct ja_IAudioClient3{
+    struct ja_IAudioClient3Vtbl * vtbl;
+};
+
+
+typedef struct ja_IAudioClient3Vtbl{
+    DWORD (JA_WINAPI * JA_QueryInterface)(ja_IAudioClient3 * self, const ja_IID * const riid, void ** ppvObject);
+    DWORD (JA_WINAPI * JA_AddRef)(ja_IAudioClient3 * self);
+    DWORD (JA_WINAPI * JA_Release)(ja_IAudioClient3 * self);
+    
+    //IAudioClient
+    DWORD (JA_WINAPI * JA_Initialize)(ja_IAudioClient3 * self, ja_ShareMode ShareMode, DWORD StreamingFlags, QWORD hnsBufferDuration, QWORD hnsPeriodicity, const ja_WaveFormatex * pFormat, const ja_GUID * AudioSessionGuid);
+    DWORD (JA_WINAPI * JA_GetBufferSize)(ja_IAudioClient3 * self, DWORD * pNumBufferFrames);
+    DWORD (JA_WINAPI * JA_GetStreamLatency)(ja_IAudioClient3 * self, QWORD * phnsLatency);
+    DWORD (JA_WINAPI * JA_GetCurrentPadding)(ja_IAudioClient3 * self, DWORD * pNumPaddingFrames);
+    DWORD (JA_WINAPI * JA_IsFormatSupported)(ja_IAudioClient3 * self, ja_ShareMode ShareMode, const ja_WaveFormatex * pFormat, ja_WaveFormatex ** ppClosestMatch);
+    DWORD (JA_WINAPI * JA_GetMixFormat)(ja_IAudioClient3 * self, ja_WaveFormatex ** ppDeviceFormat);
+    DWORD (JA_WINAPI * JA_GetDevicePeriod)(ja_IAudioClient3 * self, QWORD * phnsDefaultDevicePeriod, QWORD * phnsMinimumDevicePeriod);
+    DWORD (JA_WINAPI * JA_Start)(ja_IAudioClient3 * self);
+    DWORD (JA_WINAPI * JA_Stop)(ja_IAudioClient3 * self);
+    DWORD (JA_WINAPI * JA_Reset)(ja_IAudioClient3 * self);
+    
+    DWORD (JA_WINAPI * JA_SetEventHandle)(ja_IAudioClient3 * self, ja_HandleO eventHandle);
+    DWORD (JA_WINAPI * JA_GetService)(ja_IAudioClient3 * self, const ja_IID * const riid, void ** ppv);
+    
+    //IAudioClient2
+    DWORD (JA_WINAPI * JA_IsOffloadingCapable)(ja_IAudioClient3 * self, ja_StreamCategory Category, DWORD *  pbOffloadCapable);
+    DWORD (JA_WINAPI * JA_SetClientProperties)(ja_IAudioClient3 * self, const ja_AudioClientProperties * pProperties);
+    DWORD (JA_WINAPI * JA_GetBufferSizeLimits)(ja_IAudioClient3 self, const ja_WaveFormatex * pFormat, DWORD bEventDriven, QWORD * phnsMinBufferDuration, QWORD * phnsMaxBufferDuration);
+    
+    
+    //IAudioClient3
+    DWORD (JA_WINAPI * JA_GetSharedModeEnginePeriod)(ja_IAudioClient3 * self, const ja_WaveFormatex * pFormat, DWORD * pDefaultPeriodInFrames, DWORD * pFundamentalPeriodInFrames, DWORD * pMinPeriodInFrames, DWORD * pMaxPeriodInFrames);
+    
+    DWORD (JA_WINAPI * JA_GetCurrentSharedModeEnginePeriod)(ja_IAudioClient3 * self, ja_WaveFormatex ** ppFormat, DWORD * pCurrentPeriodInFrames);
+    DWORD (JA_WINAPI * JA_InitializeSharedAudioStream)(ja_IAudioClient3 self, DWORD StreamFlags, DWORD PeriodInFrames, const ja_WaveFormatex * pFormat, const ja_GUID * AudioSessionGuid);
+}ja_IAudioClient3Vtbl;
 
 
 static const ja_PropertyKey JA_PKEY_Device_FriendlyName = {{0xA45C254E, 0xDF1C, 0x4EFD, {0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0}}, 0x0E};
@@ -736,7 +888,7 @@ struct ja_MemoryDescriptor{
     QWORD ring_repetition;
 };
 
-
+//TODO: Not used
 struct ja_AudioDescriptor{
     QWORD ring_period;
     DWORD mask;
@@ -745,7 +897,7 @@ struct ja_AudioDescriptor{
 
 
 BOOL32 
-JA_InitBackend(const struct ja_AudioDescriptor audio_desc, const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res){
+JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res){
     //Remeber zero is initialization.
     
     //Rather then pass a Context we can pass the allocator and just get the value in the static allocator.
@@ -864,16 +1016,57 @@ BOOL32
 JA_InitDevice(struct ja_Resource * res){
     
     ja_IMMDeviceEnumerator * device_enumerator;
+    ja_IMMDevice * endpoint_device;
+    ja_IPropertyStore * property_store;
+    ja_PropVariant prop_variant = {};
     
-    BYTE * alloc = (BYTE*)(res->global_allocator);
-    struct ja_Proc * proc = (struct ja_Proc*)(alloc + sizeof(struct ja_StaticAllocator));
+    
+    BYTE * alloc = (BYTE *)(res->global_allocator);
+    struct ja_Proc * proc = (struct ja_Proc *)(alloc + sizeof(struct ja_StaticAllocator));
     
     proc->com.ja_CoInitializeEx(NULL, JA_COINIT_DEFAULT);
     proc->com.ja_CoCreateInstance(&JA_IID_IMMDeviceEnumerator, NULL, 0x04, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
     
     
+    //Register Endpoint Notifaction callback.
     
     
+    device_enumerator->vtbl->JA_GetDefaultAudioEndpoint(device_enumerator, eRender, eConsole, &endpoint_device);
+    
+    DWORD apo_enable_mask = 0x01;
+    DWORD event_driven_mode_mask = 0x01;
+    
+    endpoint_device->vtbl->JA_OpenPropertyStore(endpoint_device, JA_STGM_READ, &property_store);
+    
+    
+    // Note since exclusive mode doesn't use the audio engine at all and goes directly to the endpoint device
+    // Exlusive mode will never have hardware offloading. Raw buffer will not have hardware offloading as well, since it bypasses APO in the audio engine.
+    property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Disable_SysFx, &prop_variant);
+    
+    if (prop_variant.vt == VT_UI4){
+        apo_enable_mask &= ~prop_variant.dval;
+    }
+    
+    proc->com.ja_PropVariantClear(&prop_variant);
+    
+    //We need to check if event driven mode is supported, so we can set up the device as event driven rather then pull mode.
+    property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Supports_EventDriven_Mode, &prop_variant);
+    
+    if (prop_variant.vt == VT_UI4){
+        event_driven_mode_mask = prop_variant.dval;
+        
+    }
+    
+    //PKEY_AudioEngine_DeviceFormat  property specifies the device format, which is the format that the user has selected for the stream that flows between the audio engine and the audio endpoint device when the device operates in shared mode. 
+    //end_point_device->vtbl->JA_Activate(JA_IID_IAudioClient3, 0x04, NULL,  )
+    
+    
+    
+    if (apo_enable_mask){
+        //Call IsOffloadCapable we will specify the right type of category, since we want the APO for the given category to be offloaded to the DSP.
+        
+        
+    }
     
     
     return JA_SUCCESS;
