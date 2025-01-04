@@ -561,7 +561,7 @@ typedef struct ja_IMMDeviceVtbl{
     DWORD (JA_WINAPI * JA_Release)(ja_IMMDevice * self);
     
     
-    DWORD (JA_WINAPI * JA_Activate)(ja_IMMDevice * self, const ja_IID * const ja_IID, DWORD dwClsCtx, ja_PropVariant pActivationParams, void ** ppInterface);
+    DWORD (JA_WINAPI * JA_Activate)(ja_IMMDevice * self, const ja_IID * const ja_IID, DWORD dwClsCtx, ja_PropVariant * pActivationParams, void ** ppInterface);
     DWORD (JA_WINAPI * JA_OpenPropertyStore)(ja_IMMDevice * self, DWORD stgmAccess, ja_IPropertyStore ** ppProperties);
     DWORD (JA_WINAPI * JA_GetId)(ja_IMMDevice * self, P16 * ppstrId);
     DWORD (JA_WINAPI * JA_GetState)(ja_IMMDevice * self, DWORD * pwState);
@@ -633,14 +633,14 @@ typedef struct ja_IAudioClient3Vtbl{
     //IAudioClient2
     DWORD (JA_WINAPI * JA_IsOffloadingCapable)(ja_IAudioClient3 * self, ja_StreamCategory Category, DWORD *  pbOffloadCapable);
     DWORD (JA_WINAPI * JA_SetClientProperties)(ja_IAudioClient3 * self, const ja_AudioClientProperties * pProperties);
-    DWORD (JA_WINAPI * JA_GetBufferSizeLimits)(ja_IAudioClient3 self, const ja_WaveFormatex * pFormat, DWORD bEventDriven, QWORD * phnsMinBufferDuration, QWORD * phnsMaxBufferDuration);
+    DWORD (JA_WINAPI * JA_GetBufferSizeLimits)(ja_IAudioClient3 * self, const ja_WaveFormatex * pFormat, DWORD bEventDriven, QWORD * phnsMinBufferDuration, QWORD * phnsMaxBufferDuration);
     
     
     //IAudioClient3
     DWORD (JA_WINAPI * JA_GetSharedModeEnginePeriod)(ja_IAudioClient3 * self, const ja_WaveFormatex * pFormat, DWORD * pDefaultPeriodInFrames, DWORD * pFundamentalPeriodInFrames, DWORD * pMinPeriodInFrames, DWORD * pMaxPeriodInFrames);
     
     DWORD (JA_WINAPI * JA_GetCurrentSharedModeEnginePeriod)(ja_IAudioClient3 * self, ja_WaveFormatex ** ppFormat, DWORD * pCurrentPeriodInFrames);
-    DWORD (JA_WINAPI * JA_InitializeSharedAudioStream)(ja_IAudioClient3 self, DWORD StreamFlags, DWORD PeriodInFrames, const ja_WaveFormatex * pFormat, const ja_GUID * AudioSessionGuid);
+    DWORD (JA_WINAPI * JA_InitializeSharedAudioStream)(ja_IAudioClient3 * self, DWORD StreamFlags, DWORD PeriodInFrames, const ja_WaveFormatex * pFormat, const ja_GUID * AudioSessionGuid);
 }ja_IAudioClient3Vtbl;
 
 
@@ -896,6 +896,13 @@ struct ja_AudioDescriptor{
 };
 
 
+struct ja_DeviceDescriptor{
+    ja_EDataFlow flow;
+    ja_ERole role;
+    ja_StreamCategory category;
+};
+
+
 BOOL32 
 JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res){
     //Remeber zero is initialization.
@@ -1013,13 +1020,14 @@ JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *
 
 
 BOOL32
-JA_InitDevice(struct ja_Resource * res){
+JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res){
     
     ja_IMMDeviceEnumerator * device_enumerator;
     ja_IMMDevice * endpoint_device;
     ja_IPropertyStore * property_store;
-    ja_PropVariant prop_variant = {};
+    ja_IAudioClient3 * audio_client;
     
+    ja_PropVariant prop_variant = {};
     
     BYTE * alloc = (BYTE *)(res->global_allocator);
     struct ja_Proc * proc = (struct ja_Proc *)(alloc + sizeof(struct ja_StaticAllocator));
@@ -1028,19 +1036,16 @@ JA_InitDevice(struct ja_Resource * res){
     proc->com.ja_CoCreateInstance(&JA_IID_IMMDeviceEnumerator, NULL, 0x04, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
     
     
-    //Register Endpoint Notifaction callback.
+    //Register Endpoint Notifaction callback, and Session Notification callback for stream rerouting.
     
-    
-    device_enumerator->vtbl->JA_GetDefaultAudioEndpoint(device_enumerator, eRender, eConsole, &endpoint_device);
+    device_enumerator->vtbl->JA_GetDefaultAudioEndpoint(device_enumerator, desc->flow, desc->role, &endpoint_device);
     
     DWORD apo_enable_mask = 0x01;
     DWORD event_driven_mode_mask = 0x01;
+    DWORD apo_offloading_mask = 0x00;
+    
     
     endpoint_device->vtbl->JA_OpenPropertyStore(endpoint_device, JA_STGM_READ, &property_store);
-    
-    
-    // Note since exclusive mode doesn't use the audio engine at all and goes directly to the endpoint device
-    // Exlusive mode will never have hardware offloading. Raw buffer will not have hardware offloading as well, since it bypasses APO in the audio engine.
     property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Disable_SysFx, &prop_variant);
     
     if (prop_variant.vt == VT_UI4){
@@ -1049,25 +1054,74 @@ JA_InitDevice(struct ja_Resource * res){
     
     proc->com.ja_PropVariantClear(&prop_variant);
     
-    //We need to check if event driven mode is supported, so we can set up the device as event driven rather then pull mode.
     property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Supports_EventDriven_Mode, &prop_variant);
     
     if (prop_variant.vt == VT_UI4){
         event_driven_mode_mask = prop_variant.dval;
-        
     }
     
-    //PKEY_AudioEngine_DeviceFormat  property specifies the device format, which is the format that the user has selected for the stream that flows between the audio engine and the audio endpoint device when the device operates in shared mode. 
-    //end_point_device->vtbl->JA_Activate(JA_IID_IAudioClient3, 0x04, NULL,  )
-    
-    
+    endpoint_device->vtbl->JA_Activate(endpoint_device, &JA_IID_IAudioClient3, 0x04, NULL,(void **)&audio_client);
     
     if (apo_enable_mask){
-        //Call IsOffloadCapable we will specify the right type of category, since we want the APO for the given category to be offloaded to the DSP.
-        
-        
+        audio_client->vtbl->JA_IsOffloadingCapable(audio_client, desc->category, &apo_offloading_mask);
+        apo_enable_mask &= apo_offloading_mask;
     }
     
+    //Starting with Windows 10 hardware offloaded audio stream must be event driven.
+    event_driven_mode_mask |= apo_enable_mask;
+    
+    //Either NONE or MATCH_FORMAT 
+    ja_AudioClientProperties client_properties = {
+        sizeof(ja_AudioClientProperties),
+        apo_enable_mask,
+        desc->category,
+        None,
+    };
+    
+    audio_client->vtbl->JA_SetClientProperties(audio_client, &client_properties);
+    
+    //Firstly we need to get the stream format for which the supported periodicities are queried. This will be the audio engine internal format. We are not using exlusive mode.
+    ja_WaveFormatex * previous_audio_engine_format = NULL;
+    DWORD previous_period_in_frame = 0;
+    DWORD default_period_in_frame = 0;
+    DWORD fundamental_period_in_frame = 0;
+    DWORD min_period_in_frame = 0;
+    DWORD max_period_in_frame = 0;
+    
+    //Hopefully nothing changes the periodicity and/or format of the audio engine. (We must free the ja_WaveFormatex)
+    audio_client->vtbl->JA_GetCurrentSharedModeEnginePeriod(audio_client, &previous_audio_engine_format, &previous_period_in_frame);
+    audio_client->vtbl->JA_GetSharedModeEnginePeriod(audio_client, previous_audio_engine_format, &default_period_in_frame, &fundamental_period_in_frame, &min_period_in_frame, &max_period_in_frame);
+    
+    
+    // buffer size (in 100-nanosecond units)
+    QWORD min_buffer_duration;
+    QWORD max_buffer_duration;
+    
+    audio_client->vtbl->JA_GetBufferSizeLimits(audio_client, previous_audio_engine_format, event_driven_mode_mask, &min_buffer_duration, &max_buffer_duration);
+    
+    
+    //TODO:Khal pass the target period_in_frame and clamp it to min_period_in_frame to max_period_in_frame. Also the target period_in_frame must be multiple of fundamental_period_in_frame. We are using default for now.
+    audio_client->vtbl->JA_InitializeSharedAudioStream(audio_client, JA_AUDCLNT_STREAMFLAGS_EVENTCALLBACK, default_period_in_frame, previous_audio_engine_format, NULL);
+    
+    
+    //TODO:Khal We need to do template calculation to prevent any audio glitch. using the period_in_frames above.
+    
+    
+    
+    //We have to reduce stream latency that is how long the application take to write to the endpoint buffer to submit to the endpoint device. The endpoint buffer transmission can't be reduced.
+    
+    
+    //We need to keep track of all the unprocessed frame in the endpoint buffer in event driven mode for render. This will go in the engine. GetCurrentPadding requires audio client initialization 
+    
+    
+    //Call GetService for IID_IAudioRenderClient, and possibly IAudioClock.
+    
+    //SetEventHandle
+    
+    
+    //Maybe we will use GetStreamLatency to skip write if the write is less then this minimum or GetBufferSizeLimit. we will do GetSharedModeEnginePeriod to get the frames then divide by the mix format followed by a mul by 1000 to get the milliseconds or we can stay as nanseconds. We can then check this will the above function to see if there will be any glitches.  
+    
+    //start, stop
     
     return JA_SUCCESS;
 }
