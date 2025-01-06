@@ -246,8 +246,7 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_LOAD_LIBRARY_REQUIRE_SIGNED_TARGET 0x00000080
 #define JA_LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
 
-#define GUIDMatch(x,y) !memcpy(x,y, sizeof(GUID))
-
+#define JA_GUIDMatch(x,y) !__builtin_memcpy(x,y, sizeof(ja_GUID)) 
 
 ///////////////////////////////////// FLAGS //////////////////////////////////////
 #define JA_FLUSH_ZERO_ENABLE 0x00008000
@@ -480,6 +479,22 @@ typedef enum ja_StreamOptions{
     Ambisonics = 0x4,
 }ja_StreamOptions;
 
+typedef enum ja_AudioSessionState{
+    Inactive = 0,
+    Active = 1,
+    Expired = 2,
+}ja_AudioSessionState;
+
+typedef enum ja_SessionDisconnectReason{
+    DeviceRemoval = 0,
+    ServerShutdown = 1,
+    FormatChanged = 2,
+    Logoff = 3,
+    Disconnected = 4,
+    ExclusiveModeOverrride = 5,
+}ja_SessionDisconnectReason;
+
+
 typedef struct ja_IUnknown ja_IUnknown;
 typedef struct ja_WaveFormatex ja_WaveFormatex;
 typedef struct ja_IMMDeviceEnumerator ja_IMMDeviceEnumerator;
@@ -488,6 +503,8 @@ typedef struct ja_IMMDevice ja_IMMDevice;
 typedef struct ja_IMMNotificationClient ja_IMMNotificationClient;
 typedef struct ja_IPropertyStore ja_IPropertyStore;
 typedef struct ja_IAudioClient3 ja_IAudioClient3;
+typedef struct ja_IAudioSessionControl2 ja_IAudioSessionControl2;
+typedef struct ja_IAudioSessionEvents ja_IAudioSessionEvents;
 
 struct ja_IUnknown{
     struct ja_IUnknownVtbl * lpVtbl;
@@ -571,6 +588,7 @@ typedef struct ja_IMMDeviceVtbl{
 
 struct ja_IMMNotificationClient{
     struct ja_IMMNotificationClientVtbl * vtbl;
+    DWORD ref;
 };
 
 typedef struct ja_IMMNotificationClientVtbl{
@@ -585,6 +603,60 @@ typedef struct ja_IMMNotificationClientVtbl{
     DWORD (JA_WINAPI * JA_OnPropertyValueChanged)(ja_IMMNotificationClient * self, const P16 pwstrDeviceId, const ja_PropertyKey key);
     
 }ja_IMMNotificationClientVtbl;
+
+
+struct ja_IAudioSessionEvents{
+    struct ja_IAudioSessionEventsVtbl * vtbl;
+    DWORD ref;
+};
+
+typedef struct ja_IAudioSessionEventsVtbl{
+    DWORD (JA_WINAPI * JA_QueryInterface)(ja_IAudioSessionEvents * self, const ja_IID * const riid, void ** ppvObject);
+    DWORD (JA_WINAPI * JA_AddRef)(ja_IAudioSessionEvents * self);
+    DWORD (JA_WINAPI * JA_Release)(ja_IAudioSessionEvents * self);
+    
+    DWORD (JA_WINAPI * JA_OnDisplayNameChanged)(ja_IAudioSessionEvents * self, const P16 NewDisplayName,const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_OnIconPathChanged)(ja_IAudioSessionEvents * self, const P16 NewIconPath, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_OnSimpleVolumeChanged)(ja_IAudioSessionEvents * self, FLOAT32 NewVolume, DWORD NewMute, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_OnChannelVolumeChanged)(ja_IAudioSessionEvents * self, DWORD ChannelCount, FLOAT32 NewChannelVolumeArray[], DWORD ChangedChannel, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_OnGroupingParamChanged)(ja_IAudioSessionEvents * self, const ja_GUID * NewGroupingParam, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_OnStateChanged)(ja_IAudioSessionEvents *  self, ja_AudioSessionState NewState);
+    DWORD (JA_WINAPI * JA_OnSessionDisconnected)(ja_IAudioSessionEvents * self, ja_SessionDisconnectReason DisconnectReason);
+}ja_IAudioSessionEventsVtbl;
+
+
+struct ja_IAudioSessionControl2{
+    struct ja_IAudioSessionControl2Vtbl * vtbl;
+};
+
+typedef struct ja_IAudioSessionControl2Vtbl{
+    DWORD (JA_WINAPI * JA_QueryInterface)(ja_IAudioSessionControl2 * self, const ja_IID * const riid, void ** ppvObject);
+    DWORD (JA_WINAPI * JA_AddRef)(ja_IAudioSessionControl2 * self);
+    DWORD (JA_WINAPI * JA_Release)(ja_IAudioSessionControl2 * self);
+    
+    //AudioSessionControl
+    DWORD (JA_WINAPI * JA_GetState)(ja_IAudioSessionControl2 * self, ja_AudioSessionState * pRetVal);
+    DWORD (JA_WINAPI * JA_GetDisplayName)(ja_IAudioSessionControl2 * self, P16 * pRetVal);
+    DWORD (JA_WINAPI * JA_SetDisplayName)(ja_IAudioSessionControl2 * self, const P16 Value, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_GetIconPath)(ja_IAudioSessionControl2 * self, P16 * pRetVal);
+    DWORD (JA_WINAPI * JA_SetIconPath)(ja_IAudioSessionControl2 * self, const P16 Value, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_GetGroupingParam)(ja_IAudioSessionControl2 * self, ja_GUID * pRetVal);
+    DWORD (JA_WINAPI * JA_SetGroupingParam)(ja_IAudioSessionControl2 * self, const ja_GUID * Override, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_RegisterAudioSessionNotification)(ja_IAudioSessionControl2 * self, ja_IAudioSessionEvents * NewNotifications);
+    DWORD (JA_WINAPI * JA_UnregisterAudioSessionNotification)(ja_IAudioSessionControl2 * self, ja_IAudioSessionEvents * NewNotifications);
+    
+    
+    
+    //AudioSessionControl2
+    
+    DWORD (JA_WINAPI * JA_GetSessionIdentifier)(ja_IAudioSessionControl2 * self, P16 * pRetVal);
+    DWORD (JA_WINAPI * JA_GetSessionInstanceIdentifier)(ja_IAudioSessionControl2 * self, P16 * pRetVal);
+    DWORD (JA_WINAPI * JA_GetProcessId)(ja_IAudioSessionControl2 * self, DWORD * pRetVal);
+    DWORD (JA_WINAPI * JA_IsSystemSoundsSession)(ja_IAudioSessionControl2 * self);
+    DWORD (JA_WINAPI * JA_SetDuckingPreference)(ja_IAudioSessionControl2 * self, DWORD optOut);
+    
+}ja_IAudioSessionControlVtbl;
+
 
 
 struct ja_IPropertyStore{
@@ -670,7 +742,8 @@ static const ja_IID JA_IID_IAudioClient3 = {0x7ED4EE07, 0x8E67, 0x4CD4, {0x8C, 0
 static const ja_IID JA_IID_IAudioRenderClient = {0xF294ACFC, 0x3146, 0x4483, {0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2}};
 static const ja_IID JA_IID_IAudioCaptureClient = {0xC8ADBD64, 0xE71E, 0x48A0, {0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17}};
 static const ja_IID JA_IID_IMMNotificationClient = {0x7991EEC9, 0x7E89, 0x4D85, {0x83, 0x90, 0x6C, 0x70, 0x3C, 0xEC, 0x60, 0xC0}};
-
+static const ja_IID JA_IID_IAudioSessionEvents = {0x24918ACC, 0x64B3, 0x37C1, {0x8C, 0xA9, 0x74, 0xA6, 0x6E, 0x99, 0x57, 0xA8}};
+static const ja_IID JA_IID_IAudioSessionControl2 = {0xBFB7FF88, 0x7239, 0x4FC9, {0x8F, 0xA2, 0x07, 0xC9, 0x50, 0xBE, 0x9C, 0x6D}};
 static const ja_IID IID_DEV_INTERFACE_AUDIO_RENDER = {0xE6327CAD, 0xDCEC, 0x4949, {0xAE, 0x8A, 0x99, 0x1E, 0x97, 0x6A, 0x79, 0xD2}};
 static const ja_IID IID_DEV_INTERFACE_AUDIO_CAPTURE = {0x2EEF81BE, 0x33FA, 0x4800, {0x96, 0x70, 0x1C, 0xD4, 0x74, 0x97, 0x2C, 0x3F}};
 
@@ -900,6 +973,7 @@ struct ja_DeviceDescriptor{
     ja_EDataFlow flow;
     ja_ERole role;
     ja_StreamCategory category;
+    DWORD periodicity;
 };
 
 
@@ -1013,10 +1087,135 @@ JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *
     proc->avrt_handle = avrt_module_handle;
     
     
-    
-    
     return JA_SUCCESS;
 }
+
+
+////////////////////////////////////// Callback Events /////////////////////////////////////////////
+
+DWORD JA_WINAPI JA_In_Session_QueryInterface(ja_IAudioSessionEvents * self, const ja_IID * const ref_iid, void ** object){
+    
+    if(JA_GUIDMatch(ref_iid, &JA_IID_IUnknown) || JA_GUIDMatch(ref_iid, &JA_IID_IAudioSessionEvents)){
+        
+        //JA_In_Session_AddRef(self);
+        *object = self;
+        
+        return 0;
+    }
+    
+    return 1;
+}
+
+DWORD JA_WINAPI JA_In_Session_AddRef(ja_IAudioSessionEvents * self){
+    return _InterlockedIncrement((long *)(&self->ref));
+}
+
+DWORD JA_WINAPI  JA_In_Session_Release(ja_IAudioSessionEvents * self){
+    DWORD ref = _InterlockedDecrement((long *)(&self->ref));
+    
+    if (ref){
+        return ref;
+    }
+    
+    //free(self); This will not work, since we are using our global allocator (linear)
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Session_OnDisplayNameChange(ja_IAudioSessionEvents * self, const P16 new_display_name, const ja_GUID event_context){
+    
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Session_OnIconPathChanged(ja_IAudioSessionEvents * self, const P16 new_icon_path, const ja_GUID * event_context){
+    
+    
+    return 0;
+}
+
+
+DWORD JA_WINAPI JA_In_Session_OnSimpleVolumeChanged(ja_IAudioSessionEvents * self, FLOAT32 new_volume, DWORD new_mute, const ja_GUID * event_context ){
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Session_OnChannelVolumeChanged(ja_IAudioSessionEvents * self, DWORD channel_count, FLOAT32 new_channel_volume_array[], DWORD changed_channel, const ja_GUID * event_context){
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Session_OnGroupingParamChanged(ja_IAudioSessionEvents * self, const ja_GUID * new_grouping_param, const ja_GUID * event_context){
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Session_OnStateChanged(ja_IAudioSessionEvents * self, ja_AudioSessionState new_state){
+    
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Session_OnSessionDisconnected(ja_IAudioSessionEvents * self, ja_SessionDisconnectReason disconnect_reason){
+    
+    return 0;
+}
+
+
+DWORD JA_WINAPI JA_In_Noti_QueryInterface(ja_IMMNotificationClient * self, const ja_IID * const ref_iid, void ** object){
+    
+    if (JA_GUIDMatch(ref_iid, &JA_IID_IUnknown) || JA_GUIDMatch(ref_iid, &JA_IID_IMMNotificationClient)){
+        //JA_In_Noti_AddRef(self);
+        *object = self;
+        return 0;
+    }
+    
+    return 1;
+}
+
+DWORD JA_WINAPI JA_In_Noti_AddRef(ja_IMMNotificationClient * self){
+    return _InterlockedIncrement((long*)(&self->ref));
+}
+
+DWORD JA_WINAPI JA_In_Noti_Release(ja_IMMNotificationClient * self){
+    DWORD ref = _InterlockedDecrement((long *)(&self->ref));
+    
+    if (ref){
+        return ref;
+    }
+    
+    //free(self); This will not work, since we are using our global allocator (linear) 
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Noti_OnDeviceStateChange(ja_IMMNotificationClient * self, const P16 str_device_id, DWORD new_state){
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Noti_OnDeviceAdded(ja_IMMNotificationClient * self, const P16 str_device_id){
+    
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Noti_OnDeviceRemoved(ja_IMMNotificationClient * self, const P16 str_device_id){
+    
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Noti_OnDefaultDeviceChanged(ja_IMMNotificationClient * self, ja_EDataFlow flow, ja_ERole role, const P16 str_default_device_id){
+    
+    return 0;
+}
+
+DWORD JA_WINAPI JA_In_Noti_OnPropertyValueChanged(ja_IMMNotificationClient * self, const P16 str_device_id, const ja_PropertyKey key){
+    
+    return 0;
+}
+
+
+///////////////////////////// Initialization /////////////////////////////
 
 
 BOOL32
@@ -1035,8 +1234,6 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res)
     proc->com.ja_CoInitializeEx(NULL, JA_COINIT_DEFAULT);
     proc->com.ja_CoCreateInstance(&JA_IID_IMMDeviceEnumerator, NULL, 0x04, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
     
-    
-    //Register Endpoint Notifaction callback, and Session Notification callback for stream rerouting.
     
     device_enumerator->vtbl->JA_GetDefaultAudioEndpoint(device_enumerator, desc->flow, desc->role, &endpoint_device);
     
@@ -1080,31 +1277,71 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res)
     
     audio_client->vtbl->JA_SetClientProperties(audio_client, &client_properties);
     
-    //Firstly we need to get the stream format for which the supported periodicities are queried. This will be the audio engine internal format. We are not using exlusive mode.
-    ja_WaveFormatex * previous_audio_engine_format = NULL;
-    DWORD previous_period_in_frame = 0;
+    ja_WaveFormatex* audio_engine_format = NULL;
     DWORD default_period_in_frame = 0;
     DWORD fundamental_period_in_frame = 0;
     DWORD min_period_in_frame = 0;
     DWORD max_period_in_frame = 0;
     
-    //Hopefully nothing changes the periodicity and/or format of the audio engine. (We must free the ja_WaveFormatex)
-    audio_client->vtbl->JA_GetCurrentSharedModeEnginePeriod(audio_client, &previous_audio_engine_format, &previous_period_in_frame);
-    audio_client->vtbl->JA_GetSharedModeEnginePeriod(audio_client, previous_audio_engine_format, &default_period_in_frame, &fundamental_period_in_frame, &min_period_in_frame, &max_period_in_frame);
+    audio_client->vtbl->JA_GetMixFormat(audio_client, &audio_engine_format);
+    audio_client->vtbl->JA_GetSharedModeEnginePeriod(audio_client, audio_engine_format, &default_period_in_frame, &fundamental_period_in_frame, &min_period_in_frame, &max_period_in_frame);
     
     
-    // buffer size (in 100-nanosecond units)
-    QWORD min_buffer_duration;
-    QWORD max_buffer_duration;
+    DWORD target_periodicity = desc->periodicity;
+    DWORD periodicity_difference = desc->periodicity & (fundamental_period_in_frame - 1);
     
-    audio_client->vtbl->JA_GetBufferSizeLimits(audio_client, previous_audio_engine_format, event_driven_mode_mask, &min_buffer_duration, &max_buffer_duration);
+    if(periodicity_difference){
+        target_periodicity += fundamental_period_in_frame - periodicity_difference;
+    }
     
+    target_periodicity = JA_Min(JA_Max(target_periodicity, min_period_in_frame), max_period_in_frame);
     
-    //TODO:Khal pass the target period_in_frame and clamp it to min_period_in_frame to max_period_in_frame. Also the target period_in_frame must be multiple of fundamental_period_in_frame. We are using default for now.
-    audio_client->vtbl->JA_InitializeSharedAudioStream(audio_client, JA_AUDCLNT_STREAMFLAGS_EVENTCALLBACK, default_period_in_frame, previous_audio_engine_format, NULL);
-    
+    audio_client->vtbl->JA_InitializeSharedAudioStream(audio_client, event_driven_mode_mask << 18, target_periodicity, audio_engine_format, NULL);
     
     //TODO:Khal We need to do template calculation to prevent any audio glitch. using the period_in_frames above.
+    DWORD target_periodicity_nanoseconds;
+    {
+        target_periodicity_nanoseconds = (target_periodicity * 1000000000) / audio_engine_format->samples_per_sec;
+    }
+    
+    //Register Endpoint Notifaction callback, and Session Notification callback for stream rerouting.
+    ja_IAudioSessionControl2 * session_control;
+    
+    //Would it break the code if i add meta data under the struct for the events? Allocate on global allocator on res.
+    //TODO:Khal use PushAllocate
+    ja_IMMNotificationClient * notification_client = JA_PushAllocate(res->global_allocator, sizeof(ja_IMMNotificationClient));
+    ja_IAudioSessionEvents * session_client = JA_PushAllocate(res->global_allocator, sizeof(ja_IAudioSessionEvents));
+    
+    
+    //Map the procedure of both ja_IMMNotification and ja_IAudioSessionEvents for stream rerouting in the scope block
+    {
+        //Callbacks
+        notification_client->vtbl->JA_QueryInterface = JA_In_Noti_QueryInterface;
+        
+        
+        
+        //Callbacks
+        
+        
+        //Call AddRef to both event obj
+        //session_client->vtbl->JA_AddRef(session_client);
+        //notification_client->vtbl->JA_AddRef(notification_client);
+    }
+    
+    //TODO: Create the synchronization primitives for stream rerouting, event mode audio, and possibly terminate loop and initialize the notification structures.
+    {
+        
+        
+        
+    }
+    
+    audio_client->vtbl->JA_GetService(audio_client, &JA_IID_IAudioSessionControl2,(void**)(&session_control));
+    
+    
+    
+    session_control->vtbl->JA_RegisterAudioSessionNotification(session_control, session_client);
+    device_enumerator->vtbl->JA_RegisterEndpointNotificationCallback(device_enumerator, notification_client);
+    
     
     
     
@@ -1125,7 +1362,6 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res)
     
     return JA_SUCCESS;
 }
-
 
 
 
