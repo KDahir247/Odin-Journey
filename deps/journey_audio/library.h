@@ -12,6 +12,7 @@
 2024-12-29 verify that InitContext work and rename. [Complete]
 2024-01-02 stub out Init Device where we initialize the device but not play it.
 2024-01-02 create a structure for the device initialization to pass to the engine.
+2024-01-06 fix the clang warning (123 warning) and confine coding to C99 ISO 
 */
 
 
@@ -1121,7 +1122,7 @@ DWORD JA_WINAPI  JA_In_Session_Release(ja_IAudioSessionEvents * self){
     return 0;
 }
 
-DWORD JA_WINAPI JA_In_Session_OnDisplayNameChange(ja_IAudioSessionEvents * self, const P16 new_display_name, const ja_GUID event_context){
+DWORD JA_WINAPI JA_In_Session_OnDisplayNameChanged(ja_IAudioSessionEvents * self, const P16 new_display_name, const ja_GUID event_context){
     
     
     return 0;
@@ -1308,24 +1309,35 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res)
     ja_IAudioSessionControl2 * session_control;
     
     //Would it break the code if i add meta data under the struct for the events? Allocate on global allocator on res.
-    //TODO:Khal use PushAllocate
     ja_IMMNotificationClient * notification_client = JA_PushAllocate(res->global_allocator, sizeof(ja_IMMNotificationClient));
     ja_IAudioSessionEvents * session_client = JA_PushAllocate(res->global_allocator, sizeof(ja_IAudioSessionEvents));
     
-    
-    //Map the procedure of both ja_IMMNotification and ja_IAudioSessionEvents for stream rerouting in the scope block
     {
-        //Callbacks
         notification_client->vtbl->JA_QueryInterface = JA_In_Noti_QueryInterface;
+        notification_client->vtbl->JA_AddRef = JA_In_Noti_AddRef;
+        notification_client->vtbl->JA_Release = JA_In_Noti_Release;
+        
+        notification_client->vtbl->JA_OnDeviceStateChanged = JA_In_Noti_OnDeviceStateChange;
+        notification_client->vtbl->JA_OnDeviceAdded = JA_In_Noti_OnDeviceAdded;
+        notification_client->vtbl->JA_OnDeviceRemoved = JA_In_Noti_OnDeviceRemoved;
+        notification_client->vtbl->JA_OnDefaultDeviceChanged = JA_In_Noti_OnDefaultDeviceChanged;
+        notification_client->vtbl->JA_OnPropertyValueChanged = JA_In_Noti_OnPropertyValueChanged;
         
         
+        session_client->vtbl->JA_QueryInterface = JA_In_Session_QueryInterface;
+        session_client->vtbl->JA_AddRef = JA_In_Session_AddRef;
+        session_client->vtbl->JA_Release = JA_In_Session_Release;
+        session_client->vtbl->JA_OnDisplayNameChanged = JA_In_Session_OnDisplayNameChanged;
+        session_client->vtbl->JA_OnIconPathChanged = JA_In_Session_OnIconPathChanged;
+        session_client->vtbl->JA_OnSimpleVolumeChanged = JA_In_Session_OnSimpleVolumeChanged;
+        session_client->vtbl->JA_OnChannelVolumeChanged = JA_In_Session_OnChannelVolumeChanged;
+        session_client->vtbl->JA_OnGroupingParamChanged = JA_In_Session_OnGroupingParamChanged;
+        session_client->vtbl->JA_OnStateChanged = JA_In_Session_OnStateChanged;
+        session_client->vtbl->JA_OnSessionDisconnected = JA_In_Session_OnSessionDisconnected;
         
-        //Callbacks
         
-        
-        //Call AddRef to both event obj
-        //session_client->vtbl->JA_AddRef(session_client);
-        //notification_client->vtbl->JA_AddRef(notification_client);
+        notification_client->vtbl->JA_AddRef(notification_client);
+        session_client->vtbl->JA_AddRef(session_client);
     }
     
     //TODO: Create the synchronization primitives for stream rerouting, event mode audio, and possibly terminate loop and initialize the notification structures.
