@@ -92,9 +92,7 @@ InitEngine (resampling, mixing and other buffer related things)
 
 #include <immintrin.h>
 #include <emmintrin.h>
-
-#include <stdio.h> //TODO: remove me to and remove printf calls
-
+#include <stdio.h>
 ////////////////////////////////////// TYPES //////////////////////////////////////
 
 typedef unsigned long long QWORD;
@@ -107,14 +105,14 @@ typedef const char * P8;
 typedef DWORD BOOL32;
 typedef QWORD BOOL64;
 
-typedef float FLOAT32;
-typedef double FLOAT64;
+typedef float SINGLE;
+typedef double DOUBLE;
 
 
 ////////////////////////////////////// CORE //////////////////////////////////////
 
-#define JA_LFORCE_INLINE static __forceinline
-#define JA_LINLINE static __inline
+#define JA_LFORCE_INLINE static inline
+#define IMPORT __declspec(dllimport)
 #define JA_WINAPI __stdcall
 #define JA_ALIGN(x) __attribute__ ((__aligned__ (x)))
 
@@ -123,8 +121,6 @@ typedef double FLOAT64;
 #define JA_MEGABYTE ((QWORD)(1) << 20)
 #define JA_GIGABYTE ((QWORD)(1) << 30)
 #define JA_TERABYTE ((QWORD)(1) << 40)
-
-typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 
 ///////////////////////////////////// WIN32 //////////////////////////////////////
 #define JA_SUCCESS 0x00000000
@@ -227,6 +223,7 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_COALESCE_PLACEHOLDERS 0x00000001
 #define JA_MEM_PRESERVE_PLACEHOLDER 0x00000002
 
+#define JA_FILE_MAP_ALL_ACCESS 0xF001F
 
 #define JA_PAGE_NOACCESS 0x01
 #define JA_PAGE_READONLY 0x02
@@ -246,6 +243,8 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_LOAD_WITH_ALTERED_SEARCH_PATH 0x00000008
 #define JA_LOAD_LIBRARY_REQUIRE_SIGNED_TARGET 0x00000080
 #define JA_LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+
+#define JA_CLSCTX_ALL = 0x00000017
 
 #define JA_GUIDMatch(x,y) !__builtin_memcpy(x,y, sizeof(ja_GUID)) 
 
@@ -318,6 +317,8 @@ typedef QWORD * (JA_WINAPI *JA_FARPROC)();
 #define JA_DEVICE_STATE_NOTPRESENT 0x0000000000000004
 #define JA_DEVICE_STATE_UNPLUGGED 0x0000000000000008
 #define JA_DEVICE_STATEMASK_ALL 0x000000000000000F
+
+#define JA_EVENTCALLBACK_FLAG 0x00040000
 
 //10ms
 #define JA_DEFAULT_BUFFER_SIZE_NANOSECOND 10000000
@@ -498,6 +499,7 @@ typedef enum ja_SessionDisconnectReason{
 
 typedef struct ja_IUnknown ja_IUnknown;
 typedef struct ja_WaveFormatex ja_WaveFormatex;
+typedef struct ja_WaveFormatexExtensible ja_WaveFormatexExtensible;
 typedef struct ja_IMMDeviceEnumerator ja_IMMDeviceEnumerator;
 typedef struct ja_IMMDeviceCollection ja_IMMDeviceCollection;
 typedef struct ja_IMMDevice ja_IMMDevice;
@@ -506,6 +508,7 @@ typedef struct ja_IPropertyStore ja_IPropertyStore;
 typedef struct ja_IAudioClient3 ja_IAudioClient3;
 typedef struct ja_IAudioSessionControl2 ja_IAudioSessionControl2;
 typedef struct ja_IAudioSessionEvents ja_IAudioSessionEvents;
+typedef struct ja_IMalloc ja_IMalloc;
 
 struct ja_IUnknown{
     struct ja_IUnknownVtbl * lpVtbl;
@@ -527,6 +530,19 @@ typedef struct ja_WaveFormatex{
     WORD bits_per_sample;
     WORD byte_size;
 }ja_WaveFormatex;
+
+typedef struct ja_WaveFormatexExtensible{
+    ja_WaveFormatex format;
+    
+    union{
+        WORD valid_bits_per_sample;
+        WORD samples_per_block;
+        WORD reserved;
+    }samples;
+    
+    DWORD channel_mask;
+    ja_GUID sub_format;
+}ja_WaveFormatexExtensible;
 
 
 typedef struct ja_AudioClientProperties{
@@ -618,8 +634,8 @@ typedef struct ja_IAudioSessionEventsVtbl{
     
     DWORD (JA_WINAPI * JA_OnDisplayNameChanged)(ja_IAudioSessionEvents * self, const P16 NewDisplayName,const ja_GUID * EventContext);
     DWORD (JA_WINAPI * JA_OnIconPathChanged)(ja_IAudioSessionEvents * self, const P16 NewIconPath, const ja_GUID * EventContext);
-    DWORD (JA_WINAPI * JA_OnSimpleVolumeChanged)(ja_IAudioSessionEvents * self, FLOAT32 NewVolume, DWORD NewMute, const ja_GUID * EventContext);
-    DWORD (JA_WINAPI * JA_OnChannelVolumeChanged)(ja_IAudioSessionEvents * self, DWORD ChannelCount, FLOAT32 NewChannelVolumeArray[], DWORD ChangedChannel, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_OnSimpleVolumeChanged)(ja_IAudioSessionEvents * self, SINGLE NewVolume, DWORD NewMute, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_OnChannelVolumeChanged)(ja_IAudioSessionEvents * self, DWORD ChannelCount, SINGLE NewChannelVolumeArray[], DWORD ChangedChannel, const ja_GUID * EventContext);
     DWORD (JA_WINAPI * JA_OnGroupingParamChanged)(ja_IAudioSessionEvents * self, const ja_GUID * NewGroupingParam, const ja_GUID * EventContext);
     DWORD (JA_WINAPI * JA_OnStateChanged)(ja_IAudioSessionEvents *  self, ja_AudioSessionState NewState);
     DWORD (JA_WINAPI * JA_OnSessionDisconnected)(ja_IAudioSessionEvents * self, ja_SessionDisconnectReason DisconnectReason);
@@ -717,6 +733,24 @@ typedef struct ja_IAudioClient3Vtbl{
 }ja_IAudioClient3Vtbl;
 
 
+struct ja_IMalloc{
+    struct ja_IMallocVtbl * vtbl;
+};
+
+typedef struct ja_IMallocVtbl{
+    DWORD (JA_WINAPI * JA_QueryInterface)(ja_IMalloc * self, const ja_IID * const riid, void ** ppvObject);
+    DWORD (JA_WINAPI * JA_AddRef)(ja_IMalloc * self);
+    DWORD (JA_WINAPI * JA_Release)(ja_IMalloc * self);
+    
+    void * (JA_WINAPI * JA_Alloc)(ja_IMalloc * self, QWORD size);
+    BOOL32 (JA_WINAPI * JA_DidAlloc)(ja_IMalloc * self, void * pv);
+    void (JA_WINAPI * JA_Free)(ja_IMalloc * self, void * pv);
+    QWORD (JA_WINAPI * JA_GetSize)(ja_IMalloc * self, void * pv);
+    void (JA_WINAPI * JA_HeapMinimize)(ja_IMalloc * self);
+    void * (JA_WINAPI * JA_Realloc)(ja_IMalloc * self, void * pv, QWORD size);
+}ja_IMallocVtbl;
+
+
 static const ja_PropertyKey JA_PKEY_Device_FriendlyName = {{0xA45C254E, 0xDF1C, 0x4EFD, {0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0}}, 0x0E};
 
 static const ja_PropertyKey JA_PKEY_AudioEngine_DeviceFormat = {{0xf19f064d,0x82c,0x4e27, {0xbc, 0x73, 0x68, 0x82, 0xa1, 0xbb, 0x8e, 0x4c}}, 0x0};
@@ -754,106 +788,113 @@ static const ja_IID JA_IID_IMMDeviceEnumerator = {0xA95664D2, 0x9614, 0x4F35, {0
 static const ja_GUID JA_KSDATAFORMAT_SUBTYPE_PCM = {0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
 static const ja_GUID JA_KSDATA_FORMAT_SUBTYPE_IEEE_FLOAT = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 } };
 
+static const ja_HandleO JA_NULL_HANDLE = {0};
+static const ja_HandleO JA_INVALID_HANDLE = {0xFFFFFFFFFFFFFFFF};
+
+static ja_IMMNotificationClient ja_NotificationClient;
+static ja_IAudioSessionEvents ja_SessionEvents;
+
+IMPORT void* JA_WINAPI MapViewOfFileEx(
+                                       ja_HandleO hFileMappingObject,
+                                       DWORD  dwDesiredAccess,
+                                       DWORD  dwFileOffsetHigh,
+                                       DWORD  dwFileOffsetLow,
+                                       QWORD dwNumberOfBytesToMap,
+                                       void * lpBaseAddress
+                                       );
+
+IMPORT BOOL32 JA_WINAPI VirtualLock(
+                                    void* lpAddress,
+                                    QWORD dwSize
+                                    );
+
+IMPORT BOOL32 JA_WINAPI VirtualUnlock(
+                                      void* lpAddress,
+                                      QWORD dwSize
+                                      );
+
+IMPORT void* JA_WINAPI VirtualAlloc(
+                                    void* lpAddress,
+                                    QWORD dwSize,
+                                    DWORD  flAllocationType,
+                                    DWORD  flProtect
+                                    );
+
+
+IMPORT BOOL32 JA_WINAPI VirtualFree(
+                                    void* lpAddress,
+                                    QWORD dwSize,
+                                    DWORD  dwFreeType
+                                    );
+
+IMPORT BOOL32 JA_WINAPI UnmapViewOfFile(
+                                        const void* lpBaseAddress
+                                        );
+
+IMPORT ja_HandleO JA_WINAPI CreateFileMappingW(
+                                               ja_HandleO hFile,
+                                               void* lpFileMappingAttributes,
+                                               DWORD flProtect,
+                                               DWORD dwMaximumSizeHigh,
+                                               DWORD dwMaximumSizeLow,
+                                               const P16 lpName
+                                               );
+
+IMPORT ja_HandleO JA_WINAPI LoadLibraryW(
+                                         const P16 lib_name
+                                         );
+
+IMPORT BOOL32 JA_WINAPI FreeLibrary(
+                                    ja_HandleO lib_module
+                                    );
+
+IMPORT void* JA_WINAPI GetProcAddress(
+                                      ja_HandleO lib_module,
+                                      const P8 proc_name
+                                      );
+
+IMPORT BOOL32 JA_WINAPI CloseHandle(
+                                    ja_HandleO handle
+                                    );
 
 //Ole32
 typedef DWORD (JA_WINAPI * CoInitializeEx)(void * pv_reserved, DWORD dw_coinit);
 typedef DWORD (JA_WINAPI * CoCreateInstance)(const ja_IID * const ref_clsid, ja_IUnknown * unknown_outer, DWORD cls_context, const ja_IID * const iid, void * ppv);
-typedef void (JA_WINAPI * CoUninitialize)();
-typedef void * (JA_WINAPI * CoTaskMemAlloc)(QWORD mem_size);
-typedef void (JA_WINAPI * CoTaskMemFree)(void * mem_block);
-typedef DWORD (JA_WINAPI * FreePropVariantArray)(DWORD count, ja_PropVariant * prop_variants);
-typedef DWORD (JA_WINAPI * PropVariantClear)(ja_PropVariant * prop_variant);
-typedef DWORD (JA_WINAPI * PropVariantCopy)(ja_PropVariant * dst_prop_variant, const ja_PropVariant * src_prop_variant);
+typedef void (JA_WINAPI * CoUninitialize)(void);
+typedef DWORD (JA_WINAPI * CoGetMalloc)(DWORD dwMemContext, ja_IMalloc ** ppMalloc);
 
 //Avrt
 typedef ja_HandleO (JA_WINAPI * AvSetMmThreadCharacteristicsW)(P16 task_name, DWORD * task_index);
 typedef BOOL32 (JA_WINAPI * AvRevertMmThreadCharacteristics)(ja_HandleO avrt_handle);
 typedef BOOL32 (JA_WINAPI * AvSetMmThreadPriority)(ja_HandleO avrt_handle, DWORD priority);
-typedef BOOL32 (JA_WINAPI * AvQuerySystemResponsiveness)(ja_HandleO avrt_handle, DWORD * sys_responsive);
 
-//KernelBase
-typedef void * (JA_WINAPI * VirtualAlloc2)(ja_HandleO process, void * base_address, QWORD size, DWORD type, DWORD protection, ja_MemExtendedParameter * extended_parameters, DWORD parameter_count);
-typedef ja_HandleO (JA_WINAPI * CreateFileMappingW)(ja_HandleO h_file, void* attributes, DWORD fl_protect, 
-                                                    DWORD max_size_high, DWORD max_size_low, P16 name);
-typedef void * (JA_WINAPI * MapViewOfFile3)(ja_HandleO file_mapping, ja_HandleO process, void * base_address, QWORD offset, QWORD view_size, DWORD allocation_type, DWORD page_protection, ja_MemExtendedParameter * extended_parameters, DWORD parameter_count);
-typedef BOOL32 (JA_WINAPI * UnmapViewOfFileEx)(const void * base_address, DWORD unmap_flags);
-typedef BOOL32 (JA_WINAPI * VirtualFree)(void * address, QWORD size, DWORD free_type);
-typedef BOOL32 (JA_WINAPI * VirtualLock)(void * address, QWORD size);
-typedef BOOL32 (JA_WINAPI * VirtualUnlock)(void * address, QWORD size);
 
-//Kernel32
-ja_HandleO JA_WINAPI LoadLibraryW(const P16 lib_name);
-BOOL32 JA_WINAPI FreeLibrary(ja_HandleO lib_module);
-JA_FARPROC JA_WINAPI GetProcAddress(ja_HandleO lib_module,  const P8 proc_name);
-BOOL32 JA_WINAPI CloseHandle(ja_HandleO handle);
-
+//TODO:Khal can we move handle to the bottom of the struct.
 struct ja_WinCOM{
+    ja_HandleO handle;
     CoInitializeEx ja_CoInitializeEx;
     CoCreateInstance ja_CoCreateInstance;
     CoUninitialize ja_CoUninitialize;
-    CoTaskMemAlloc ja_CoTaskMemAlloc;
-    CoTaskMemFree ja_CoTaskMemFree;
-    FreePropVariantArray ja_FreePropVariantArray;
-    PropVariantClear ja_PropVariantClear;
-    PropVariantCopy ja_PropVariantCopy;
 };
 
 struct ja_WinAvrt{
+    ja_HandleO handle;
     AvSetMmThreadCharacteristicsW ja_AvSetMmThreadCharacteristicsW;
     AvRevertMmThreadCharacteristics ja_AvRevertMmThreadCharacteristics;
-    AvSetMmThreadPriority ja_AvSetMmThreadPriority;
-    AvQuerySystemResponsiveness ja_AvQuerySystemResponsiveness;
 };
-
-struct ja_WinMem{
-    VirtualAlloc2 ja_VirtualAlloc2;
-    CreateFileMappingW ja_CreateFileMappingW;
-    MapViewOfFile3 ja_MapViewOfFile3;
-    UnmapViewOfFileEx ja_UnmapViewOfFileEx;
-    VirtualFree ja_VirtualFree;
-    VirtualLock ja_VirtualLock;
-    VirtualUnlock ja_VirtualUnlock;
-    QWORD _unused_;
-};
-
 
 struct ja_Proc{
-    struct ja_WinMem mem;
     struct ja_WinCOM com;
-    struct ja_WinAvrt avrt;
-    
-    ja_HandleO kernelbase_handle;
-    ja_HandleO ole32_handle;
-    ja_HandleO avrt_handle;
-    QWORD _unused_;
+    //struct ja_WinAvrt avrt;
 };
 
-JA_LFORCE_INLINE ja_HandleO
-JA_LoadLibrary(const P16 lib_name){
-    return LoadLibraryW(lib_name);
-}
-
-JA_LFORCE_INLINE BOOL32
-JA_FreeLibrary(ja_HandleO lib_module){
-    return FreeLibrary(lib_module);
-}
-
-JA_LFORCE_INLINE JA_FARPROC
-JA_GetProcAddress(ja_HandleO lib_module, const P8 proc_name){
-    return GetProcAddress(lib_module, proc_name);
-}
-
-JA_LFORCE_INLINE BOOL32
-JA_CloseHandle(ja_HandleO handle){
-    return CloseHandle(handle);
-}
-
-JA_LFORCE_INLINE BOOL32
+//TODO:Khal should we make this an array of 64 function (IsNotPowerOfTwo, IsNotAligned)
+JA_LFORCE_INLINE BOOL64
 JA_IsNotPowerOfTwo(QWORD x){
     return (x & (x - 1));
 }
 
-JA_LFORCE_INLINE BOOL32
+JA_LFORCE_INLINE BOOL64
 JA_IsNotAligned(QWORD x, const QWORD alignment){
     QWORD modulo = alignment - 1;
     
@@ -883,22 +924,12 @@ JA_RoundUpPowerTwo(QWORD x){
 
 JA_LFORCE_INLINE QWORD
 JA_Max(QWORD x, QWORD y){
-    
-    if((x-y)<0){
-        return y;
-    }
-    
-    return x;
+    return x > y ? x : y;
 }
 
 JA_LFORCE_INLINE QWORD
 JA_Min(QWORD x, QWORD y){
-    
-    if((x-y) >0){
-        return y;
-    }
-    
-    return x;
+    return x < y ? x : y;
 }
 
 struct ja_StaticAllocator{
@@ -929,7 +960,7 @@ JA_PopAllocate(struct ja_StaticAllocator * allocator, QWORD size){
 
 JA_LFORCE_INLINE void
 JA_SetAlignerAllocate(struct ja_StaticAllocator * allocator, QWORD alignment){
-    allocator->alignment = alignment;
+    allocator->alignment = JA_Min(alignment, 8);
     
     if (JA_IsNotPowerOfTwo(alignment)){
         allocator->alignment = JA_RoundUpPowerTwo(alignment);
@@ -942,6 +973,9 @@ JA_ClearAllocate(struct ja_StaticAllocator * allocator){
     
 }
 
+JA_LFORCE_INLINE struct ja_Proc * JA_GetProcedure(struct ja_StaticAllocator * allocator){
+    return (struct ja_Proc *)(allocator + 0x0000000000000001);
+}
 
 struct ja_RingBuffer{
     void * buffer;
@@ -953,22 +987,15 @@ struct ja_RingBuffer{
 struct ja_Resource{
     struct ja_StaticAllocator * global_allocator;
     struct ja_RingBuffer ring;
+    ja_IMalloc * com_allocator;
 };
 
 struct ja_MemoryDescriptor{
-    QWORD static_reserve;
-    QWORD static_commit;
-    QWORD ring_size;
-    QWORD ring_repetition;
+    DWORD static_reserve;
+    DWORD static_commit;
+    DWORD ring_size;
+    DWORD _unused_;
 };
-
-//TODO: Not used
-struct ja_AudioDescriptor{
-    QWORD ring_period;
-    DWORD mask;
-    DWORD category;
-};
-
 
 struct ja_DeviceDescriptor{
     ja_EDataFlow flow;
@@ -977,120 +1004,12 @@ struct ja_DeviceDescriptor{
     DWORD periodicity;
 };
 
+/////////////////////////////////////// Proc  Signature //////////////////////////////////////////// 
 
-BOOL32 
-JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res){
-    //Remeber zero is initialization.
-    
-    //Rather then pass a Context we can pass the allocator and just get the value in the static allocator.
-    struct ja_Proc * proc = NULL;
-    struct ja_StaticAllocator * allocator = NULL;
-    struct ja_RingBuffer * ring = NULL;
-    
-    DWORD current_csr_flag = _mm_getcsr();
-    _mm_setcsr(current_csr_flag | JA_FLUSH_ZERO_ENABLE | JA_DENORMALS_ENABLE);
-    
-    ja_HandleO kernelbase_module_handle = {};
-    ja_HandleO ole32_module_handle = {};
-    ja_HandleO avrt_module_handle = {};
-    
-    struct ja_WinMem win_mem_proc = {};
-    struct ja_WinCOM win_com_proc = {};
-    struct ja_WinAvrt win_avrt_proc = {};
-    
-    //Loading library.
-    {
-        
-        kernelbase_module_handle = JA_LoadLibrary(L"KernelBase.dll");
-        ole32_module_handle = JA_LoadLibrary(L"ole32.dll");
-        avrt_module_handle = JA_LoadLibrary(L"avrt.dll");
-        
-        //KernelBase.dll (Memory)
-        win_mem_proc.ja_VirtualAlloc2 = (VirtualAlloc2)JA_GetProcAddress(kernelbase_module_handle, "VirtualAlloc2");
-        win_mem_proc.ja_CreateFileMappingW = (CreateFileMappingW)JA_GetProcAddress(kernelbase_module_handle, "CreateFileMappingW");
-        win_mem_proc.ja_MapViewOfFile3 = (MapViewOfFile3)JA_GetProcAddress(kernelbase_module_handle, "MapViewOfFile3");
-        win_mem_proc.ja_UnmapViewOfFileEx = (UnmapViewOfFileEx)JA_GetProcAddress(kernelbase_module_handle, "UnmapViewOfFileEx");
-        win_mem_proc.ja_VirtualFree = (VirtualFree)JA_GetProcAddress(kernelbase_module_handle, "VirtualFree");
-        win_mem_proc.ja_VirtualLock = (VirtualLock)JA_GetProcAddress(kernelbase_module_handle, "VirtualLock");
-        win_mem_proc.ja_VirtualUnlock = (VirtualUnlock)JA_GetProcAddress(kernelbase_module_handle, "virtualUnlock");
-        
-        //ole32.dll (COM)
-        win_com_proc.ja_CoInitializeEx = (CoInitializeEx)JA_GetProcAddress(ole32_module_handle, "CoInitializeEx");
-        win_com_proc.ja_CoCreateInstance = (CoCreateInstance)JA_GetProcAddress(ole32_module_handle, "CoCreateInstance");
-        win_com_proc.ja_CoUninitialize = (CoUninitialize)JA_GetProcAddress(ole32_module_handle, "CoUninitialize");
-        win_com_proc.ja_CoTaskMemAlloc = (CoTaskMemAlloc)JA_GetProcAddress(ole32_module_handle, "CoTaskMemAlloc");
-        win_com_proc.ja_CoTaskMemFree = (CoTaskMemFree)JA_GetProcAddress(ole32_module_handle, "CoTaskMemFree");
-        win_com_proc.ja_FreePropVariantArray =  (FreePropVariantArray)JA_GetProcAddress(ole32_module_handle, "FreePropVariantArray");
-        win_com_proc.ja_PropVariantClear = (PropVariantClear)JA_GetProcAddress(ole32_module_handle, "PropVariantClear");
-        win_com_proc.ja_PropVariantCopy = (PropVariantCopy)JA_GetProcAddress(ole32_module_handle, "PropVariantCopy");
-        
-        //TODO:Khal maybe use rtwq rather then avrt.
-        //avrt.dll (MMCSS)
-        win_avrt_proc.ja_AvSetMmThreadCharacteristicsW = (AvSetMmThreadCharacteristicsW)JA_GetProcAddress(avrt_module_handle, "AvSetMmThreadCharacteristicsW");
-        win_avrt_proc.ja_AvRevertMmThreadCharacteristics = (AvRevertMmThreadCharacteristics)JA_GetProcAddress(avrt_module_handle, "AvRevertMmThreadCharacteristics");
-        win_avrt_proc.ja_AvSetMmThreadPriority = (AvSetMmThreadPriority)JA_GetProcAddress(avrt_module_handle, "AvSetMmThreadPriority");
-        win_avrt_proc.ja_AvQuerySystemResponsiveness = (AvQuerySystemResponsiveness)JA_GetProcAddress(avrt_module_handle, "AvQuerySystemResponsiveness");
-        
-    }
-    
-    
-    {
-        //Static Allocator
-        QWORD reservation = (mem_desc->static_reserve + JA_ALLOCATION_GRANULARITY - 1) >> 16 ;
-        QWORD pages = (mem_desc->static_commit + JA_PAGESIZE - 1) >> 12;
-        
-        
-        QWORD target_reserve_size = reservation << 16;
-        QWORD target_commit_size = pages << 12;
-        
-        void * reserved_ptr = win_mem_proc.ja_VirtualAlloc2((ja_HandleO){.opaque = 0}, NULL, target_reserve_size, JA_MEM_RESERVE, JA_PAGE_READWRITE, NULL, 0);
-        void * ptr = win_mem_proc.ja_VirtualAlloc2((ja_HandleO){.opaque = 0}, reserved_ptr, target_commit_size, JA_MEM_COMMIT, JA_PAGE_READWRITE, NULL, 0);
-        
-        allocator = (struct ja_StaticAllocator *)ptr;
-        allocator->offset = sizeof(struct ja_StaticAllocator);
-        allocator->alignment = 8;
-        allocator->commit = target_commit_size;
-        allocator->reserved = target_reserve_size;
-        
-        
-        QWORD buffer_backend_size = JA_ALLOCATION_GRANULARITY  * ((mem_desc->ring_size + 65535) >> 16);
-        QWORD buffer_virtual_size = mem_desc->ring_repetition * buffer_backend_size;
-        
-        DWORD high_buffer_size = (buffer_backend_size >> 32) & 0xFFFFFFFF;
-        DWORD low_buffer_size = buffer_backend_size & 0xFFFFFFFF;
-        
-        ja_HandleO backend_mapping = win_mem_proc.ja_CreateFileMappingW((ja_HandleO){.opaque = -1}, NULL, JA_PAGE_READWRITE, high_buffer_size, low_buffer_size, NULL);
-        
-        BYTE* ring_buffer = win_mem_proc.ja_VirtualAlloc2((ja_HandleO){.opaque = 0}, NULL, buffer_virtual_size, JA_MEM_RESERVE | JA_MEM_RESERVE_PLACEHOLDER, JA_PAGE_NOACCESS, NULL, 0);
-        
-        
-        for (QWORD repetition_index = 0; repetition_index < mem_desc->ring_repetition; repetition_index++){
-            
-            win_mem_proc.ja_VirtualFree(ring_buffer + repetition_index * buffer_backend_size, buffer_backend_size, JA_MEM_RELEASE | JA_MEM_PRESERVE_PLACEHOLDER);
-            win_mem_proc.ja_MapViewOfFile3(backend_mapping, (ja_HandleO){.opaque = 0}, ring_buffer + repetition_index * buffer_backend_size, 0, buffer_backend_size, JA_MEM_REPLACE_PLACEHOLDER, JA_PAGE_READWRITE, NULL, 0);
-            
-        }
-        
-        ring->buffer = ring_buffer;
-        ring->size =  buffer_virtual_size;
-        ring->write_index = 0;
-        ring->read_index = 0;
-    }
-    
-    proc = JA_PushAllocate(allocator, sizeof(struct ja_Proc));
-    
-    proc->mem = win_mem_proc;
-    proc->com = win_com_proc;
-    proc->avrt = win_avrt_proc;
-    
-    proc->kernelbase_handle = kernelbase_module_handle;
-    proc->ole32_handle = ole32_module_handle;
-    proc->avrt_handle = avrt_module_handle;
-    
-    
-    return JA_SUCCESS;
-}
-
+BOOL32
+JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res);
+BOOL32
+JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res);
 
 ////////////////////////////////////// Callback Events /////////////////////////////////////////////
 
@@ -1135,12 +1054,12 @@ DWORD JA_WINAPI JA_In_Session_OnIconPathChanged(ja_IAudioSessionEvents * self, c
 }
 
 
-DWORD JA_WINAPI JA_In_Session_OnSimpleVolumeChanged(ja_IAudioSessionEvents * self, FLOAT32 new_volume, DWORD new_mute, const ja_GUID * event_context ){
+DWORD JA_WINAPI JA_In_Session_OnSimpleVolumeChanged(ja_IAudioSessionEvents * self, SINGLE new_volume, DWORD new_mute, const ja_GUID * event_context ){
     
     return 0;
 }
 
-DWORD JA_WINAPI JA_In_Session_OnChannelVolumeChanged(ja_IAudioSessionEvents * self, DWORD channel_count, FLOAT32 new_channel_volume_array[], DWORD changed_channel, const ja_GUID * event_context){
+DWORD JA_WINAPI JA_In_Session_OnChannelVolumeChanged(ja_IAudioSessionEvents * self, DWORD channel_count, SINGLE new_channel_volume_array[], DWORD changed_channel, const ja_GUID * event_context){
     
     return 0;
 }
@@ -1218,142 +1137,280 @@ DWORD JA_WINAPI JA_In_Noti_OnPropertyValueChanged(ja_IMMNotificationClient * sel
 
 ///////////////////////////// Initialization /////////////////////////////
 
+BOOL32
+JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res){
+    struct ja_StaticAllocator * global_ptr;
+    ja_IMalloc * com_alloc; 
+    BYTE * ring_buffer;
+    QWORD global_reservation_size;
+    QWORD global_page_size;
+    QWORD ring_buffer_backend_size;
+    
+    ring_buffer = NULL;
+    
+    global_reservation_size = ((mem_desc->static_reserve >> 16) + 1) << 16;
+    global_page_size = ((mem_desc->static_commit >> 12) + 1) << 12;
+    
+    ring_buffer_backend_size = ((mem_desc->ring_size >> 16) + 1) << 16;
+    
+    global_ptr = VirtualAlloc(NULL, global_reservation_size, JA_MEM_RESERVE, JA_PAGE_READWRITE);
+    global_ptr =  (struct ja_StaticAllocator*)VirtualAlloc(global_ptr, global_page_size, JA_MEM_COMMIT, JA_PAGE_READWRITE);
+    
+    {
+        struct ja_Proc * dynamic_procedure;
+        
+        dynamic_procedure = (struct ja_Proc*)JA_PushAllocate(global_ptr, sizeof(struct ja_Proc));
+        
+        dynamic_procedure->com.handle = LoadLibraryW(L"ole32.dll");
+        
+        //ole32.dll (COM)
+        dynamic_procedure->com.ja_CoInitializeEx = (CoInitializeEx)GetProcAddress(dynamic_procedure->com.handle, "CoInitializeEx");
+        dynamic_procedure->com.ja_CoCreateInstance = (CoCreateInstance)GetProcAddress(dynamic_procedure->com.handle, "CoCreateInstance");
+        dynamic_procedure->com.ja_CoUninitialize = (CoUninitialize)GetProcAddress(dynamic_procedure->com.handle, "CoUninitialize");
+        
+        {
+            CoGetMalloc com_global_allocator;
+            
+            com_global_allocator = (CoGetMalloc)GetProcAddress(dynamic_procedure->com.handle, "CoGetMalloc");
+            com_global_allocator(1, &com_alloc);
+        }
+        
+        //TODO:Khal other function that we need that isn't a part of Kernel32. refer to (https://www.geoffchappell.com/studies/windows/win32/kernel32/api/index.htm)
+        //proc->avrt.handle = JA_LoadLibrary(L"avrt.dll");
+        
+        //TODO:Khal maybe use rtwq rather then avrt.
+        //avrt.dll (MMCSS)
+        //proc->avrt.ja_AvSetMmThreadCharacteristicsW = (AvSetMmThreadCharacteristicsW)JA_GetProcAddress(proc->avrt.handle, "AvSetMmThreadCharacteristicsW");
+        //proc->avrt.ja_AvRevertMmThreadCharacteristics = (AvRevertMmThreadCharacteristics)JA_GetProcAddress(proc->avrt.handle, "AvRevertMmThreadCharacteristics");
+    }
+    
+    {
+        ja_HandleO backend_mapping;
+        BOOL32 stolen_mapping;
+        
+        stolen_mapping = 0;
+        backend_mapping = CreateFileMappingW(JA_NULL_HANDLE, NULL, JA_PAGE_READWRITE, 0, (DWORD)(ring_buffer_backend_size), NULL);
+        
+        for(QWORD attempt = 0; attempt < 100; attempt++){
+            
+            ring_buffer = VirtualAlloc(NULL, ring_buffer_backend_size << 2, JA_MEM_RESERVE, JA_PAGE_NOACCESS);
+            VirtualFree(ring_buffer, 0, JA_MEM_RELEASE);
+            
+            for (QWORD repetition_index = 0; repetition_index < 4; repetition_index++){
+                if (!MapViewOfFileEx(backend_mapping,JA_FILE_MAP_ALL_ACCESS, 0, 0,ring_buffer_backend_size, ring_buffer + repetition_index * ring_buffer_backend_size)){
+                    stolen_mapping = 1;
+                    break;
+                }
+            }
+            
+            if (stolen_mapping){
+                for (QWORD repetition_index = 0; repetition_index < 4; repetition_index++){
+                    UnmapViewOfFile(ring_buffer + repetition_index * ring_buffer_backend_size);
+                }
+                continue;
+            }
+            
+            break;
+        }
+        
+    }
+    
+    {
+        global_ptr->offset = sizeof(struct ja_StaticAllocator);
+        global_ptr->alignment = JA_DEFAULT_ALIGNMENT;
+        global_ptr->commit = global_page_size;
+        global_ptr->reserved = global_reservation_size;
+        
+        res->global_allocator = global_ptr;
+        
+        res->ring.buffer = ring_buffer;
+        res->ring.size =  ring_buffer_backend_size;
+        res->ring.write_index = 0;
+        res->ring.read_index = 0;
+        
+        res->com_allocator = com_alloc;
+        
+    }
+    
+    return JA_SUCCESS;
+}
+
 
 BOOL32
 JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res){
-    
+    struct ja_Proc * procedure;
     ja_IMMDeviceEnumerator * device_enumerator;
     ja_IMMDevice * endpoint_device;
-    ja_IPropertyStore * property_store;
     ja_IAudioClient3 * audio_client;
-    
-    ja_PropVariant prop_variant = {};
-    
-    BYTE * alloc = (BYTE *)(res->global_allocator);
-    struct ja_Proc * proc = (struct ja_Proc *)(alloc + sizeof(struct ja_StaticAllocator));
-    
-    proc->com.ja_CoInitializeEx(NULL, JA_COINIT_DEFAULT);
-    proc->com.ja_CoCreateInstance(&JA_IID_IMMDeviceEnumerator, NULL, 0x04, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
-    
-    
-    device_enumerator->vtbl->JA_GetDefaultAudioEndpoint(device_enumerator, desc->flow, desc->role, &endpoint_device);
-    
-    DWORD apo_enable_mask = 0x01;
-    DWORD event_driven_mode_mask = 0x01;
-    DWORD apo_offloading_mask = 0x00;
-    
-    
-    endpoint_device->vtbl->JA_OpenPropertyStore(endpoint_device, JA_STGM_READ, &property_store);
-    property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Disable_SysFx, &prop_variant);
-    
-    if (prop_variant.vt == VT_UI4){
-        apo_enable_mask &= ~prop_variant.dval;
-    }
-    
-    proc->com.ja_PropVariantClear(&prop_variant);
-    
-    property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Supports_EventDriven_Mode, &prop_variant);
-    
-    if (prop_variant.vt == VT_UI4){
-        event_driven_mode_mask = prop_variant.dval;
-    }
-    
-    endpoint_device->vtbl->JA_Activate(endpoint_device, &JA_IID_IAudioClient3, 0x04, NULL,(void **)&audio_client);
-    
-    if (apo_enable_mask){
-        audio_client->vtbl->JA_IsOffloadingCapable(audio_client, desc->category, &apo_offloading_mask);
-        apo_enable_mask &= apo_offloading_mask;
-    }
-    
-    //Starting with Windows 10 hardware offloaded audio stream must be event driven.
-    event_driven_mode_mask |= apo_enable_mask;
-    
-    //Either NONE or MATCH_FORMAT 
-    ja_AudioClientProperties client_properties = {
-        sizeof(ja_AudioClientProperties),
-        apo_enable_mask,
-        desc->category,
-        None,
-    };
-    
-    audio_client->vtbl->JA_SetClientProperties(audio_client, &client_properties);
-    
-    ja_WaveFormatex* audio_engine_format = NULL;
-    DWORD default_period_in_frame = 0;
-    DWORD fundamental_period_in_frame = 0;
-    DWORD min_period_in_frame = 0;
-    DWORD max_period_in_frame = 0;
-    
-    audio_client->vtbl->JA_GetMixFormat(audio_client, &audio_engine_format);
-    audio_client->vtbl->JA_GetSharedModeEnginePeriod(audio_client, audio_engine_format, &default_period_in_frame, &fundamental_period_in_frame, &min_period_in_frame, &max_period_in_frame);
-    
-    
-    DWORD target_periodicity = desc->periodicity;
-    DWORD periodicity_difference = desc->periodicity & (fundamental_period_in_frame - 1);
-    
-    if(periodicity_difference){
-        target_periodicity += fundamental_period_in_frame - periodicity_difference;
-    }
-    
-    target_periodicity = JA_Min(JA_Max(target_periodicity, min_period_in_frame), max_period_in_frame);
-    
-    audio_client->vtbl->JA_InitializeSharedAudioStream(audio_client, event_driven_mode_mask << 18, target_periodicity, audio_engine_format, NULL);
-    
-    //TODO:Khal We need to do template calculation to prevent any audio glitch. using the period_in_frames above.
-    DWORD target_periodicity_nanoseconds;
-    {
-        target_periodicity_nanoseconds = (target_periodicity * 1000000000) / audio_engine_format->samples_per_sec;
-    }
-    
-    //Register Endpoint Notifaction callback, and Session Notification callback for stream rerouting.
     ja_IAudioSessionControl2 * session_control;
     
-    //Would it break the code if i add meta data under the struct for the events? Allocate on global allocator on res.
-    ja_IMMNotificationClient * notification_client = JA_PushAllocate(res->global_allocator, sizeof(ja_IMMNotificationClient));
-    ja_IAudioSessionEvents * session_client = JA_PushAllocate(res->global_allocator, sizeof(ja_IAudioSessionEvents));
+    procedure = JA_GetProcedure(res->global_allocator);
+    
+    procedure->com.ja_CoInitializeEx(NULL, JA_COINIT_DEFAULT);
+    procedure->com.ja_CoCreateInstance(&JA_IID_IMMDeviceEnumerator, NULL, JA_CLSCTX_ALL, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
+    
+    device_enumerator->vtbl->JA_GetDefaultAudioEndpoint(device_enumerator, desc->flow, desc->role, &endpoint_device);
+    endpoint_device->vtbl->JA_Activate(endpoint_device, &JA_IID_IAudioClient3, 0x04, NULL,(void **)&audio_client);
     
     {
-        notification_client->vtbl->JA_QueryInterface = JA_In_Noti_QueryInterface;
-        notification_client->vtbl->JA_AddRef = JA_In_Noti_AddRef;
-        notification_client->vtbl->JA_Release = JA_In_Noti_Release;
+        ja_IPropertyStore * property_store;
+        ja_PropVariant prop_variant;
         
-        notification_client->vtbl->JA_OnDeviceStateChanged = JA_In_Noti_OnDeviceStateChange;
-        notification_client->vtbl->JA_OnDeviceAdded = JA_In_Noti_OnDeviceAdded;
-        notification_client->vtbl->JA_OnDeviceRemoved = JA_In_Noti_OnDeviceRemoved;
-        notification_client->vtbl->JA_OnDefaultDeviceChanged = JA_In_Noti_OnDefaultDeviceChanged;
-        notification_client->vtbl->JA_OnPropertyValueChanged = JA_In_Noti_OnPropertyValueChanged;
+        BOOL32 apo_enabled_mask;
+        BOOL32 event_driven_mode_mask;
+        BOOL32 apo_offloading_mask;
         
+        apo_enabled_mask = 0x00000000;
+        event_driven_mode_mask = 0x00000000;
+        apo_offloading_mask = 0x00000000;
         
-        session_client->vtbl->JA_QueryInterface = JA_In_Session_QueryInterface;
-        session_client->vtbl->JA_AddRef = JA_In_Session_AddRef;
-        session_client->vtbl->JA_Release = JA_In_Session_Release;
-        session_client->vtbl->JA_OnDisplayNameChanged = JA_In_Session_OnDisplayNameChanged;
-        session_client->vtbl->JA_OnIconPathChanged = JA_In_Session_OnIconPathChanged;
-        session_client->vtbl->JA_OnSimpleVolumeChanged = JA_In_Session_OnSimpleVolumeChanged;
-        session_client->vtbl->JA_OnChannelVolumeChanged = JA_In_Session_OnChannelVolumeChanged;
-        session_client->vtbl->JA_OnGroupingParamChanged = JA_In_Session_OnGroupingParamChanged;
-        session_client->vtbl->JA_OnStateChanged = JA_In_Session_OnStateChanged;
-        session_client->vtbl->JA_OnSessionDisconnected = JA_In_Session_OnSessionDisconnected;
+        endpoint_device->vtbl->JA_OpenPropertyStore(endpoint_device, JA_STGM_READ, &property_store);
         
+        property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Disable_SysFx, &prop_variant);
+        apo_enabled_mask = ~prop_variant.dval & 0x00000001;
         
-        notification_client->vtbl->JA_AddRef(notification_client);
-        session_client->vtbl->JA_AddRef(session_client);
-    }
-    
-    //TODO: Create the synchronization primitives for stream rerouting, event mode audio, and possibly terminate loop and initialize the notification structures.
-    {
+        if (prop_variant.vt != VT_UI4){
+            apo_enabled_mask = 0;
+        }
         
+        property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Supports_EventDriven_Mode, &prop_variant);
+        event_driven_mode_mask = prop_variant.dval;
         
+        if(prop_variant.vt != VT_UI4){
+            event_driven_mode_mask = 0;
+        }
         
+        if (apo_enabled_mask){
+            audio_client->vtbl->JA_IsOffloadingCapable(audio_client, desc->category, &apo_offloading_mask);
+            apo_enabled_mask &= apo_offloading_mask;
+        }
+        
+        //Starting with Windows 10 hardware offloaded audio stream must be event driven.
+        event_driven_mode_mask |= apo_enabled_mask;
+        
+        if (event_driven_mode_mask <= 0){
+            // Unitialize and exit (Possibly log it out).
+            // TODO:Khal call release on the COM objects
+            // If this fails then well we can't use the audio engine, since we are using InitializeSharedAudioStream exit early.
+        }
+        
+        //Either NONE or MATCH_FORMAT 
+        ja_AudioClientProperties client_properties = {
+            sizeof(ja_AudioClientProperties),
+            apo_enable_mask,
+            desc->category,
+            None,
+        };
+        
+        audio_client->vtbl->JA_SetClientProperties(audio_client, &client_properties);
     }
     
     audio_client->vtbl->JA_GetService(audio_client, &JA_IID_IAudioSessionControl2,(void**)(&session_control));
     
+    {
+        if(ja_NotificationClient.ref <= 0){
+            ja_NotificationClient.vtbl->JA_QueryInterface = JA_In_Noti_QueryInterface;
+            ja_NotificationClient.vtbl->JA_AddRef = JA_In_Noti_AddRef;
+            ja_NotificationClient.vtbl->JA_Release = JA_In_Noti_Release;
+            
+            ja_NotificationClient.vtbl->JA_OnDeviceStateChanged = JA_In_Noti_OnDeviceStateChange;
+            ja_NotificationClient.vtbl->JA_OnDeviceAdded = JA_In_Noti_OnDeviceAdded;
+            ja_NotificationClient.vtbl->JA_OnDeviceRemoved = JA_In_Noti_OnDeviceRemoved;
+            ja_NotificationClient.vtbl->JA_OnDefaultDeviceChanged = JA_In_Noti_OnDefaultDeviceChanged;
+            ja_NotificationClient.vtbl->JA_OnPropertyValueChanged = JA_In_Noti_OnPropertyValueChanged;
+            
+            ja_NotificationClient.vtbl->JA_AddRef(&ja_NotificationClient);
+        }
+        
+        if(ja_SessionEvents <= 0){
+            ja_SessionEvents.vtbl->JA_QueryInterface = JA_In_Session_QueryInterface;
+            ja_SessionEvents.vtbl->JA_AddRef = JA_In_Session_AddRef;
+            ja_SessionEvents.vtbl->JA_Release = JA_In_Session_Release;
+            
+            ja_SessionEvents.vtbl->JA_OnDisplayNameChanged = JA_In_Session_OnDisplayNameChanged;
+            ja_SessionEvents.vtbl->JA_OnIconPathChanged = JA_In_Session_OnIconPathChanged;
+            ja_SessionEvents.vtbl->JA_OnSimpleVolumeChanged = JA_In_Session_OnSimpleVolumeChanged;
+            ja_SessionEvents.vtbl->JA_OnChannelVolumeChanged = JA_In_Session_OnChannelVolumeChanged;
+            ja_SessionEvents.vtbl->JA_OnGroupingParamChanged = JA_In_Session_OnGroupingParamChanged;
+            ja_SessionEvents.vtbl->JA_OnStateChanged = JA_In_Session_OnStateChanged;
+            ja_SessionEvents.vtbl->JA_OnSessionDisconnected = JA_In_Session_OnSessionDisconnected;
+            
+            ja_SessionEvents.vtbl->JA_AddRef(&ja_SessionEvents);
+        }
+        
+        session_control->vtbl->JA_RegisterAudioSessionNotification(session_control, &session_client);
+        device_enumerator->vtbl->JA_RegisterEndpointNotificationCallback(device_enumerator, &notification_client);
+    }
     
     
-    session_control->vtbl->JA_RegisterAudioSessionNotification(session_control, session_client);
-    device_enumerator->vtbl->JA_RegisterEndpointNotificationCallback(device_enumerator, notification_client);
+    {
+        ja_WaveFormatex * audio_engine_format;
+        ja_WaveFormatex * current_format;
+        ja_WaveFormatexExtensible * current_format_extended;
+        
+        DWORD default_period_in_frame;
+        DWORD fundamental_period_in_frame;
+        DWORD min_period_in_frame;
+        DWORD max_period_in_frame;
+        DWORD target_periodicity;
+        DWORD current_periodicity;
+        FLOAT32 optimal_output_latency_seconds;
+        
+        audio_client->vtbl->JA_GetMixFormat(audio_client, &audio_engine_format);
+        
+        audio_client->vtbl->JA_GetSharedModeEnginePeriod(audio_client, audio_engine_format, &default_period_in_frame, &fundamental_period_in_frame, &min_period_in_frame, &max_period_in_frame);
+        
+        target_periodicity = desc->periodicity;
+        DWORD periodicity_difference = desc->periodicity & (fundamental_period_in_frame - 1);
+        
+        if(periodicity_difference){
+            target_periodicity += fundamental_period_in_frame - periodicity_difference;
+        }
+        
+        target_periodicity = JA_Min(JA_Max(target_periodicity, min_period_in_frame), max_period_in_frame);
+        
+        audio_client->vtbl->JA_InitializeSharedAudioStream(audio_client, JA_EVENTCALLBACK_FLAG, target_periodicity, audio_engine_format, NULL);
+        
+        audio_client->vtbl->JA_GetCurrentSharedModeEnginePeriod(audio_client, &current_format, &current_periodicity);
+        
+        optimal_output_latency_seconds = (FLOAT32)current_periodicity / (FLOAT32)current_format->samples_per_sec;
+        
+        //Set the audio format. We can assume that the audio engine will support only f32.
+        //We can assume that the audio engine will 44100 and 48000
+        
+        {
+            //We need to break down the current_format and store the data.
+            if (current_format->format_tag == JA_WAVE_FORMAT_EXTENSIBLE){
+                current_format_extended = (ja_WaveFormatexExtensible *)current_format;
+                
+                
+                
+                
+                
+                
+            }else{
+                if(current_format->format_tag != JA_WAVE_FORMAT_IEEE_FLOAT && current_format->format_tag != JA_WAVE_FORMAT_PCM){
+                    //Well this is a format we don't support for the audio engine.
+                    // Unitialize and exit (Possibly log it out).
+                    // TODO:Khal call release on the COM objects
+                }
+                
+                //type (enum Integer = 0, float = 1)
+                //So convert format tag to DWORD 
+                
+            }
+            
+        }
+        
+        
+        res->com_allocator->JA_Free(res->com_allocator, audio_engine_format);
+        res->com_allocator->JA_Free(res->com_allocator, current_format);
+    }
     
+    //TODO:Khal We need to do template calculation to prevent any audio glitch. using the period_in_frames above.
+    {
+        target_periodicity_nanoseconds = (target_periodicity * 1000000000) / audio_engine_format->samples_per_sec;
+    }
     
     
     

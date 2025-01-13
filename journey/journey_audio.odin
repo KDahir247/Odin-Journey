@@ -4,45 +4,30 @@ foreign import journey_audio "journey_audio.lib"
 
 HMODULE :: distinct rawptr
 
-DitherParam :: struct{
-	lcg_random : u32,
-	lcg_multiplier : u32,
-	lcg_increment : u32,
-	lcg_modulo : u32,
 
-
-	quantization_err : f32,
-	boxcar_constant : f32,
+MemoryDescriptor :: struct{
+  static_reserve : u64,
+  static_commit : u64,
+  ring_size : u64,
+  _padding_ : u64,
 }
 
-AudioContext :: struct{
-
-	CoInitialize : proc "stdcall" (),
-	CoCreateInstance : proc "stdcall" (),
-	CoUninitialize : proc "stdcall" (),
-	CoMemAlloc : proc "stdcall" (),
-	CoMemFree : proc "stdcall" (),
-	CoMemRealloc : proc "stdcall" (),
-	CoFreePropvariants : proc "stdcall" (),
-	CoPropVariantClear : proc "stdcall" (),
-	CoPropVariantCopy : proc "stdcall" (),
-
-	ole32_module : HMODULE,
-
-	AvSetMmThreadPriority : proc "stdcall" (),
-	AvSetMmThreadCharacteristicW : proc "stdcall" (),
-	AvQuerySystemResponsiveness : proc "stdcall" (),
-	AvRevertMmThreadCharacteristics : proc "stdcall" (),
-
-	avrt_module : HMODULE,
-
-	dither_param : DitherParam,
-
+RingBuffer :: struct{
+buffer : rawptr,
+size : u64,
+write_index : u64,
+read_index : u64,
 }
 
+
+Resource :: struct{
+  alloc : rawptr,
+  ring : RingBuffer,
+}
 
 
 foreign journey_audio{
-	JAInitContext :: proc "c" (ctx : ^AudioContext, profile : u32) -> u32 ---
+	JA_InitBackend :: proc "c" (mem_desc : ^MemoryDescriptor, resource : ^Resource) -> u32 ---
+	//JAInitContext :: proc "c" (ctx : ^AudioContext, profile : u32) -> u32 ---
 
 }

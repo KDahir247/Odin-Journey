@@ -15,8 +15,8 @@ import "vendor:zlib"
 
 //Support for Audio haptic feedback isn't implemented yet. Speaker, Mic, Headphone isn't implement yet as well This will most likely be implemented later to support Audio haptic feedback.
 
-// When Optimizing use Zen2 family as target CPU 
-// refer to uops table, agner fog, wikichip, amd zen2 manual, & disassembler when optimizing this. 
+// When Optimizing use Zen2 family as target CPU
+// refer to uops table, agner fog, wikichip, amd zen2 manual, & disassembler when optimizing this.
 
 // refer to USB documentation for HID specification
 
@@ -36,7 +36,7 @@ DPAD_DOWN :: 0x04
 DPAD_DOWN_LEFT :: 0x0C
 DPAD_LEFT :: 0x08
 DPAD_UP_LEFT :: 0x09
-					
+
 ACTION_A :: 0x10
 ACTION_B :: 0x20
 ACTION_X :: 0x40
@@ -67,7 +67,7 @@ CHIDProperty :: struct{
 	input_byte_len : u32,
 	output_byte_len : u32,
 
-	firm_version : u32, //Do we need this 
+	firm_version : u32, //Do we need this
 	padding : u32,
 }
 
@@ -96,7 +96,7 @@ GameInput :: struct{
 	/* Controller Action*/
 	controller : GameController,
 
-	/* Keyboard Action */ 
+	/* Keyboard Action */
 	action_buttons : [4]Button,
 
 	/* Mouse Action */
@@ -194,13 +194,13 @@ DualSenseTriggerMultiPosFeedback :: proc "contextless" (trigger_desc : ^TriggerD
 
 	force_zone_elements := (trigger_desc.params_0 * FORCE_ZONES_SHIFT_0) | (trigger_desc.params_1 * FORCE_ZONES_SHIFT_1) | (trigger_desc.params_2 * FORCE_ZONES_SHIFT_2)
 
-	force_zone := (force_zone_elements.x | force_zone_elements.y) | (force_zone_elements.z | force_zone_elements.w)	
-	
+	force_zone := (force_zone_elements.x | force_zone_elements.y) | (force_zone_elements.z | force_zone_elements.w)
+
 	ffb_destination[trigger_index] = 0x21
 	ffb_destination[trigger_index + 0x01] = 0xFF
 	ffb_destination[trigger_index + 0x02] = 0x03
-	ffb_destination[trigger_index + 0x03] = u8((force_zone / 0x0000_0001) & 0xFF) 
-	ffb_destination[trigger_index + 0x04] = u8((force_zone / 0x0000_0100) & 0xFF) 
+	ffb_destination[trigger_index + 0x03] = u8((force_zone / 0x0000_0001) & 0xFF)
+	ffb_destination[trigger_index + 0x04] = u8((force_zone / 0x0000_0100) & 0xFF)
 	ffb_destination[trigger_index + 0x05] = u8((force_zone / 0x0001_0000) & 0xFF)
 	ffb_destination[trigger_index + 0x06] = u8((force_zone / 0x0100_0000) & 0xFF)
 	ffb_destination[trigger_index + 0x07] = 0x00
@@ -218,7 +218,7 @@ DualSenseTriggerMultiPosFeedback :: proc "contextless" (trigger_desc : ^TriggerD
 DualSenseTriggerWeapon :: proc "contextless" (trigger_desc : ^TriggerDescriptor, ffb_destination : []u8, $trigger_index : u8) #no_bounds_check{
 
 	start_stop_zone :u32 = (1 << trigger_desc.params_0.x) | (1 << trigger_desc.params_0.y)
-	
+
 	ffb_destination[trigger_index] = 0x25
 	ffb_destination[trigger_index + 0x01] = u8((start_stop_zone / 0x0000_0001) & 0xFF)
 	ffb_destination[trigger_index + 0x02] = u8((start_stop_zone / 0x0000_0100) & 0xFF)
@@ -296,7 +296,7 @@ DualSenseTriggerMachine :: proc "contextless" (trigger_desc : ^TriggerDescriptor
 
 	start_stop_zone := (1 << trigger_desc.params_0.x) | (1 << trigger_desc.params_0.y)
 	strength_zone := (trigger_desc.params_0.z * 0x0000_0001) | (trigger_desc.params_0.w * 0x0000_0008)
-	
+
 	ffb_destination[trigger_index] = 0x27
 	ffb_destination[trigger_index + 0x01] = u8((start_stop_zone / 0x0000_0001) & 0xFF)
 	ffb_destination[trigger_index + 0x02] = u8((start_stop_zone / 0x0000_0100) & 0xFF)
@@ -321,7 +321,7 @@ DualSenseAudioHapticFeedback :: proc(){
 //DualSenseRumble will not have any sanity checks
 //Parameters:
 //heavy strength is used as the weight for the "left" heavy emulated weight for the controller motor (0 <= value <= 0xFF)
-//light strength is used as the weight for the "right" light emulated weight for the controller motor (0 <= value <= 0xFF) 
+//light strength is used as the weight for the "right" light emulated weight for the controller motor (0 <= value <= 0xFF)
 DualSenseRumble :: proc "contextless" (light_strength : u8, heavy_strength : u8, output_buffer : []u8) #no_bounds_check{
 	rumble_emulation_mask :u8 = output_buffer[0x00] & 0x01
 
@@ -332,7 +332,7 @@ DualSenseRumble :: proc "contextless" (light_strength : u8, heavy_strength : u8,
 //What are the parameter.
 DualSenseVolume :: proc(headphone_volume : u8, speaker_volume : u8, output_buffer : []u8){
 	//check allow volume bit/s if it is not set then set it.
-	
+
 	output_buffer[0x04] = headphone_volume
 	output_buffer[0x05] = speaker_volume
 
@@ -359,17 +359,17 @@ DualSenseLight :: proc(){
 XboxTriggerRumble :: #force_inline proc "contextless" (trigger_desc : ^TriggerDescriptor, $trigger : u8, output_buffer : []u8) #no_bounds_check{
 
 	output_buffer[0x00] = 0x03
-	
+
 	output_buffer[0x01] = 0x0F
-	
+
 	when trigger == LEFT_TRIGGER{
 		output_buffer[0x02] = u8(trigger_desc.params_0.x)
-		
+
 	}else{
 		output_buffer[0x03] = u8(trigger_desc.params_0.x)
 	}
 
-	
+
 	output_buffer[0x06] = u8(trigger_desc.params_0.y)
 	output_buffer[0x07] = u8(trigger_desc.params_0.z)
 	output_buffer[0x08] = u8(trigger_desc.params_0.w)
@@ -381,7 +381,7 @@ XboxTriggerRumble :: #force_inline proc "contextless" (trigger_desc : ^TriggerDe
 //Below Parameters are shared with Controller Trigger Rumble
 //trigger_desc.params_0.y = rumble duration (0 <= value <= 0xFF)
 //trigger_desc.params_0.z = rumble delay (0 <= value <= 0xFF)
-//trigger_desc.params_0.w = rumble repeat count (0 <= value <= 0xFF) 	
+//trigger_desc.params_0.w = rumble repeat count (0 <= value <= 0xFF)
 XboxRumble :: proc(heavy_strength : u8, light_strength : u8, output_buffer : []u8){
 	output_buffer[0x00] = 0x03
 
@@ -419,7 +419,7 @@ SendOutputToDevice :: proc(controller_property : ^CHIDProperty, buffer : []u8){
 
 CheckMatchCRC32 :: #force_inline proc "contextless" (buffer : [^]u8, seed : u8, len : u32, current_crc : u32) -> b32{
 	local_seed := seed
-	
+
 	crc := zlib.crc32(0, nil, 0)
 	crc = zlib.crc32(0, &local_seed, 1)
 	crc = zlib.crc32(crc,buffer, len)
@@ -437,8 +437,8 @@ InternalApplyPostProcess :: proc(controller : ^GameController){
 	//Outer Deadzone Output = 1.0
 	//Response Curve = 2.0
 	//Trigger Deadzone = 76
-	
-	//We first convert from a vector u32 to vector i32, since converting a vector i32 to a vector f32 is always faster by a large margin. 
+
+	//We first convert from a vector u32 to vector i32, since converting a vector i32 to a vector f32 is always faster by a large margin.
 	analog_sign :#simd[4]f32 = (#simd[4]f32)((#simd[4]i32)(intrinsics.simd_bit_or(intrinsics.simd_lanes_lt((^x86.__m128)(controller)^,{}), #simd[4]u32{1,1,1,1})))
 
 	axial_deadzone : #simd[4]f32 = analog_sign * #simd[4]f32{0.3, 0.3, 0.5, 0.5}
@@ -469,10 +469,10 @@ InternalApplyPostProcess :: proc(controller : ^GameController){
 
 		normalized_left_analog_x : f32 = controller.left_analog_x * left_analog_rcp_magnitude
 		normalized_left_analog_y : f32 = controller.left_analog_y * left_analog_rcp_magnitude
-		
+
 		controller.left_analog_x = normalized_left_analog_x * output_magnitude
 		controller.left_analog_y = normalized_left_analog_y * output_magnitude
-	
+
 		if abs(controller.left_analog_x) < 0.3{
 			controller.left_analog_x = 0
 		}else{
@@ -487,7 +487,7 @@ InternalApplyPostProcess :: proc(controller : ^GameController){
 
 		controller.left_analog_x = max(controller.left_analog_x, -1)
 		controller.left_analog_y = max(controller.left_analog_y, -1)
-		
+
 	}
 
 	if right_analog_magnitude_squared < 0.01{
@@ -515,16 +515,16 @@ ProcessControllerInput :: proc(vendor_id : u32, input_byte_len : u32 ,raw_input_
 	if vendor_id == 0x5E{
 
 		if raw_input_buffer[0x08] == GIP_DEVICE_INPUT_REPORT{
-				
-			button_action_remapping : u32 = (u32(raw_input_buffer[0x14]) & 0xFFFFFFF0) * 0x0000_0001 | (u32(raw_input_buffer[0x14]) & 0x0C) * 0x0000_0040 |  (u32(raw_input_buffer[0x15]) & 0xFFFFFFF0) * 0x0000_00040 
+
+			button_action_remapping : u32 = (u32(raw_input_buffer[0x14]) & 0xFFFFFFF0) * 0x0000_0001 | (u32(raw_input_buffer[0x14]) & 0x0C) * 0x0000_0040 |  (u32(raw_input_buffer[0x15]) & 0xFFFFFFF0) * 0x0000_00040
 			dpad_action_remapping : u32 = ((u32(raw_input_buffer[0x15]) & 0x01) * 0x0000_0001 | (u32(raw_input_buffer[0x15]) & 0x02) * 0x0000_0002)  | ((u32(raw_input_buffer[0x15]) & 0x08) / 0x0000_0004 | (u32(raw_input_buffer[0x15]) & 0x04) * 0x0000_0002)
-			
+
 			left_trigger : u32 = (u32(raw_input_buffer[0x16]) | (u32(raw_input_buffer[0x17]) * 0x0000_0100)) / 0x0000_0004
 			right_trigger : u32 = (u32(raw_input_buffer[0x18]) | (u32(raw_input_buffer[0x19]) * 0x0000_0100)) / 0x0000_0004
 
 			left_joystick_x : i32 =  i32(raw_input_buffer[0x1A]) | i32(i16(raw_input_buffer[0x1B]) * 0x0000_0100)
 			left_joystick_y : i32 =  i32(raw_input_buffer[0x1C]) | i32(i16(raw_input_buffer[0x1D]) * 0x0000_0100)
-				
+
 			right_joystick_x : i32 = i32(raw_input_buffer[0x1E]) | i32(i16(raw_input_buffer[0x1F]) * 0x0000_0100)
 			right_joystick_y : i32 = i32(raw_input_buffer[0x20]) | i32(i16(raw_input_buffer[0x21]) * 0x0000_0100)
 
@@ -532,11 +532,11 @@ ProcessControllerInput :: proc(vendor_id : u32, input_byte_len : u32 ,raw_input_
 			controller.left_analog_y = f32(left_joystick_y) * (1.0 / 32_767.0)
 			controller.right_analog_x = f32(right_joystick_x) * (1.0 / 32_767.0)
 			controller.right_analog_y = f32(right_joystick_y) * (1.0 / 32_767.0)
-			
+
 			controller.left_trigger = left_trigger
 			controller.right_trigger = right_trigger
 			controller.buttons = button_action_remapping | dpad_action_remapping
-			
+
 		}else if raw_input_buffer[0x08] == GIP_DEVICE_STATUS{
 			controller.battery_info = u32(raw_input_buffer[0x14]) & 0x0F
 		}
@@ -556,7 +556,7 @@ ProcessControllerInput :: proc(vendor_id : u32, input_byte_len : u32 ,raw_input_
 			//return
 		//}
 
-	
+
 		raw_input_stride_buffer = raw_input_buffer[1:]
 	}
 
@@ -565,17 +565,17 @@ ProcessControllerInput :: proc(vendor_id : u32, input_byte_len : u32 ,raw_input_
 	controller.left_analog_y = f32(0x7F - i32(raw_input_stride_buffer[0x02])) * (1.0 / 127.0)
 	controller.right_analog_x = f32(i32(raw_input_stride_buffer[0x03]) - 0x80) * (1.0 / 127.0)
 	controller.right_analog_y = f32(0x7F - i32(raw_input_stride_buffer[0x04])) * (1.0 / 127.0)
-			
+
 	controller.left_trigger = u32(raw_input_stride_buffer[0x05])
 	controller.right_trigger = u32(raw_input_stride_buffer[0x06])
 
 	dpad_action_remapping : u32 = 1 << (u32(raw_input_stride_buffer[0x08]) / 0x0000_0002)
 	button_action_remapping : u32 = ((u32(raw_input_stride_buffer[0x08]) & 0x10) * 0x04) | ((u32(raw_input_stride_buffer[0x08]) & 0x20) / 0x02) | ((u32(raw_input_stride_buffer[0x08]) & 0x40) / 0x02) | ((u32(raw_input_stride_buffer[0x08]) & 0x80) * 0x0000_0001)
-	trigger_action_remapping : u32 = ((u32(raw_input_stride_buffer[0x09]) & 0x01) * 0x400) | ((u32(raw_input_stride_buffer[0x09]) & 0x02) * 0x400) | ((u32(raw_input_stride_buffer[0x09]) & 0x10) * 0x10) | ((u32(raw_input_stride_buffer[0x09]) & 0x20) * 0x10) | ((u32(raw_input_stride_buffer[0x09]) & 0x40) * 0x40) | ((u32(raw_input_stride_buffer[0x09]) & 0x80) * 0x40) 
-	
+	trigger_action_remapping : u32 = ((u32(raw_input_stride_buffer[0x09]) & 0x01) * 0x400) | ((u32(raw_input_stride_buffer[0x09]) & 0x02) * 0x400) | ((u32(raw_input_stride_buffer[0x09]) & 0x10) * 0x10) | ((u32(raw_input_stride_buffer[0x09]) & 0x20) * 0x10) | ((u32(raw_input_stride_buffer[0x09]) & 0x40) * 0x40) | ((u32(raw_input_stride_buffer[0x09]) & 0x80) * 0x40)
+
 
 	controller.buttons = dpad_action_remapping | button_action_remapping | trigger_action_remapping
-	
+
 	if raw_input_stride_buffer[0x35] < 0x40 {
 
 		battery_level : u32 = u32(raw_input_stride_buffer[0x35]) & 0xF
@@ -591,8 +591,8 @@ ProcessControllerInput :: proc(vendor_id : u32, input_byte_len : u32 ,raw_input_
 Win32ProcessBtnMsg :: proc(button : ^Button, flag : u32){
 	if button.flag != flag{
 		next_transition := button.transition + 1
-		double_tap_elapsed := button.delta_ms - button.delta_threshold_ms 
-		
+		double_tap_elapsed := button.delta_ms - button.delta_threshold_ms
+
 		button.flag = flag
 		button.transition = next_transition & u32(double_tap_elapsed >> 31)
 		button.delta_ms = 0
@@ -605,7 +605,7 @@ Win32FlushInputReport :: proc(arena : ^virtual.Arena, game_input : ^GameInput){
 
 	cbsize : u32
 	windows.GetRawInputBuffer(nil, &cbsize, size_of(windows.RAWINPUTHEADER))
-	cbsize <<= 4 
+	cbsize <<= 4
 	raw_input_slim_buffer, _ := virtual.make_multi_pointer(arena, [^]windows.RAWINPUT, cbsize / size_of(windows.RAWINPUT))
 
 	for{
@@ -624,7 +624,7 @@ Win32FlushInputReport :: proc(arena : ^virtual.Arena, game_input : ^GameInput){
 				case windows.RIM_TYPEMOUSE:
 				{
 					flag := i32(raw_input.data.mouse.DUMMYUNIONNAME.DUMMYSTRUCTNAME.usButtonFlags)
-					
+
 					if flag > 0 && flag < 9{
 						Win32ProcessBtnMsg(&game_input.mouse_buttons, u32(flag))
 					}
@@ -663,7 +663,7 @@ Win32FlushInputReport :: proc(arena : ^virtual.Arena, game_input : ^GameInput){
 //TODO: Handle Disconnecting previous controller that primary if this is called.
 Win32ConnectPController :: proc(arena : ^virtual.Arena, controller_property : ^CHIDProperty){
 	temp_arena := virtual.arena_temp_begin(arena)
-	
+
 	windows.CloseHandle(controller_property.handle)
 
 	rawinput_count : u32
@@ -686,21 +686,21 @@ Win32ConnectPController :: proc(arena : ^virtual.Arena, controller_property : ^C
 			preparsed_data,_ := virtual.make_multi_pointer(arena, [^]windows.HIDP_PREPARSED_DATA , preparsed_size)
 
 			windows.GetRawInputDeviceInfoW(rawinput_device.hDevice, RIDI_PREPARSEDATA, preparsed_data, &preparsed_size)
-			
+
 			capabilities : windows.HIDP_CAPS
 			windows.HidP_GetCaps(preparsed_data, &capabilities)
-			
+
 			if capabilities.Usage == windows.HID_USAGE_GENERIC_GAMEPAD && capabilities.UsagePage == windows.HID_USAGE_PAGE_GENERIC{
 
 				device_handle : windows.HANDLE
-		
+
 				{
 					hid_device_path_length : u32
 					windows.GetRawInputDeviceInfoW(rawinput_device.hDevice, RIDI_DEVICENAME, nil, &hid_device_path_length)
 
-					hid_device_path, _ := virtual.make_slice(arena, []u16, hid_device_path_length) 
+					hid_device_path, _ := virtual.make_slice(arena, []u16, hid_device_path_length)
 					windows.GetRawInputDeviceInfoW(rawinput_device.hDevice, RIDI_DEVICENAME, raw_data(hid_device_path), &hid_device_path_length)
-			
+
 					device_handle = windows.CreateFileW(raw_data(hid_device_path), windows.GENERIC_READ | windows.GENERIC_WRITE, windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, nil)
 				}
 
@@ -710,12 +710,12 @@ Win32ConnectPController :: proc(arena : ^virtual.Arena, controller_property : ^C
 				//Note:Khal Should we also check the product id for only Xbox one and Dualsense and not Xbox 360 and DualShock?
 				if attributes.VendorID == HID_VENDOR_MICROSOFT{
 					//GIP Protocol Setup
-	
+
 					controller_property.handle = windows.CreateFileW(&gip_path[0], windows.GENERIC_READ | windows.GENERIC_WRITE, windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, nil)
 
-					
+
 					//windows.DeviceIoControl(controller_property.handle, 0x40001CD0, nil, 0, nil, 0,nil, nil)
-					
+
 					controller_property.vendor_id = 0x5E //HID_VENDOR_MICROSOFT
 					controller_property.product_id = u32(attributes.ProductID)
 
@@ -737,21 +737,21 @@ Win32ConnectPController :: proc(arena : ^virtual.Arena, controller_property : ^C
 
 					controller_property.vendor_id = 0x4C//HID_VENDOR_SONY
 					controller_property.product_id = u32(attributes.ProductID)
-					
+
 					if capabilities.InputReportByteLength == DUALSENSE_BT_INPUT_REPORT_LENGTH{
-						
+
 						controller_property.input_byte_len = DUALSENSE_BT_INPUT_REPORT_LENGTH
 						controller_property.output_byte_len = DUALSENSE_BT_OUTPUT_REPORT_LENGTH
 
 					}else if capabilities.InputReportByteLength == DUALSENSE_USB_INPUT_REPORT_LENGTH{
-						
+
 						controller_property.input_byte_len = DUALSENSE_USB_INPUT_REPORT_LENGTH
 						controller_property.output_byte_len = DUALSENSE_USB_OUTPUT_REPORT_LENGTH
 					}
 
 					// version < 0x0224 then EnableRumbleEmulation else EnableImprovedRumbleEmulation
 					controller_property.firm_version = u32(firmware_feature_slim_buffer[0x2C]) | (u32(firmware_feature_slim_buffer[0x2D]) << 0x8)
-	
+
 				}else{
 					//Unsupported controller.
 					windows.CloseHandle(device_handle)
@@ -761,7 +761,7 @@ Win32ConnectPController :: proc(arena : ^virtual.Arena, controller_property : ^C
 	}
 
 	virtual.arena_temp_end(temp_arena)
-}	
+}
 
 
 Win32DisconnectPController :: proc(controller_property : ^CHIDProperty){
@@ -769,7 +769,7 @@ Win32DisconnectPController :: proc(controller_property : ^CHIDProperty){
 	//SetRumble(game_input, 0, 0)
 
 	windows.CloseHandle(controller_property.handle)
-	
+
 	controller_property^ = {
 		windows.INVALID_HANDLE,
 		0,
@@ -800,14 +800,22 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 	}
 
 	//ctx : AudioContext
-	
-	//JAInitContext(&ctx, 1)
-	
+	desc := MemoryDescriptor{
+	  static_reserve = 1024,
+	  static_commit = 1024,
+	  ring_size = 2048,
+	  _padding_ = 0,
+	}
 
+	res : Resource
+	//JAInitContext(&ctx, 1)
+	JA_InitBackend(&desc, &res);
+
+	fmt.printf("%i",res)
 	game_input.mouse_buttons.delta_threshold_ms = 300 //mouse_threshold_ms
-		
+
 	w_name := [8]u16{0x4D, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x00}
-	
+
 	msg_window_handle := windows.CreateWindowExW(
 		0x00,
 		&w_name[0],
@@ -828,10 +836,10 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 	raw_input_devices.x = windows.RAWINPUTDEVICE{
 		usUsagePage = windows.HID_USAGE_PAGE_GENERIC,
 		usUsage = windows.HID_USAGE_GENERIC_GAMEPAD,
-		dwFlags = 0x00, 
+		dwFlags = 0x00,
 		hwndTarget = msg_window_handle,
 	}
-	
+
 	raw_input_devices.y = windows.RAWINPUTDEVICE{
 		usUsagePage = windows.HID_USAGE_PAGE_GENERIC,
 		usUsage = windows.HID_USAGE_GENERIC_MOUSE,
@@ -842,7 +850,7 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 	raw_input_devices.z = windows.RAWINPUTDEVICE{
 		usUsagePage = windows.HID_USAGE_PAGE_GENERIC,
 		usUsage = windows.HID_USAGE_GENERIC_KEYBOARD,
-		dwFlags = windows.RIDEV_NOHOTKEYS | windows.RIDEV_NOLEGACY, 
+		dwFlags = windows.RIDEV_NOHOTKEYS | windows.RIDEV_NOLEGACY,
 		hwndTarget = msg_window_handle,
 	}
 
@@ -852,8 +860,8 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 
 	//TODO:Khal if the primary window is not focus then we don't send over input.
 	for {
-		current_counter := Win32GetTimeStamp()		
-		
+		current_counter := Win32GetTimeStamp()
+
 		if windows.MsgWaitForMultipleObjects(0x01, cast(^windows.HANDLE)current_thread.data, false, windows.INFINITE, windows.QS_RAWINPUT) != (windows.WAIT_OBJECT_0 + 0x01){
 			break
 		}
@@ -861,24 +869,24 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 		input_delta_time := Win32ElapsedTime(current_counter, MILLISECOND)
 
 		windows.GetQueueStatus(windows.QS_RAWINPUT)
-		
+
 		if(!windows.ReadFile(controller_property.handle, raw_data(input_buffer), controller_property.input_byte_len, nil, nil)){
 			Win32ConnectPController(&input_arena, &controller_property)
 		}
 
 		ProcessControllerInput(controller_property.vendor_id, controller_property.input_byte_len ,raw_data(input_buffer), &game_input.controller)
-	
+
 		#unroll for i in 0..<4{
 			#no_bounds_check{
 				game_input.action_buttons[i].delta_ms += i32(input_delta_time)
 			}
 		}
-		
+
 		game_input.mouse_buttons.delta_ms = i32(input_delta_time)
 
 		Win32FlushInputReport(&input_arena, &game_input)
-		
-		
+
+
 	}
 
 	Win32DisconnectPController(&controller_property)
