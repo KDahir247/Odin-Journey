@@ -800,18 +800,29 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 	}
 
 	//ctx : AudioContext
-	desc := MemoryDescriptor{
+
+	res : Resource
+	device : Device
+
+	mem_desc := MemoryDescriptor{
 	  static_reserve = 1024,
 	  static_commit = 1024,
 	  ring_size = 2048,
 	  _padding_ = 0,
 	}
 
-	res : Resource
-	//JAInitContext(&ctx, 1)
-	JA_InitBackend(&desc, &res);
+  device_desc := DeviceDescriptor{
+    flow = AudioStreamFlow.Render,
+    role = AudioStreamRole.Console,
+    category = AudioStreamCategory.GameMedia,
+    periodicity = 0,
 
+  }
+	//JAInitContext(&ctx, 1)
+	JA_InitBackend(&mem_desc, &res)
 	fmt.printf("%i",res)
+	JA_InitDevice(&device_desc, &res, &device) //TODO: Crashes here
+
 	game_input.mouse_buttons.delta_threshold_ms = 300 //mouse_threshold_ms
 
 	w_name := [8]u16{0x4D, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x00}

@@ -358,7 +358,7 @@ struct ja_HandleO{
 struct ja_GUID{
     DWORD data_1;
     WORD data_2;
-    DWORD data_3;
+    WORD data_3;
     BYTE data_4[8];
 };
 
@@ -533,6 +533,7 @@ typedef struct ja_IMMNotificationClient ja_IMMNotificationClient;
 typedef struct ja_IPropertyStore ja_IPropertyStore;
 typedef struct ja_IAudioClient3 ja_IAudioClient3;
 typedef struct ja_IAudioSessionControl2 ja_IAudioSessionControl2;
+typedef struct ja_IAudioSessionControl ja_IAudioSessionControl;
 typedef struct ja_IAudioSessionEvents ja_IAudioSessionEvents;
 typedef struct ja_IAudioRenderClient ja_IAudioRenderClient;
 typedef struct ja_IAudioCaptureClient ja_IAudioCaptureClient;
@@ -655,7 +656,7 @@ typedef struct ja_IMMNotificationClientVtbl{
 
 struct ja_IAudioSessionEvents{
     struct ja_IAudioSessionEventsVtbl * vtbl;
-    ja_IAudioSessionControl2 * session;
+    ja_IAudioSessionControl * session;
     ja_HandleO rerouting_handle;
     DWORD ref;
 };
@@ -703,8 +704,30 @@ typedef struct ja_IAudioSessionControl2Vtbl{
     DWORD (JA_WINAPI * JA_IsSystemSoundsSession)(ja_IAudioSessionControl2 * self);
     DWORD (JA_WINAPI * JA_SetDuckingPreference)(ja_IAudioSessionControl2 * self, DWORD optOut);
     
-}ja_IAudioSessionControlVtbl;
+}ja_IAudioSessionControl2Vtbl;
 
+
+
+struct ja_IAudioSessionControl{
+    struct ja_IAudioSessionControlVtbl * vtbl;
+};
+
+typedef struct ja_IAudioSessionControlVtbl{
+    DWORD (JA_WINAPI * JA_QueryInterface)(ja_IAudioSessionControl * self, const ja_IID * const riid, void ** ppvObject);
+    DWORD (JA_WINAPI * JA_AddRef)(ja_IAudioSessionControl * self);
+    DWORD (JA_WINAPI * JA_Release)(ja_IAudioSessionControl * self);
+    
+    DWORD (JA_WINAPI * JA_GetState)(ja_IAudioSessionControl * self, ja_AudioSessionState * pRetVal);
+    DWORD (JA_WINAPI * JA_GetDisplayName)(ja_IAudioSessionControl * self, P16 * pRetVal);
+    DWORD (JA_WINAPI * JA_SetDisplayName)(ja_IAudioSessionControl * self, const P16 Value, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_GetIconPath)(ja_IAudioSessionControl * self, P16 * pRetVal);
+    DWORD (JA_WINAPI * JA_SetIconPath)(ja_IAudioSessionControl * self, const P16 Value, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_GetGroupingParam)(ja_IAudioSessionControl * self, ja_GUID * pRetVal);
+    DWORD (JA_WINAPI * JA_SetGroupingParam)(ja_IAudioSessionControl * self, const ja_GUID * Override, const ja_GUID * EventContext);
+    DWORD (JA_WINAPI * JA_RegisterAudioSessionNotification)(ja_IAudioSessionControl * self, ja_IAudioSessionEvents * NewNotifications);
+    DWORD (JA_WINAPI * JA_UnregisterAudioSessionNotification)(ja_IAudioSessionControl * self, ja_IAudioSessionEvents * NewNotifications);
+    
+}ja_IAudioSessionControlVtbl;
 
 
 struct ja_IPropertyStore{
@@ -854,6 +877,7 @@ static const ja_IID JA_IID_IAudioCaptureClient = {0xC8ADBD64, 0xE71E, 0x48A0, {0
 static const ja_IID JA_IID_IMMNotificationClient = {0x7991EEC9, 0x7E89, 0x4D85, {0x83, 0x90, 0x6C, 0x70, 0x3C, 0xEC, 0x60, 0xC0}};
 static const ja_IID JA_IID_IAudioSessionEvents = {0x24918ACC, 0x64B3, 0x37C1, {0x8C, 0xA9, 0x74, 0xA6, 0x6E, 0x99, 0x57, 0xA8}};
 static const ja_IID JA_IID_IAudioSessionControl2 = {0xBFB7FF88, 0x7239, 0x4FC9, {0x8F, 0xA2, 0x07, 0xC9, 0x50, 0xBE, 0x9C, 0x6D}};
+static const ja_IID JA_IID_IAudioSessionControl = {0xF4B1A599, 0x7266, 0x4319, {0xA8, 0xCA, 0xE7, 0x0A, 0xCB, 0x11, 0xE8, 0xCD}};
 static const ja_IID JA_IID_IAudioClock2 = {0x6F49FF73, 0x6727, 0x49AC, {0xA0, 0x08, 0xD9, 0x8C, 0xF5, 0xE7, 0x00, 0x48}};
 static const ja_IID IID_DEV_INTERFACE_AUDIO_RENDER = {0xE6327CAD, 0xDCEC, 0x4949, {0xAE, 0x8A, 0x99, 0x1E, 0x97, 0x6A, 0x79, 0xD2}};
 static const ja_IID IID_DEV_INTERFACE_AUDIO_CAPTURE = {0x2EEF81BE, 0x33FA, 0x4800, {0x96, 0x70, 0x1C, 0xD4, 0x74, 0x97, 0x2C, 0x3F}};
@@ -869,6 +893,9 @@ static const ja_HandleO JA_INVALID_HANDLE = {0xFFFFFFFFFFFFFFFF};
 
 static ja_IMMNotificationClient ja_notification_client;
 static ja_IAudioSessionEvents ja_session_event;
+
+static ja_IMMNotificationClientVtbl notification_vtbl;
+static ja_IAudioSessionEventsVtbl session_vtbl;
 
 IMPORT void* JA_WINAPI 
 MapViewOfFileEx(
@@ -964,7 +991,6 @@ typedef BOOL32 (JA_WINAPI * AvRevertMmThreadCharacteristics)(ja_HandleO avrt_han
 typedef BOOL32 (JA_WINAPI * AvSetMmThreadPriority)(ja_HandleO avrt_handle, DWORD priority);
 
 
-//TODO:Khal can we move handle to the bottom of the struct.
 struct ja_WinCOM{
     ja_HandleO handle;
     CoInitializeEx ja_CoInitializeEx;
@@ -1037,14 +1063,18 @@ struct ja_StaticAllocator{
 
 JA_LFORCE_INLINE void *
 JA_PushAllocate(struct ja_StaticAllocator * allocator, QWORD size){
-    //alignment check then push.
-    QWORD alignment_diff = allocator->offset & (allocator->alignment - 1);
-    QWORD forward_alignment = 0;
+    BYTE * allocation;
+    QWORD alignment_diff;
+    QWORD forward_alignment;
     
+    //alignment check then push.
+    alignment_diff = allocator->offset & (allocator->alignment - 1);
     forward_alignment = (allocator->alignment - alignment_diff) & 7;
     
+    allocation = (BYTE*)(allocator) + allocator->offset + forward_alignment;
     allocator->offset += forward_alignment + size;
-    return (BYTE*)(allocator) + allocator->offset + forward_alignment;
+    
+    return allocation;
 }
 
 
@@ -1093,7 +1123,6 @@ struct ja_MemoryDescriptor{
     DWORD _unused_;
 };
 
-//TODO:Khal should we make this generic by removing EDataFlow and make two procedure one for rendering and one for capturing.
 struct ja_DeviceDescriptor{
     ja_EDataFlow flow;
     ja_ERole role;
@@ -1317,6 +1346,12 @@ JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *
     global_ptr = VirtualAlloc(NULL, global_reservation_size, JA_MEM_RESERVE, JA_PAGE_READWRITE);
     global_ptr =  (struct ja_StaticAllocator*)VirtualAlloc(global_ptr, global_page_size, JA_MEM_COMMIT, JA_PAGE_READWRITE);
     
+    //We need to specify the alignment before we actually push
+    global_ptr->offset = sizeof(struct ja_StaticAllocator);
+    global_ptr->alignment = JA_DEFAULT_ALIGNMENT;
+    global_ptr->commit = global_page_size;
+    global_ptr->reserved = global_reservation_size;
+    
     {
         struct ja_Proc * dynamic_procedure;
         
@@ -1377,10 +1412,6 @@ JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *
     }
     
     {
-        global_ptr->offset = sizeof(struct ja_StaticAllocator);
-        global_ptr->alignment = JA_DEFAULT_ALIGNMENT;
-        global_ptr->commit = global_page_size;
-        global_ptr->reserved = global_reservation_size;
         
         res->global_allocator = global_ptr;
         
@@ -1391,6 +1422,12 @@ JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *
         
         res->com_allocator = com_alloc;
         
+    }
+    
+    //Initialize the statics
+    {
+        ja_notification_client.vtbl = &notification_vtbl;
+        ja_session_event.vtbl = &session_vtbl;
     }
     
     return JA_SUCCESS;
@@ -1408,7 +1445,7 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
     procedure = JA_GetProcedure(res->global_allocator);
     
     procedure->com.ja_CoInitializeEx(NULL, JA_COINIT_DEFAULT);
-    procedure->com.ja_CoCreateInstance(&JA_IID_IMMDeviceEnumerator, NULL, JA_CLSCTX_ALL, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
+    procedure->com.ja_CoCreateInstance(&JA_CLSID_MMDeviceEnumerator, NULL, JA_CLSCTX_ALL, &JA_IID_IMMDeviceEnumerator,  (void **)(&device_enumerator));
     
     device_enumerator->vtbl->JA_GetDefaultAudioEndpoint(device_enumerator, desc->flow, desc->role, &endpoint_device);
     endpoint_device->vtbl->JA_Activate(endpoint_device, &JA_IID_IAudioClient3, 0x04, NULL,(void **)&audio_client);
@@ -1530,7 +1567,6 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
             device->tag = (ja_AudioFormat)(JA_Max(current_format->format_tag, 0x4));
         }
         
-        //TODO:Khal maybe swap the _unused_ to buffer size? If it is constant.
         device->channels = (DWORD)(current_format->channels);
         device->bits_per_sample = (DWORD)(current_format->bits_per_sample);
         device->samples_per_second = current_format->samples_per_sec;
@@ -1543,9 +1579,11 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
     
     
     {
-        ja_IAudioSessionControl2 * session_control;
+        ja_IAudioSessionControl * session_control;
         
-        audio_client->vtbl->JA_GetService(audio_client, &JA_IID_IAudioSessionControl2,(void**)(&session_control));
+        //We need to allocate the virtual table. We will use the COM malloc.
+        
+        audio_client->vtbl->JA_GetService(audio_client, &JA_IID_IAudioSessionControl,(void**)(&session_control));
         
         if(ja_notification_client.ref <= 0){
             ja_notification_client.vtbl->JA_QueryInterface = JA_In_Noti_QueryInterface;
@@ -1584,7 +1622,7 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
         ja_session_event.rerouting_handle = device->stream_rerouting_handle;
         
         session_control->vtbl->JA_RegisterAudioSessionNotification(session_control, &ja_session_event);
-        device_enumerator->vtbl->JA_UnregisterEndpointNotificationCallback(device_enumerator, &ja_notification_client);
+        device_enumerator->vtbl->JA_RegisterEndpointNotificationCallback(device_enumerator, &ja_notification_client);
     }
     
     return JA_SUCCESS;
@@ -1595,7 +1633,7 @@ JA_DeinitDevice(struct ja_AudioDevice * device){
     {
         
         ja_IMMDeviceEnumerator * device_enumerator;
-        ja_IAudioSessionControl2 * session_control;
+        ja_IAudioSessionControl * session_control;
         
         device_enumerator = ja_notification_client.enumerator;
         session_control = ja_session_event.session;
