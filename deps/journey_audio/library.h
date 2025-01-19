@@ -13,7 +13,9 @@
 2024-01-02 stub out Init Device where we initialize the device but not play it. [Complete] 
 2024-01-02 create a structure for the device initialization to pass to the engine. [Complete]
 2024-01-06 fix the clang warning (123 warning) and confine coding to C99 ISO  [Complete] "only -Wunused-parameter"
-2024-01-18 Work on uninitialize device procedure.
+2024-01-18 Work on uninitialize device procedure. [Complete]
+2024-01-18 Test if the functions work in odin.
+2024-01-18 Work on the decoder. We want to read up on the WAV and OGG documentation specs. We need to fetch the audio info for both WAV and OGG (we might also read up on MP3)
 */
 
 
@@ -868,75 +870,87 @@ static const ja_HandleO JA_INVALID_HANDLE = {0xFFFFFFFFFFFFFFFF};
 static ja_IMMNotificationClient ja_notification_client;
 static ja_IAudioSessionEvents ja_session_event;
 
-IMPORT void* JA_WINAPI MapViewOfFileEx(
-                                       ja_HandleO hFileMappingObject,
-                                       DWORD  dwDesiredAccess,
-                                       DWORD  dwFileOffsetHigh,
-                                       DWORD  dwFileOffsetLow,
-                                       QWORD dwNumberOfBytesToMap,
-                                       void * lpBaseAddress
-                                       );
+IMPORT void* JA_WINAPI 
+MapViewOfFileEx(
+                ja_HandleO hFileMappingObject,
+                DWORD  dwDesiredAccess,
+                DWORD  dwFileOffsetHigh,
+                DWORD  dwFileOffsetLow,
+                QWORD dwNumberOfBytesToMap,
+                void * lpBaseAddress
+                );
 
-IMPORT BOOL32 JA_WINAPI VirtualLock(
-                                    void* lpAddress,
-                                    QWORD dwSize
-                                    );
+IMPORT BOOL32 JA_WINAPI 
+VirtualLock(
+            void* lpAddress,
+            QWORD dwSize
+            );
 
-IMPORT BOOL32 JA_WINAPI VirtualUnlock(
-                                      void* lpAddress,
-                                      QWORD dwSize
-                                      );
+IMPORT BOOL32 JA_WINAPI
+VirtualUnlock(
+              void* lpAddress,
+              QWORD dwSize
+              );
 
-IMPORT void* JA_WINAPI VirtualAlloc(
-                                    void* lpAddress,
-                                    QWORD dwSize,
-                                    DWORD  flAllocationType,
-                                    DWORD  flProtect
-                                    );
+IMPORT void* JA_WINAPI 
+VirtualAlloc(
+             void* lpAddress,
+             QWORD dwSize,
+             DWORD  flAllocationType,
+             DWORD  flProtect
+             );
 
 
-IMPORT BOOL32 JA_WINAPI VirtualFree(
-                                    void* lpAddress,
-                                    QWORD dwSize,
-                                    DWORD  dwFreeType
-                                    );
+IMPORT BOOL32 JA_WINAPI 
+VirtualFree(
+            void* lpAddress,
+            QWORD dwSize,
+            DWORD  dwFreeType
+            );
 
-IMPORT BOOL32 JA_WINAPI UnmapViewOfFile(
-                                        const void* lpBaseAddress
-                                        );
+IMPORT BOOL32 JA_WINAPI 
+UnmapViewOfFile(
+                const void* lpBaseAddress
+                );
 
-IMPORT ja_HandleO JA_WINAPI CreateFileMappingW(
-                                               ja_HandleO hFile,
-                                               void* lpFileMappingAttributes,
-                                               DWORD flProtect,
-                                               DWORD dwMaximumSizeHigh,
-                                               DWORD dwMaximumSizeLow,
-                                               const P16 lpName
-                                               );
+IMPORT ja_HandleO JA_WINAPI 
+CreateFileMappingW(
+                   ja_HandleO hFile,
+                   void* lpFileMappingAttributes,
+                   DWORD flProtect,
+                   DWORD dwMaximumSizeHigh,
+                   DWORD dwMaximumSizeLow,
+                   const P16 lpName
+                   );
 
-IMPORT ja_HandleO JA_WINAPI LoadLibraryW(
-                                         const P16 lib_name
-                                         );
+IMPORT ja_HandleO JA_WINAPI 
+LoadLibraryW(
+             const P16 lib_name
+             );
 
-IMPORT BOOL32 JA_WINAPI FreeLibrary(
-                                    ja_HandleO lib_module
-                                    );
+IMPORT BOOL32 JA_WINAPI 
+FreeLibrary(
+            ja_HandleO lib_module
+            );
 
-IMPORT void* JA_WINAPI GetProcAddress(
-                                      ja_HandleO lib_module,
-                                      const P8 proc_name
-                                      );
+IMPORT void* JA_WINAPI 
+GetProcAddress(
+               ja_HandleO lib_module,
+               const P8 proc_name
+               );
 
-IMPORT BOOL32 JA_WINAPI CloseHandle(
-                                    ja_HandleO handle
-                                    );
+IMPORT BOOL32 JA_WINAPI 
+CloseHandle(
+            ja_HandleO handle
+            );
 
-IMPORT ja_HandleO JA_WINAPI CreateEventExW(
-                                           void * lpEventAttributes,
-                                           const P16 lpName,
-                                           DWORD dwFlags,
-                                           DWORD dwDesiredAccess
-                                           );
+IMPORT ja_HandleO JA_WINAPI 
+CreateEventExW(
+               void * lpEventAttributes,
+               const P16 lpName,
+               DWORD dwFlags,
+               DWORD dwDesiredAccess
+               );
 
 //Ole32
 typedef DWORD (JA_WINAPI * CoInitializeEx)(void * pv_reserved, DWORD dw_coinit);
@@ -1107,16 +1121,21 @@ struct ja_AudioDevice{
 };
 
 /////////////////////////////////////// Proc  Signature //////////////////////////////////////////// 
+ja_IMalloc *
+JA_GetComAlloctor(void);
 
 BOOL32
 JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *  res);
+
 BOOL32
 JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res, struct ja_AudioDevice * device);
-ja_IMalloc *
-JA_GetComAlloctor(void);
+
+void
+JA_DeinitDevice(struct ja_AudioDevice * device);
 ////////////////////////////////////// Callback Events /////////////////////////////////////////////
 
-JA_LOCAL DWORD JA_WINAPI JA_In_Session_QueryInterface(ja_IAudioSessionEvents * self, const ja_IID * const ref_iid, void ** object){
+JA_LOCAL DWORD JA_WINAPI 
+JA_In_Session_QueryInterface(ja_IAudioSessionEvents * self, const ja_IID * const ref_iid, void ** object){
     
     //if(JA_GUIDMatch(ref_iid, &JA_IID_IUnknown) || JA_GUIDMatch(ref_iid, &JA_IID_IAudioSessionEvents)){
     
@@ -1129,11 +1148,13 @@ JA_LOCAL DWORD JA_WINAPI JA_In_Session_QueryInterface(ja_IAudioSessionEvents * s
     return 1;
 }
 
-JA_LOCAL DWORD JA_WINAPI JA_In_Session_AddRef(ja_IAudioSessionEvents * self){
+JA_LOCAL DWORD JA_WINAPI 
+JA_In_Session_AddRef(ja_IAudioSessionEvents * self){
     return (DWORD)(_InterlockedIncrement((long *)(&self->ref)));
 }
 
-JA_LOCAL DWORD JA_WINAPI  JA_In_Session_Release(ja_IAudioSessionEvents * self){
+JA_LOCAL DWORD JA_WINAPI  
+JA_In_Session_Release(ja_IAudioSessionEvents * self){
     DWORD ref = (DWORD)(_InterlockedDecrement((long *)(&self->ref)));
     
     if (ref){
@@ -1141,7 +1162,6 @@ JA_LOCAL DWORD JA_WINAPI  JA_In_Session_Release(ja_IAudioSessionEvents * self){
     }else{
         
     }
-    
     
     
     //free(self); This will not work, since we are using our global allocator (linear)
@@ -1564,14 +1584,53 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
         ja_session_event.rerouting_handle = device->stream_rerouting_handle;
         
         session_control->vtbl->JA_RegisterAudioSessionNotification(session_control, &ja_session_event);
-        device_enumerator->vtbl->JA_RegisterEndpointNotificationCallback(device_enumerator, &ja_notification_client);
+        device_enumerator->vtbl->JA_UnregisterEndpointNotificationCallback(device_enumerator, &ja_notification_client);
     }
     
     return JA_SUCCESS;
 }
 
+void
+JA_DeinitDevice(struct ja_AudioDevice * device){
+    {
+        
+        ja_IMMDeviceEnumerator * device_enumerator;
+        ja_IAudioSessionControl2 * session_control;
+        
+        device_enumerator = ja_notification_client.enumerator;
+        session_control = ja_session_event.session;
+        
+        ja_notification_client.vtbl->JA_Release(&ja_notification_client);
+        ja_session_event.vtbl->JA_Release(&ja_session_event);
+        
+        device_enumerator->vtbl->JA_UnregisterEndpointNotificationCallback(device_enumerator, &ja_notification_client);
+        session_control->vtbl->JA_UnregisterAudioSessionNotification(session_control, &ja_session_event);
+        
+        device_enumerator->vtbl->JA_Release(device_enumerator);
+        session_control->vtbl->JA_Release(session_control);
+        
+        device_enumerator = NULL;
+        session_control = NULL;
+    }
+    
+    {
+        device->audio_client->vtbl->JA_Release(device->audio_client);
+        device->endpoint_device->vtbl->JA_Release(device->endpoint_device);
+        
+        device->audio_client = NULL;
+        device->endpoint_device = NULL;
+        
+        CloseHandle(device->stream_handle);
+        CloseHandle(device->stream_rerouting_handle);
+        CloseHandle(device->quit_handle);
+        
+        device->stream_handle.opaque = 0x0;
+        device->stream_rerouting_handle.opaque = 0x0;
+        device->quit_handle.opaque = 0x0;
+    }
+}
 
-//TODO: Khal create DeintDevice, DeinitSpatialDevice.
+//TODO: Khal create DeinitSpatialDevice.
 //TODO: Khal create InitializeSpatialDevice.
 
 
