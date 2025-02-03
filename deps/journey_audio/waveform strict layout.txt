@@ -1,0 +1,47 @@
+Strict Waveform layout for Journey Audio engine
+
+<riff-ck><fmt-ck><data-ck> <ignored-ck>
+
+------------------------------------------------------
+
+<riff-ck> -> RIFF(<ck-size:DWORD> <form-type:DWORD>)
+
+RIFFChunk :: struct{
+ ck_id : DWORD,
+ ck_size : DWORD,
+ form_type : DWORD,
+}
+
+------------------------------------------------------
+
+<fmt-ck> -> fmt(<common-fmt> <specific-fmt>)
+
+FMTChunk :: struct{
+ ck_id : DWORD,
+ ck_size : DWORD,
+ common : CommonFmt,
+ specific : SpecificFmt,
+}
+
+<common-fmt> -> CommonFmt :: struct{
+ format_tag : WORD,
+ channels : WORD,
+ sample_per_sec : DWORD,
+ avg_byte_per_sec : DWORD,
+ block_align : WORD,
+}
+
+<specific-fmt> -> SpecificFmt :: struct{
+ bits_per_sample : WORD,
+}
+
+
+------------------------------------------------------
+
+<data-ck> -> data(<wave-data>)
+
+<wave-data> -> Data :: struct{
+ ck_id : DWORD,
+ ck_size : DWORD,
+ samples : [u8*, u16*, s24*, f32*]
+}

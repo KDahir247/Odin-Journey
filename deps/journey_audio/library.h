@@ -14,8 +14,13 @@
 2024-01-02 create a structure for the device initialization to pass to the engine. [Complete]
 2024-01-06 fix the clang warning (123 warning) and confine coding to C99 ISO  [Complete] "only -Wunused-parameter"
 2024-01-18 Work on uninitialize device procedure. [Complete]
-2024-01-18 Test if the functions work in odin.
-2024-01-18 Work on the decoder. We want to read up on the WAV and OGG documentation specs. We need to fetch the audio info for both WAV and OGG (we might also read up on MP3)
+2024-01-18 Test if the functions work in odin. [Complete]
+2024-01-18 Work on the decoder. We want to read up on the WAV and OGG documentation specs. We need to fetch the audio info for both WAV and OGG (we might also read up on MP3) [Partial Complete (WAV)]
+2024-01-26 Disassemble JA_GetComAllocator, InitBackend, and InitDevice.
+2024-01-26 Complete the WAV parse procedure.
+2024-01-29 memory operation (memcpy, memmove, memcmp, etc....) Using compiler builtin [Complete] 
+2024-02-01 Move the Wav parser struct with the other struct. [Complete]
+2024-02-02 Just a thought.... Should we use NT (ntdll, user-mode) rather than kernel (kernel32). Kernel call to NT
 */
 
 
@@ -111,6 +116,9 @@ typedef QWORD BOOL64;
 typedef float SINGLE;
 typedef double DOUBLE;
 
+typedef long long S64;
+typedef long S32;
+typedef short S16;
 
 ////////////////////////////////////// CORE //////////////////////////////////////
 
@@ -127,6 +135,10 @@ typedef double DOUBLE;
 
 #define JA_LOCAL static
 #define JA_GLOBAL static
+
+#define JA_MememoryCopy __builtin_memcpy_inline
+#define JA_MemorySet __builtin_memset_inline
+#define JA_MemoryCompare __builtin_memcmp_inline
 
 ///////////////////////////////////// WIN32 //////////////////////////////////////
 #define JA_SUCCESS 0x00000000
@@ -264,9 +276,41 @@ typedef double DOUBLE;
 #define JA_EVENT_ALL_ACCESS 0x1F0003
 #define JA_EVENT_MODIFY_STATE 0x0002
 
+#define JA_GUIDMatch  !JA_MemoryCompare
 
-//TODO:Khal better matching.
-#define JA_GUIDMatch(x,y) !__builtin_memcmp(&x,&y, sizeof(ja_GUID)) 
+//IO
+#define JA_GENERIC_ALL 0x10000000
+#define JA_GENERIC_EXECUTE 0x20000000
+#define JA_GENERIC_WRITE 0x40000000
+#define JA_GENERIC_READ 0x80000000
+
+#define JA_FILE_SHARE_DELETE 0x04
+#define JA_FILE_SHARE_READ 0x01
+#define JA_FILE_SHARE_WRITE 0x02
+
+#define JA_CREATE_ALWAYS 0x02
+#define JA_CREATE_NEW 0x01
+#define JA_OPEN_ALWAYS 0x04
+#define JA_OPEN_EXISTING 0x03
+#define JA_TRUNCATE_EXISTING 0x05
+
+#define JA_FILE_ATTRIBUTE_NORMAL 0x80
+
+#define JA_FILE_FLAG_BACKUP_SEMANTICS 0x02000000
+#define JA_FILE_FLAG_DELETE_ON_CLOSE 0x04000000
+#define JA_FILE_NO_BUFFERING 0x20000000
+#define JA_FILE_OPEN_NO_RECALL 0x00100000
+#define JA_FILE_FLAG_OPEN_REPARSE_POINT 0x00200000
+#define JA_FILE_FLAG_OVERLAPPED 0x40000000
+#define JA_FILE_FLAG_POSIX_SEMANTICS 0x01000000
+#define JA_FILE_FLAG_RANDOM_ACCESS 0x10000000
+#define JA_FILE_FLAG_SESSION_AWARE 0x00800000
+#define JA_FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
+#define JA_FILE_FLAG_WRITE_THROUGH 0x80000000
+
+#define JA_FILE_BEGIN 0x00
+#define JA_FILE_CURRENT 0x01
+#define JA_FILE_END 0x02
 
 ///////////////////////////////////// FLAGS //////////////////////////////////////
 #define JA_FLUSH_ZERO_ENABLE 0x00008000
@@ -306,21 +350,6 @@ typedef double DOUBLE;
 #define JA_FORM_FACTOR_DADD 0x00000009
 #define JA_FORM_FACTOR_UNKNOWN 0x0000000A
 
-//Query Masks
-#define JA_AUDIO_FORMAT_U8 0x00000001
-#define JA_AUDIO_FORMAT_S16 0x00000002
-#define JA_AUDIO_FORMAT_S24 0x00000003
-#define JA_AUDIO_FORMAT_S32 0x00000004
-#define JA_AUDIO_FORMAT_F32 0x00000008
-#define JA_AUDIO_FORMAT_F64 0x00000010
-#define JA_AUDIO_SPEAKER_MONO 0x00000020
-#define JA_AUDIO_SPEAKER_STEREO 0x00000040
-#define JA_AUDIO_EVENT_DRIVEN 0x00000080
-#define JA_AUDIO_SPEAKERS 0x00000100
-#define JA_AUDIO_HEADPHONE 0x00000200
-#define JA_AUDIO_MICROPHONE 0x00000400
-#define JA_AUDIO_HEADSET 0x00000800
-
 #define JA_ENDPOINT_SYSFX_ENABLED 0
 #define JA_ENDPOINT_SYSFX_DISABLED 1
 
@@ -343,6 +372,16 @@ typedef double DOUBLE;
 //10ms
 #define JA_DEFAULT_BUFFER_SIZE_NANOSECOND 10000000
 
+//////////////////// Decoder ///////////////////////////////
+
+#define JA_RIFF_MAGIC 1179011410
+#define JA_FORM_MAGIC 1163280727
+
+#define JA_FMT_CK_SEEK 0xCull
+#define JA_DATA_CK_SEEK 0x2Cull
+#define JA_HEADER_SIZE 12
+#define JA_FMT_SIZE 24
+
 typedef struct ja_GUID ja_GUID;
 typedef struct ja_Blob ja_Blob;
 typedef struct ja_GUID ja_IID;
@@ -350,7 +389,7 @@ typedef struct ja_PropVariant ja_PropVariant;
 typedef struct ja_PropertyKey ja_PropertyKey;
 typedef struct ja_MemExtendedParameter ja_MemExtendedParameter;
 typedef struct ja_HandleO ja_HandleO;
-
+typedef struct ja_Overlapped ja_Overlapped;
 struct ja_HandleO{
     QWORD opaque;
 };
@@ -402,6 +441,15 @@ struct ja_MemExtendedParameter{
     };
     
 };
+
+struct ja_Overlapped{
+    QWORD * internal;
+    QWORD * internal_high;
+    DWORD offset;
+    DWORD offset_high;
+    ja_HandleO hEvent;
+};
+
 
 typedef enum ja_VARENUM {
     VT_EMPTY = 0,
@@ -515,13 +563,6 @@ typedef enum ja_SessionDisconnectReason{
     Disconnected = 4,
     ExclusiveModeOverrride = 5,
 }ja_SessionDisconnectReason;
-
-typedef enum ja_AudioFormat{
-    PCM = 0x00000001,
-    ADPCM = 0x00000002, // XAudio2
-    Float = 0x00000003,
-    Unknown = 0x00000004,
-}ja_AudioFormat;
 
 typedef struct ja_IUnknown ja_IUnknown;
 typedef struct ja_WaveFormatex ja_WaveFormatex;
@@ -897,6 +938,8 @@ static ja_IAudioSessionEvents ja_session_event;
 static ja_IMMNotificationClientVtbl notification_vtbl;
 static ja_IAudioSessionEventsVtbl session_vtbl;
 
+//Allocation
+
 IMPORT void* JA_WINAPI 
 MapViewOfFileEx(
                 ja_HandleO hFileMappingObject,
@@ -950,6 +993,8 @@ CreateFileMappingW(
                    const P16 lpName
                    );
 
+//Lib loading
+
 IMPORT ja_HandleO JA_WINAPI 
 LoadLibraryW(
              const P16 lib_name
@@ -971,6 +1016,7 @@ CloseHandle(
             ja_HandleO handle
             );
 
+//Sync
 IMPORT ja_HandleO JA_WINAPI 
 CreateEventExW(
                void * lpEventAttributes,
@@ -978,6 +1024,45 @@ CreateEventExW(
                DWORD dwFlags,
                DWORD dwDesiredAccess
                );
+
+
+//File IO
+IMPORT ja_HandleO JA_WINAPI
+CreateFileW(
+            const P16 lpFileName,
+            DWORD dwDesiredAccess,
+            DWORD dwShareMode,
+            void * lpSecurityAttributes,
+            DWORD dwCreationDisposition,
+            DWORD dwFlagsAndAttributes,
+            ja_HandleO hTemplateFile
+            );
+
+IMPORT DWORD JA_WINAPI
+GetFileSizeEx(
+              ja_HandleO hFile,
+              QWORD * lpFileSize
+              );
+
+IMPORT DWORD JA_WINAPI
+ReadFile(
+         ja_HandleO hFile,
+         void * lpBuffer,
+         DWORD nNumberOfBytesToRead,
+         DWORD * lpNumberOfBytesRead,
+         ja_Overlapped * lpOverlapped
+         );
+
+
+//TODO:Khal maybe also include ReadFileEx
+
+IMPORT DWORD JA_WINAPI
+SetFilePointerEx(
+                 ja_HandleO hFile,
+                 QWORD liDistanceToMove,
+                 QWORD * lpNewFilePointer,
+                 DWORD dwMoveMethod
+                 );
 
 //Ole32
 typedef DWORD (JA_WINAPI * CoInitializeEx)(void * pv_reserved, DWORD dw_coinit);
@@ -1131,23 +1216,69 @@ struct ja_DeviceDescriptor{
 };
 
 struct ja_AudioDevice{
-    //16
     ja_IAudioClient3 * audio_client;
     ja_IMMDevice * endpoint_device;
     
-    //24
     ja_HandleO stream_handle;
     ja_HandleO stream_rerouting_handle;
     ja_HandleO quit_handle;
     
-    //24
     DWORD max_buffer_size;
-    ja_AudioFormat tag;
+    DWORD format_tag;
     DWORD channels; 
     DWORD bits_per_sample;
     DWORD samples_per_second;
     SINGLE optimal_latency;
 };
+
+struct ja_RIFFMeta{
+    DWORD ck_id;
+    DWORD ck_size;
+};
+
+struct ja_RIFFHeader{
+    DWORD ck_id;
+    DWORD ck_size;
+    DWORD form_type;
+};
+
+struct ja_WaveFormatChunk{
+    DWORD fmt_ck_id;
+    DWORD fmt_ck_size;
+    WORD format_tag;
+    WORD channel;
+    DWORD samples_per_sec;
+    DWORD avg_bytes_per_sec;
+    WORD block_align;
+    WORD bits_per_sample;
+};
+
+//OGG
+
+
+
+struct ja_DecoderDescriptor{
+    QWORD offset_frame; 
+    DWORD frame_chunk_size;
+    DWORD frame_count;
+};
+
+struct ja_Decoder{
+    ja_HandleO fhandle;
+    ja_HandleO async_handle;
+    
+    struct ja_DecoderDescriptor descriptor;
+    
+    DWORD format_tag;
+    DWORD channel;
+    DWORD samples_per_sec;
+    DWORD avg_bytes_per_sec; 
+    DWORD block_align;
+    DWORD bits_per_sample;
+    DWORD frame_length;
+    DWORD _unused_;
+};
+
 
 /////////////////////////////////////// Proc  Signature //////////////////////////////////////////// 
 ja_IMalloc *
@@ -1161,6 +1292,16 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
 
 void
 JA_DeinitDevice(struct ja_AudioDevice * device);
+
+
+BOOL32
+JA_ValidateWAV(const P16 wav_path);
+
+void
+JA_InitDecoderWAV(const P16 wav_path, DWORD count, DWORD size, struct ja_Decoder* decoder);
+
+void 
+JA_InitDecoderOGG(const P16 vorbis_path, struct ja_Decoder* decoder);
 ////////////////////////////////////// Callback Events /////////////////////////////////////////////
 
 JA_LOCAL DWORD JA_WINAPI 
@@ -1412,7 +1553,6 @@ JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *
     }
     
     {
-        
         res->global_allocator = global_ptr;
         
         res->ring.buffer = ring_buffer;
@@ -1421,13 +1561,6 @@ JA_InitBackend(const struct ja_MemoryDescriptor * mem_desc, struct ja_Resource *
         res->ring.read_index = 0;
         
         res->com_allocator = com_alloc;
-        
-    }
-    
-    //Initialize the statics
-    {
-        ja_notification_client.vtbl = &notification_vtbl;
-        ja_session_event.vtbl = &session_vtbl;
     }
     
     return JA_SUCCESS;
@@ -1459,25 +1592,13 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
         BOOL32 event_driven_mode_mask;
         BOOL32 apo_offloading_mask;
         
-        apo_enabled_mask = 0x00000000;
-        event_driven_mode_mask = 0x00000000;
-        apo_offloading_mask = 0x00000000;
-        
         endpoint_device->vtbl->JA_OpenPropertyStore(endpoint_device, JA_STGM_READ, &property_store);
         
         property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Disable_SysFx, &prop_variant);
         apo_enabled_mask = ~prop_variant.dval & 0x00000001;
         
-        if (prop_variant.vt != VT_UI4){
-            apo_enabled_mask = 0;
-        }
-        
         property_store->vtbl->JA_GetValue(property_store, &JA_PKEY_AudioEndpoint_Supports_EventDriven_Mode, &prop_variant);
         event_driven_mode_mask = prop_variant.dval;
-        
-        if(prop_variant.vt != VT_UI4){
-            event_driven_mode_mask = 0;
-        }
         
         if (apo_enabled_mask){
             audio_client->vtbl->JA_IsOffloadingCapable(audio_client, desc->category, &apo_offloading_mask);
@@ -1493,8 +1614,7 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
             audio_client->vtbl->JA_Release(audio_client);
             property_store->vtbl->JA_Release(property_store);
             
-            
-            //TODO:Khal.
+            //TODO:Khal handle if the audio endpoint doesn't support event driven mode.
             return 0;
         }
         
@@ -1557,14 +1677,16 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
         
         device->max_buffer_size = buffer_size;
         
+        device->format_tag = current_format->format_tag & 0x7;
+        
         if (current_format->format_tag == JA_WAVE_FORMAT_EXTENSIBLE){
             ja_WaveFormatexExtensible * current_format_extended;
             
             current_format_extended = (ja_WaveFormatexExtensible *)current_format;
-            device->tag = (ja_AudioFormat)(JA_Max(current_format_extended->sub_format.data_1, 0x4));
             
-        }else{
-            device->tag = (ja_AudioFormat)(JA_Max(current_format->format_tag, 0x4));
+            
+            device->format_tag = (current_format_extended->sub_format.data_1 >> 0x14) & 0x7;
+            
         }
         
         device->channels = (DWORD)(current_format->channels);
@@ -1579,6 +1701,8 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
     
     
     {
+        
+        //Initialize the statics
         ja_IAudioSessionControl * session_control;
         
         //We need to allocate the virtual table. We will use the COM malloc.
@@ -1586,6 +1710,8 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
         audio_client->vtbl->JA_GetService(audio_client, &JA_IID_IAudioSessionControl,(void**)(&session_control));
         
         if(ja_notification_client.ref <= 0){
+            ja_notification_client.vtbl = &notification_vtbl;
+            
             ja_notification_client.vtbl->JA_QueryInterface = JA_In_Noti_QueryInterface;
             ja_notification_client.vtbl->JA_AddRef = JA_In_Noti_AddRef;
             ja_notification_client.vtbl->JA_Release = JA_In_Noti_Release;
@@ -1600,6 +1726,8 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
         }
         
         if(ja_session_event.ref <= 0){
+            ja_session_event.vtbl = &session_vtbl;
+            
             ja_session_event.vtbl->JA_QueryInterface = JA_In_Session_QueryInterface;
             ja_session_event.vtbl->JA_AddRef = JA_In_Session_AddRef;
             ja_session_event.vtbl->JA_Release = JA_In_Session_Release;
@@ -1641,6 +1769,8 @@ JA_DeinitDevice(struct ja_AudioDevice * device){
         ja_notification_client.vtbl->JA_Release(&ja_notification_client);
         ja_session_event.vtbl->JA_Release(&ja_session_event);
         
+        //TODO:Khal Make the event vtbl null if ref count is zero.
+        
         device_enumerator->vtbl->JA_UnregisterEndpointNotificationCallback(device_enumerator, &ja_notification_client);
         session_control->vtbl->JA_UnregisterAudioSessionNotification(session_control, &ja_session_event);
         
@@ -1676,11 +1806,109 @@ JA_DeinitDevice(struct ja_AudioDevice * device){
 /////////////////////////// Decoder Procedure  ///////////////////////////
 
 
+//JA_ValidateHeaderWav is expose if the user want to check if the RIFF header is indeed a WAVE. The audio source will make the assumption that the file buffer is always the correct format, thus it will do no checks. so undefined behaviour will happen if the assumption is wrong.
+BOOL32
+JA_ValidateHeaderWAV(const BYTE* file_buffer){
+    struct ja_RIFFHeader* magic_header;
+    
+    magic_header = (struct ja_RIFFHeader*)(file_buffer);
+    return (magic_header->ck_id - JA_RIFF_MAGIC) | (magic_header->form_type - JA_FORM_MAGIC);
+}
 
+
+//We want the WaveFmt Chunk and WavData Chunk only
+
+
+//We will not do any RIFF validation (assume file buffer is a valid RIFF WAVE format).
+//We will not do any layout validation.
+//We will assume that the first CK is the RIFF header.
+//We will asume that the file follow the RIFF header format (4 bytes ck-id, 4 bytes ck size, data)
+//We will assume fmt-ck is first before the data-ck
+//We will assume that the ck-size for the fmt-ck is always 16. If it is greater then the data after offset 16 will result in undefined result. Handled in the reading of the data.
+//We will assume that the wav layout will be riff-ck, fmt-ck, data-ck, ignored-ck
+//We will assume that there will be no jnk-ck (used for compatibility which we don't care about)
+//We will assume that all wav that use this audio engine parser follows the strict layout in waveform strict layout.txt
+//We will assume that the start offset to get the sample data will always be 44 bytes
+//We will assume that the start offset to get the audio format description will always be 20 bytes
+
+
+//We just want the fmt-ck and data-ck other chunk are just garbage to us
+//We will make the formating for the buffer follow the layout; fmt-ck (4b + 4b + 16b) ->  data-ck(4b + 4b + xb)
+//Seem like the junk chunk is used for  BWF and RF64 which is the same size of the ds64 chunk.
+//If there is jnk chunk we will remove it in a hex editor and subtract the chunk size by the jnk-chunk size.
+//If the layout doesn't follow the strict layout specified in the waveform strict layout then we must change the wav file layout in a hex editor. This parse will not do any reordering.
+//To get the start of the sample data we must move 
+
+
+//We want two seperate procedure on for Initializing the decoder using Wav and another for OGG. The result will return a generic Decoder struct. This will allow mixing between OGG and WAV in the future. While solving specific problem depending on the decoder procedure (WAV, OGG), so we can make assumptions.
+
+
+//How much frame length should we will? 
+//path, frame_length, frame_size, decoder
+void
+JA_InitDecoderWAV(const P16 wav_path, DWORD count, DWORD size, struct ja_Decoder* decoder){
+    struct ja_WaveFormatChunk fmt_ck;
+    QWORD sample_byte_count;
+    
+    ja_Overlapped overlapped;
+    ja_HandleO async_io_handle;
+    ja_HandleO decoder_handle;
+    
+    //Read up on...
+    //https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/subsystem/cache-memory-management/?form=MG0AV3
+    
+    //Before using async read up on 
+    //https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
+    //and
+    //https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/overview-of-the-windows-i-o-model
+    
+    {
+        JA_MemorySet(&overlapped,0, sizeof(ja_Overlapped));
+        
+        async_io_handle = CreateEventExW(NULL, NULL, JA_EVENT_MANUAL_RESET, JA_SYNCHRONIZE | JA_EVENT_MODIFY_STATE );
+        
+        overlapped.offset = JA_HEADER_SIZE;
+        
+        //TODO:Khal allow async (add async flag). If so do we need sequential scan (Prefetch more and evict data behind the file pointer)
+        decoder_handle =  CreateFileW(wav_path, (JA_GENERIC_READ | JA_GENERIC_WRITE), (JA_FILE_SHARE_READ | JA_FILE_SHARE_WRITE), NULL, JA_OPEN_EXISTING, (JA_FILE_ATTRIBUTE_NORMAL | JA_FILE_FLAG_SEQUENTIAL_SCAN), JA_NULL_HANDLE);
+        
+        GetFileSizeEx(decoder_handle, &sample_byte_count);
+        
+        //TODO:Khal change ReadFile for ReadFileEx 
+        ReadFile(decoder_handle, &fmt_ck, JA_FMT_SIZE, NULL, &overlapped);
+    }
+    
+    sample_byte_count -= JA_DATA_CK_SEEK;
+    
+    {
+        decoder->fhandle = decoder_handle;
+        decoder->async_handle = async_io_handle;
+        
+        decoder->descriptor.offset_frame = 0;
+        decoder->descriptor.frame_chunk_size = size;
+        decoder->descriptor.frame_count = count;
+        
+        decoder->format_tag = (DWORD)(fmt_ck.format_tag);
+        decoder->channel = (DWORD)(fmt_ck.channel);
+        decoder->samples_per_sec = fmt_ck.samples_per_sec;
+        decoder->avg_bytes_per_sec = fmt_ck.avg_bytes_per_sec;
+        decoder->block_align = (DWORD)(fmt_ck.block_align);
+        decoder->bits_per_sample = (DWORD)(fmt_ck.bits_per_sample);
+        decoder->frame_length = sample_byte_count / ((DWORD)(fmt_ck.channel) * (DWORD)(fmt_ck.block_align));
+    }
+    //How are 24 bit stored? Does it only use 3 bytes or do we use 4 bytes and zero the high???
+}
+
+void 
+JA_InitDecoderOGG(const P16 vorbis_path, struct ja_Decoder* decoder){
+    //TODO:Khal implement me
+}
 
 
 
 ///////////////////////// Permutation Procedure //////////////////////////
+
+//This will be SIMD heavy, due to high computation requirement. Also I will try to make it multithreaded. (DSP permutations, eg. lowpass, reverb, mixing, etc....)
 
 
 

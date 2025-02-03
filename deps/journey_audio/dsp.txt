@@ -1,0 +1,3 @@
+Just some dsp permutation that will be supported on Journey Audio. This list will increase when a dsp effect is need for the game.
+
+reverb, low-pass, high-pass, mixing, delay, 
