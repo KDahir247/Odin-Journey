@@ -10,6 +10,9 @@ import "base:intrinsics"
 
 import "/journey"
 
+//TODO:Khal follow the 8.3 file naming (file name should be 8 character and extension should be 3)
+//Follow the amd architecture CCX, CCD
+
 WND_CALLBACK :: proc "stdcall" (window_handle : windows.HWND, message : windows.UINT, w_param : windows.WPARAM, l_param : windows.LPARAM) -> windows.LRESULT{
 	switch message{
 		case windows.WM_DESTROY:
@@ -20,7 +23,6 @@ WND_CALLBACK :: proc "stdcall" (window_handle : windows.HWND, message : windows.
 
 	return windows.DefWindowProcW(window_handle, message, w_param, l_param)
 }
-
 
 main ::  proc()  {
 	///////////////////////// Initialization /////////////////////////

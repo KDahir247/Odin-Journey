@@ -17,10 +17,14 @@
 2024-01-18 Test if the functions work in odin. [Complete]
 2024-01-18 Work on the decoder. We want to read up on the WAV and OGG documentation specs. We need to fetch the audio info for both WAV and OGG (we might also read up on MP3) [Partial Complete (WAV)]
 2024-01-26 Disassemble JA_GetComAllocator, InitBackend, and InitDevice.
-2024-01-26 Complete the WAV parse procedure.
+2024-01-26 Complete the WAV parse procedure. [We need deinit to close handle on the decoder (should be simple 2 CloseHandle call)]
 2024-01-29 memory operation (memcpy, memmove, memcmp, etc....) Using compiler builtin [Complete] 
 2024-02-01 Move the Wav parser struct with the other struct. [Complete]
 2024-02-02 Just a thought.... Should we use NT (ntdll, user-mode) rather than kernel (kernel32). Kernel call to NT
+2024-02-02 read up on https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports before using async. [Complete]
+2024-02-02 read up on https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/overview-of-the-windows-i-o-model before finishing up on the decoder. [Complete]
+2024-02-17 Read up on the vorbis ogg file format and specifications before working on any OGG procedures.
+2024-02-17 Work on InitDecoderOGG procedure
 */
 
 
@@ -42,7 +46,16 @@ InitDevice (responsible for getting the target endpoint device and for setting i
 InitEngine (resampling, mixing and other buffer related things)
 
 All DSP node struct will be 64 bytes size.
+
+Big idea for DSP effect should it be cached? By this i mean that the computation is done once. Then it save the computation using a specific key to store in a stream in a file by using some_name.ext:key. Then we can move out all the WAV file and use this cache audio file for playing all the audio in the game.
     
+Avoid extremely large IO read, rather do chunk reads It is benefitial for System file cache and the CPU cache. (Remember don't depend on the L3 cache this is a victim cache)
+
+Don't use SetFilePointer for Async IO.
+
+Intresting so in AMD there are perferred core, so avoid setting processor affinity or mask affinity which may interfere with favored core scheduling.
+
+Look at the sync! is waitforobject faster then mutex (mutex may call MwaitX instruction which is fast) for Mutex we can use the SWRLock from msdn.
     
     */
 
@@ -295,11 +308,19 @@ typedef short S16;
 #define JA_TRUNCATE_EXISTING 0x05
 
 #define JA_FILE_ATTRIBUTE_NORMAL 0x80
+#define JA_FILE_ATTRIBUTE_ARCHIVE 0x20
+#define JA_FILE_ATTRIBUTE_ENCRYPTED 0x4000
+#define JA_FILE_ATTRIBUTE_HIDDEN 0x2
+#define JA_FILE_ATTRIBUTE_OFFLINE 0x1000
+#define JA_FILE_ATTRIBUTE_READONLY 0x1
+#define JA_FILE_ATTRIBUTE_SYSTEM 0x4
+#define JA_FILE_ATTRIBUTE_TEMPORARY 0x100
+
 
 #define JA_FILE_FLAG_BACKUP_SEMANTICS 0x02000000
 #define JA_FILE_FLAG_DELETE_ON_CLOSE 0x04000000
-#define JA_FILE_NO_BUFFERING 0x20000000
-#define JA_FILE_OPEN_NO_RECALL 0x00100000
+#define JA_FILE_FLAG_NO_BUFFERING 0x20000000
+#define JA_FILE_FLAG_OPEN_NO_RECALL 0x00100000
 #define JA_FILE_FLAG_OPEN_REPARSE_POINT 0x00200000
 #define JA_FILE_FLAG_OVERLAPPED 0x40000000
 #define JA_FILE_FLAG_POSIX_SEMANTICS 0x01000000
@@ -311,6 +332,8 @@ typedef short S16;
 #define JA_FILE_BEGIN 0x00
 #define JA_FILE_CURRENT 0x01
 #define JA_FILE_END 0x02
+
+#define JA_INFINITE 0xFFFFFFFF
 
 ///////////////////////////////////// FLAGS //////////////////////////////////////
 #define JA_FLUSH_ZERO_ENABLE 0x00008000
@@ -447,7 +470,7 @@ struct ja_Overlapped{
     QWORD * internal_high;
     DWORD offset;
     DWORD offset_high;
-    ja_HandleO hEvent;
+    ja_HandleO h_event;
 };
 
 
@@ -1035,7 +1058,7 @@ CreateFileW(
             void * lpSecurityAttributes,
             DWORD dwCreationDisposition,
             DWORD dwFlagsAndAttributes,
-            ja_HandleO hTemplateFile
+            QWORD hTemplateFile
             );
 
 IMPORT DWORD JA_WINAPI
@@ -1063,6 +1086,18 @@ SetFilePointerEx(
                  QWORD * lpNewFilePointer,
                  DWORD dwMoveMethod
                  );
+
+
+IMPORT DWORD JA_WINAPI
+WaitForSingleObject(
+                    ja_HandleO hHandle,
+                    DWORD dwMilliseconds
+                    );
+
+IMPORT DWORD JA_WINAPI
+ResetEvent(
+           ja_HandleO hEvent
+           );
 
 //Ole32
 typedef DWORD (JA_WINAPI * CoInitializeEx)(void * pv_reserved, DWORD dw_coinit);
@@ -1156,7 +1191,7 @@ JA_PushAllocate(struct ja_StaticAllocator * allocator, QWORD size){
     alignment_diff = allocator->offset & (allocator->alignment - 1);
     forward_alignment = (allocator->alignment - alignment_diff) & 7;
     
-    allocation = (BYTE*)(allocator) + allocator->offset + forward_alignment;
+    allocation = (BYTE *)(allocator) + allocator->offset + forward_alignment;
     allocator->offset += forward_alignment + size;
     
     return allocation;
@@ -1185,7 +1220,7 @@ JA_ClearAllocate(struct ja_StaticAllocator * allocator){
 
 JA_LFORCE_INLINE struct ja_Proc *
 JA_GetProcedure(struct ja_StaticAllocator * allocator){
-    return (struct ja_Proc *)(allocator + 0x0000000000000001);
+    return (struct ja_Proc *)(allocator + 0x01);
 }
 
 struct ja_RingBuffer{
@@ -1242,32 +1277,25 @@ struct ja_RIFFHeader{
     DWORD form_type;
 };
 
-struct ja_WaveFormatChunk{
-    DWORD fmt_ck_id;
-    DWORD fmt_ck_size;
-    WORD format_tag;
-    WORD channel;
-    DWORD samples_per_sec;
-    DWORD avg_bytes_per_sec;
-    WORD block_align;
-    WORD bits_per_sample;
+struct ja_WaveDecoderDescriptor{
+    struct ja_StaticAllocator * allocator;
+    QWORD frame_offset;
+    DWORD frame_size;
+    DWORD frame_count;
 };
 
 //OGG
-
-
-
-struct ja_DecoderDescriptor{
-    QWORD offset_frame; 
-    DWORD frame_chunk_size;
-    DWORD frame_count;
+struct ja_OggDecoderDescriptor{
+    DWORD place_holder;
 };
 
 struct ja_Decoder{
     ja_HandleO fhandle;
     ja_HandleO async_handle;
     
-    struct ja_DecoderDescriptor descriptor;
+    QWORD offset_frame;
+    DWORD frame_chunk_size;
+    DWORD frame_count;
     
     DWORD format_tag;
     DWORD channel;
@@ -1275,7 +1303,7 @@ struct ja_Decoder{
     DWORD avg_bytes_per_sec; 
     DWORD block_align;
     DWORD bits_per_sample;
-    DWORD frame_length;
+    DWORD sample_byte_size;
     DWORD _unused_;
 };
 
@@ -1293,15 +1321,11 @@ JA_InitDevice(const struct ja_DeviceDescriptor * desc, struct ja_Resource * res,
 void
 JA_DeinitDevice(struct ja_AudioDevice * device);
 
-
-BOOL32
-JA_ValidateWAV(const P16 wav_path);
-
 void
-JA_InitDecoderWAV(const P16 wav_path, DWORD count, DWORD size, struct ja_Decoder* decoder);
+JA_InitDecoderWAV(const P16 wav_path, struct ja_WaveDecoderDescriptor * wav_desc, struct ja_Decoder* decoder);
 
 void 
-JA_InitDecoderOGG(const P16 vorbis_path, struct ja_Decoder* decoder);
+JA_InitDecoderOGG(const P16 vorbis_path, struct ja_OggDecoderDescriptor * ogg_desc, struct ja_Decoder* decoder);
 ////////////////////////////////////// Callback Events /////////////////////////////////////////////
 
 JA_LOCAL DWORD JA_WINAPI 
@@ -1802,105 +1826,58 @@ JA_DeinitDevice(struct ja_AudioDevice * device){
 //TODO: Khal create InitializeSpatialDevice.
 
 
-
 /////////////////////////// Decoder Procedure  ///////////////////////////
 
-
-//JA_ValidateHeaderWav is expose if the user want to check if the RIFF header is indeed a WAVE. The audio source will make the assumption that the file buffer is always the correct format, thus it will do no checks. so undefined behaviour will happen if the assumption is wrong.
-BOOL32
-JA_ValidateHeaderWAV(const BYTE* file_buffer){
-    struct ja_RIFFHeader* magic_header;
-    
-    magic_header = (struct ja_RIFFHeader*)(file_buffer);
-    return (magic_header->ck_id - JA_RIFF_MAGIC) | (magic_header->form_type - JA_FORM_MAGIC);
-}
-
-
-//We want the WaveFmt Chunk and WavData Chunk only
-
-
-//We will not do any RIFF validation (assume file buffer is a valid RIFF WAVE format).
-//We will not do any layout validation.
-//We will assume that the first CK is the RIFF header.
-//We will asume that the file follow the RIFF header format (4 bytes ck-id, 4 bytes ck size, data)
-//We will assume fmt-ck is first before the data-ck
-//We will assume that the ck-size for the fmt-ck is always 16. If it is greater then the data after offset 16 will result in undefined result. Handled in the reading of the data.
-//We will assume that the wav layout will be riff-ck, fmt-ck, data-ck, ignored-ck
-//We will assume that there will be no jnk-ck (used for compatibility which we don't care about)
-//We will assume that all wav that use this audio engine parser follows the strict layout in waveform strict layout.txt
-//We will assume that the start offset to get the sample data will always be 44 bytes
-//We will assume that the start offset to get the audio format description will always be 20 bytes
-
-
-//We just want the fmt-ck and data-ck other chunk are just garbage to us
-//We will make the formating for the buffer follow the layout; fmt-ck (4b + 4b + 16b) ->  data-ck(4b + 4b + xb)
-//Seem like the junk chunk is used for  BWF and RF64 which is the same size of the ds64 chunk.
-//If there is jnk chunk we will remove it in a hex editor and subtract the chunk size by the jnk-chunk size.
-//If the layout doesn't follow the strict layout specified in the waveform strict layout then we must change the wav file layout in a hex editor. This parse will not do any reordering.
-//To get the start of the sample data we must move 
-
-
-//We want two seperate procedure on for Initializing the decoder using Wav and another for OGG. The result will return a generic Decoder struct. This will allow mixing between OGG and WAV in the future. While solving specific problem depending on the decoder procedure (WAV, OGG), so we can make assumptions.
-
-
-//How much frame length should we will? 
-//path, frame_length, frame_size, decoder
 void
-JA_InitDecoderWAV(const P16 wav_path, DWORD count, DWORD size, struct ja_Decoder* decoder){
-    struct ja_WaveFormatChunk fmt_ck;
-    QWORD sample_byte_count;
-    
-    ja_Overlapped overlapped;
-    ja_HandleO async_io_handle;
+JA_InitDecoderWAV(const P16 wav_path, struct ja_WaveDecoderDescriptor * wav_desc, struct ja_Decoder* decoder){
     ja_HandleO decoder_handle;
+    ja_HandleO async_io_handle;
+    DWORD* file_data;
     
-    //Read up on...
-    //https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/subsystem/cache-memory-management/?form=MG0AV3
-    
-    //Before using async read up on 
-    //https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
-    //and
-    //https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/overview-of-the-windows-i-o-model
+    file_data = (DWORD *)JA_PushAllocate(wav_desc->allocator, 48);
     
     {
+        ja_Overlapped  overlapped;
+        
         JA_MemorySet(&overlapped,0, sizeof(ja_Overlapped));
         
         async_io_handle = CreateEventExW(NULL, NULL, JA_EVENT_MANUAL_RESET, JA_SYNCHRONIZE | JA_EVENT_MODIFY_STATE );
+        decoder_handle =  CreateFileW(wav_path, JA_GENERIC_READ, JA_FILE_SHARE_READ, NULL, JA_OPEN_EXISTING, (JA_FILE_ATTRIBUTE_NORMAL | JA_FILE_FLAG_SEQUENTIAL_SCAN) | (JA_FILE_ATTRIBUTE_READONLY | JA_FILE_FLAG_OVERLAPPED), 0);
         
-        overlapped.offset = JA_HEADER_SIZE;
+        overlapped.h_event = async_io_handle;
         
-        //TODO:Khal allow async (add async flag). If so do we need sequential scan (Prefetch more and evict data behind the file pointer)
-        decoder_handle =  CreateFileW(wav_path, (JA_GENERIC_READ | JA_GENERIC_WRITE), (JA_FILE_SHARE_READ | JA_FILE_SHARE_WRITE), NULL, JA_OPEN_EXISTING, (JA_FILE_ATTRIBUTE_NORMAL | JA_FILE_FLAG_SEQUENTIAL_SCAN), JA_NULL_HANDLE);
-        
-        GetFileSizeEx(decoder_handle, &sample_byte_count);
-        
-        //TODO:Khal change ReadFile for ReadFileEx 
-        ReadFile(decoder_handle, &fmt_ck, JA_FMT_SIZE, NULL, &overlapped);
+        //Seem like passing overlapped will always make ReadFile async regardless if overlapped is passed.
+        ReadFile(decoder_handle, file_data, 48, NULL, &overlapped);
     }
     
-    sample_byte_count -= JA_DATA_CK_SEEK;
+    //We use a full cache line for the decode, but not for the file_data.
+    
+    decoder->fhandle = decoder_handle;
+    decoder->async_handle = async_io_handle;
+    
+    decoder->offset_frame = wav_desc->frame_offset;
+    decoder->frame_chunk_size = wav_desc->frame_size;
+    decoder->frame_count = wav_desc->frame_count;
+    
+    WaitForSingleObject(async_io_handle, JA_INFINITE);
+    ResetEvent(async_io_handle);
     
     {
-        decoder->fhandle = decoder_handle;
-        decoder->async_handle = async_io_handle;
+        decoder->format_tag = file_data[5] & 0x7F;
+        decoder->channel = (file_data[5] >> 0x10) & 0x7F;
         
-        decoder->descriptor.offset_frame = 0;
-        decoder->descriptor.frame_chunk_size = size;
-        decoder->descriptor.frame_count = count;
+        decoder->samples_per_sec = file_data[6];
+        decoder->avg_bytes_per_sec = file_data[7];
         
-        decoder->format_tag = (DWORD)(fmt_ck.format_tag);
-        decoder->channel = (DWORD)(fmt_ck.channel);
-        decoder->samples_per_sec = fmt_ck.samples_per_sec;
-        decoder->avg_bytes_per_sec = fmt_ck.avg_bytes_per_sec;
-        decoder->block_align = (DWORD)(fmt_ck.block_align);
-        decoder->bits_per_sample = (DWORD)(fmt_ck.bits_per_sample);
-        decoder->frame_length = sample_byte_count / ((DWORD)(fmt_ck.channel) * (DWORD)(fmt_ck.block_align));
+        decoder->block_align = file_data[8] & 0x7F;
+        decoder->bits_per_sample = (file_data[8] >> 0x10) & 0x7F;
+        decoder->sample_byte_size = file_data[10];
     }
-    //How are 24 bit stored? Does it only use 3 bytes or do we use 4 bytes and zero the high???
 }
 
 void 
-JA_InitDecoderOGG(const P16 vorbis_path, struct ja_Decoder* decoder){
+JA_InitDecoderOGG(const P16 vorbis_path, struct ja_OggDecoderDescriptor * ogg_desc, struct ja_Decoder* decoder){
+    
     //TODO:Khal implement me
 }
 

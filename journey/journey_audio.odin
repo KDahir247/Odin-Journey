@@ -76,22 +76,38 @@ write_index : u64,
 read_index : u64,
 }
 
+StaticAllocator :: struct{
+  offset : u64,
+  alignment : u64,
+  commit : u64,
+  reserved : u64,
+  _unused_ : [4]u64,
+}
+
 Resource :: struct{
   ring : RingBuffer,
-  alloc : rawptr,
+  alloc : ^StaticAllocator,
   com : rawptr,
 }
 
-DecoderDescriptor :: struct{
-  offset_frame : u64,
-  frame_chunk_size : u32,
+WaveDecoderDescriptor :: struct{
+  alloc : ^StaticAllocator,
+  frame_offset : u64,
+  frame_size : u32,
   frame_count : u32,
+}
+
+OggDecoderDescriptor :: struct{
+  placeholder : u32,
 }
 
 Decoder :: struct{
   file_handle : OpaqueHandle,
   async_handle : OpaqueHandle,
-  descriptor : DecoderDescriptor,
+
+  offset_frame : u64,
+  frame_chunk_size : u32,
+  frame_count : u32,
 
   format_tag : u32,
   channel : u32,
@@ -110,7 +126,6 @@ foreign journey_audio{
 	JA_InitBackend :: proc "c" (mem_desc : ^MemoryDescriptor, resource : ^Resource) -> u32 ---
 	JA_InitDevice :: proc "c" (device_desc : ^DeviceDescriptor, resource : ^Resource, device : ^Device) -> u32 ---
 	JA_DeinitDevice :: proc "c" (device : ^Device) ---
-	JA_ValidateHeaderWAV :: proc "c" ([^]u8) -> u32 ---
-	JA_InitDecoderWAV :: proc "c" (path : [^]u16, frame_count : u32, frame_size : u32, decoder : ^Decoder) ---
-	JA_InitDecoderOGG :: proc "c" (path : [^]u16, decoder : ^Decoder) ---
+	JA_InitDecoderWAV :: proc "c" (path : [^]u16, wav_descriptor : ^WaveDecoderDescriptor, decoder : ^Decoder) ---
+	JA_InitDecoderOGG :: proc "c" (path : [^]u16, ogg_descriptor : ^OggDecoderDescriptor, decoder : ^Decoder) ---
 }

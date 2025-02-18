@@ -31,6 +31,8 @@ import "vendor:zlib"
 //We will read the output from the game thread to the input thread and do operation on the input thread that will take around 40 cycle before we process the output on the input thread
 //Game thread -> Input thread (Host -> Device)
 
+//TODO:Khal Maybe use IRP priorty hint using SetFileInformationByHandle for Controller. We want high priority on the IRP for the gamepad drivers so it process it as quick as possible.
+
 DPAD_UP :: 0x01
 DPAD_UP_RIGHT :: 0x03
 DPAD_RIGHT :: 0x02
@@ -827,11 +829,13 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 	JA_InitDevice(&device_desc, &res, &device) //TODO: Crashes here
 
 	file,a := os.read_entire_file_from_filename("C:\\Users\\Dahir\\Desktop\\GitHub\\Odin-Journey\\journey\\test.wav");
-	
-	ress := JA_ValidateHeaderWAV(raw_data(file));
 
 	decoder : Decoder
-	JA_InitDecoder(windows.utf8_to_wstring("C:\\Users\\Dahir\\Desktop\\GitHub\\Odin-Journey\\journey\\test.wav"), 2, 6, &decoder)
+	decoder_desc : WaveDecoderDescriptor
+	decoder_desc.alloc = res.alloc
+
+	
+	JA_InitDecoder(windows.utf8_to_wstring("C:\\Users\\Dahir\\Desktop\\GitHub\\Odin-Journey\\journey\\test.wav"), &decoder_desc, &decoder)
 
 	game_input.mouse_buttons.delta_threshold_ms = 300 //mouse_threshold_ms
 
