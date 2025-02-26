@@ -618,7 +618,7 @@ typedef struct ja_IUnknownVtbl{
 typedef struct ja_WaveFormatex{
     WORD format_tag;
     WORD channels;
-    DWORD samples_per_sec; //sample rate
+    DWORD samples_per_sec;
     DWORD avg_byte_per_sec;
     WORD block_align;
     WORD bits_per_sample;
@@ -1197,7 +1197,6 @@ JA_PushAllocate(struct ja_StaticAllocator * allocator, QWORD size){
     return allocation;
 }
 
-
 JA_LFORCE_INLINE void
 JA_PopAllocate(struct ja_StaticAllocator * allocator, QWORD size){
     allocator->offset -= size;
@@ -1286,7 +1285,12 @@ struct ja_WaveDecoderDescriptor{
 
 //OGG
 struct ja_OggDecoderDescriptor{
+    //Verify CRC debug mode.
+    
     DWORD place_holder;
+    
+    
+    
 };
 
 struct ja_Decoder{
@@ -1307,6 +1311,27 @@ struct ja_Decoder{
     DWORD _unused_;
 };
 
+//Ogg bitstream format. (Use as a internal structure a not in the code directly)
+struct OggPage{
+    //8 fields totaling 28 bytes page header,
+    //list of packet lengths (255 bytes max)
+    //payload data (up to 65025 bytes) //variable bit rate, variable payload size (so we don't know the size of the payload)
+    
+    DWORD capture_pattern; //We don't care because we will assume all OGG file used by this engine will have Oggs 
+    BYTE stream_structure_version; //We don't care because it alway seem like it is zero
+    BYTE bitflags; //We can use this. But it will the first check in the first page will always assume it to be set to two. Then we can do a if check were it will always be false (so it always predicts right and doesn't go in the BTB) till the last page (which will misspredict) This is not a big performance issue since there will be 1 miss predict per ogg file (assuming that one ogg file only has one page of logical bit stream)
+    QWORD absolute_granule_position; 
+    DWORD stream_serial_number; //We
+    DWORD page_sequence_number;
+    DWORD checksum;
+    BYTE page_segments;
+    
+    //Segment table
+    //Segments
+    
+    
+    
+};
 
 /////////////////////////////////////// Proc  Signature //////////////////////////////////////////// 
 ja_IMalloc *
@@ -1874,6 +1899,60 @@ JA_InitDecoderWAV(const P16 wav_path, struct ja_WaveDecoderDescriptor * wav_desc
         decoder->sample_byte_size = file_data[10];
     }
 }
+
+
+//OGG, and Vorbis (OGG is container, Vorbis is the codecs)
+
+/*
+We will follow FL studio encoded ogg layout for now. Then we will create a strict layout for how the ogg must be layout for it to be read by this engine.
+
+	   	Assumption:
+We will assume that all passed in Ogg container file will hold Vorbis data for decoding. Thus we will not check the capture patterm.
+We will assume that all ogg container file will not be corupted, thus we don't need to check the CRC field and validate it.
+We don't need seeking for any of our OGG files. It will be played linearly without brushing back and forward or arbitrary location.
+Do we care about any header data or can we skip it? Can we skip in sequential or in a jump manner.
+The ogg file is a plain ogg file. There is no Ogg skeleton or any other meta header.
+These pages are guarentee in the OGG Vorbis (following the specs)
+Hopefully the segmenting of a packet doesn't span a page x.x seem like this might cause extra check and work.
+We can assume (Hopefully) That the header of the Page will always be zero. Thus each packet will always start from new page. 
+We can assume that the first page in the ogg file will have the header set to 0x02 (first page of the logical bitstream) 
+We can assume that the last page in the ogg file will have the header set to 0x04 (last page of the logical bitstream)
+We will assume that Packets will not span page boundaries in the OGG file.
+We will assume that the packets are logically segmented by the encoder. (255 bytes max per segment)
+
+Vorbis:
+An Ogg stream is structured by dividing incoming packets into segements of up to 255 bytes and then wrapping a group of contiguous packet segenets into a variable length page preceded by a page header.
+So a 753 byte raw packet will be divided in [255,255,243]
+
+Seem like Vorbis uses OGG transport bitstream. (packets are segmented)
+
+
+ OGG Specs:
+Ogg contain any size data payload.
+ Ogg packect have no maximum size and a zero byte minimum size.
+There is no restriction on size changes from packet to packet.
+Variable size packets do not require the use of any optional or additional container feature. (all pages are uniform)
+There is no restriction on size changes from packet to packet.
+It seems like larger packet size has a lower maximum working overhead (1%) vs a 50 byte packets (2%) even though this is relatively small it is still 2x times x.x.
+Ogg is a byte aligned and has not optional or variable length field. Ogg data field don't depend on other fields.
+No repacking needed.
+Ogg multiplexes stream byte interleaving pages (So pages are multiplexed not packet or payload) from multiple elementary streams into a multiplexed stream in time order. The multiplexed pages are not altered. 
+
+Packets have no size limit in OGG, so the payload in the packet (1 payload per packet) has no size limit.
+Pages have a maximum of just under 64KB
+
+Ogg codecs place raw compressed data into packets. Packets are octet (8 bits)) payloads containing the data needed for a single decompressed unit.
+
+
+[header, packet length list, packet list->inside a each packet list is a payload]
+
+In the Init header (first page) the packet will determine if it is a continuous or discontinuous stream.
+
+
+*/
+
+
+//In ogg there is no container feature which requires nonlinear access of the bitstream.
 
 void 
 JA_InitDecoderOGG(const P16 vorbis_path, struct ja_OggDecoderDescriptor * ogg_desc, struct ja_Decoder* decoder){

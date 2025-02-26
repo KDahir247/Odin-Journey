@@ -1,0 +1,34 @@
+Vorbis provides coupling mechanism to reduce the effective bitrate by eliminating interchannel redundancy and eliminating stereo image information (perceived spatial location) that is inaudible or undesirable according to spatial psychoacoustic model. 
+
+What does it mean by interchannel redundancy?
+Refers to the similarities and repetitive information present across multiple audio channels. These redundancy can be store together rather then keeping it separate and thus reduce the bit rate of the audio.
+
+What does it mean for eliminating stereo image information.
+For eliminating stereo image information I assume that it is referring to eliminating or reducing all the poor information where the psychoacoustic model (how humans perceive sound) can't actually determine the actual location of the audio and/or if the audio is inaudible. 
+
+The MDCT (Modified Discrete Cosine Transform) is a mathematical operation the converts signal from time domain to frequency domain
+
+
+		Time domain
+
+	  |
+	  |
+Amplitude |
+	  |
+	  |___________________
+		Time
+
+
+		Frequency domain
+
+	  |
+	  |
+Amplitude |
+	  |
+	  |___________________
+		Frequency
+
+
+
+It seem like the Vorbis uses two implementation individually or in conjunction, which are residue backend type 2, and the second is square polar mapping. These two implementation reduce both interchannel redundancy and stereo image information.
+
