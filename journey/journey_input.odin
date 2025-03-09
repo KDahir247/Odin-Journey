@@ -826,17 +826,14 @@ InputEntryPoint :: proc(current_thread : ^thread.Thread){
 	//JAInitContext(&ctx, 1)
 	JA_InitBackend(&mem_desc, &res)
 	fmt.printf("%i",res)
-	JA_InitDevice(&device_desc, &res, &device) //TODO: Crashes here
-
-	file,a := os.read_entire_file_from_filename("C:\\Users\\Dahir\\Desktop\\GitHub\\Odin-Journey\\journey\\test.wav");
-
-	decoder : Decoder
-	decoder_desc : WaveDecoderDescriptor
-	decoder_desc.alloc = res.alloc
-
 	
-	JA_InitDecoder(windows.utf8_to_wstring("C:\\Users\\Dahir\\Desktop\\GitHub\\Odin-Journey\\journey\\test.wav"), &decoder_desc, &decoder)
+	JA_InitDevice(&device_desc, &res, &device)
 
+	decoder_desc : VorbisDecoderDescriptor
+	decoder : Decoder
+	
+	JA_InitDecoder(windows.utf8_to_wstring("C:\\Users\\Dahir\\Desktop\\GitHub\\Odin-Journey\\journey\\test.ogg"), &decoder_desc, &decoder)
+	
 	game_input.mouse_buttons.delta_threshold_ms = 300 //mouse_threshold_ms
 
 	w_name := [8]u16{0x4D, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x00}

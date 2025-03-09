@@ -91,14 +91,16 @@ Resource :: struct{
 }
 
 WaveDecoderDescriptor :: struct{
-  alloc : ^StaticAllocator,
   frame_offset : u64,
-  frame_size : u32,
-  frame_count : u32,
+  frame_chunk_count : u32,
+  _unused_ : u32,
 }
 
-OggDecoderDescriptor :: struct{
-  placeholder : u32,
+VorbisDecoderDescriptor :: struct{
+  frame_offset : u64,
+  setup_allocation_size : u64,
+  frame_chunk_count : u32,
+  _unused_ : u32,
 }
 
 Decoder :: struct{
@@ -119,7 +121,7 @@ Decoder :: struct{
   _padding_ : u32,
 }
 
-JA_InitDecoder :: proc{JA_InitDecoderWAV, JA_InitDecoderOGG}
+JA_InitDecoder :: proc{JA_InitDecoderWAV, JA_InitDecoderVorbis}
 
 foreign journey_audio{
 	JA_GetComAllocator :: proc "c"() -> rawptr ---
@@ -127,5 +129,5 @@ foreign journey_audio{
 	JA_InitDevice :: proc "c" (device_desc : ^DeviceDescriptor, resource : ^Resource, device : ^Device) -> u32 ---
 	JA_DeinitDevice :: proc "c" (device : ^Device) ---
 	JA_InitDecoderWAV :: proc "c" (path : [^]u16, wav_descriptor : ^WaveDecoderDescriptor, decoder : ^Decoder) ---
-	JA_InitDecoderOGG :: proc "c" (path : [^]u16, ogg_descriptor : ^OggDecoderDescriptor, decoder : ^Decoder) ---
+	JA_InitDecoderVorbis :: proc "c" (path : [^]u16, vorbis_descriptor : ^VorbisDecoderDescriptor, decoder : ^Decoder) ---
 }

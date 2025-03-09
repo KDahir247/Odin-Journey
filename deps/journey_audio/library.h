@@ -397,13 +397,19 @@ typedef short S16;
 
 //////////////////// Decoder ///////////////////////////////
 
+//Wave
 #define JA_RIFF_MAGIC 1179011410
 #define JA_FORM_MAGIC 1163280727
 
 #define JA_FMT_CK_SEEK 0xCull
 #define JA_DATA_CK_SEEK 0x2Cull
-#define JA_HEADER_SIZE 12
-#define JA_FMT_SIZE 24
+#define JA_HEADER_SIZE 0x0C
+#define JA_FMT_SIZE 0x18
+
+//Vorbis Ogg
+#define JA_INFORMATION_SIZE 0x1E
+#define JA_INFORMATION_SEEK 0x1C
+
 
 typedef struct ja_GUID ja_GUID;
 typedef struct ja_Blob ja_Blob;
@@ -1276,39 +1282,43 @@ struct ja_RIFFHeader{
     DWORD form_type;
 };
 
+//We will add more when we need it while creating the decoder.
 struct ja_WaveDecoderDescriptor{
-    struct ja_StaticAllocator * allocator;
     QWORD frame_offset;
-    DWORD frame_size;
-    DWORD frame_count;
+    DWORD frame_chunk_count; //Frame Size * Frame Count
+    DWORD _unused_;
 };
 
 //OGG
-struct ja_OggDecoderDescriptor{
+struct ja_VorbisDecoderDescriptor{
     //Verify CRC debug mode.
     
-    DWORD place_holder;
-    
-    
-    
+    QWORD frame_offset;
+    QWORD setup_allocation_size; //Used for the setup header (Huffman, VQ Codebook)
+    DWORD frame_chunk_count; //Frame Size * Frame Count
+    DWORD _unused;
 };
 
 struct ja_Decoder{
     ja_HandleO fhandle;
     ja_HandleO async_handle;
     
-    QWORD offset_frame;
-    DWORD frame_chunk_size;
-    DWORD frame_count;
+    //Used for compressed audio format setup for decoder (such as vorbis).
+    void* decoder_setup;
+    
+    QWORD offset_frame; //seek frame maybe a better name.
+    
     
     DWORD format_tag;
     DWORD channel;
     DWORD samples_per_sec;
-    DWORD avg_bytes_per_sec; 
-    DWORD block_align;
-    DWORD bits_per_sample;
+    DWORD avg_bytes_per_sec;
+    
+    DWORD param_0;
+    DWORD param_1;
+    
     DWORD sample_byte_size;
-    DWORD _unused_;
+    
 };
 
 //Ogg bitstream format. (Use as a internal structure a not in the code directly)
@@ -1320,17 +1330,14 @@ struct OggPage{
     DWORD capture_pattern; //We don't care because we will assume all OGG file used by this engine will have Oggs 
     BYTE stream_structure_version; //We don't care because it alway seem like it is zero
     BYTE bitflags; //We can use this. But it will the first check in the first page will always assume it to be set to two. Then we can do a if check were it will always be false (so it always predicts right and doesn't go in the BTB) till the last page (which will misspredict) This is not a big performance issue since there will be 1 miss predict per ogg file (assuming that one ogg file only has one page of logical bit stream)
-    QWORD absolute_granule_position; 
-    DWORD stream_serial_number; //We
-    DWORD page_sequence_number;
-    DWORD checksum;
-    BYTE page_segments;
+    QWORD absolute_granule_position; //We don't really care about the granule position. 
+    DWORD stream_serial_number; //We don't care about the serial number. We will not be doing any multiplexing on multiple logical stream.
+    DWORD page_sequence_number; //another validation to validate the current page number. Do we really want to check the page number and validate it?
+    DWORD checksum; //Error handling validation. We will not use this, since we don't really care about validation.
+    BYTE page_segments; // We will need to use this to get the lacing values in the current page.
     
     //Segment table
     //Segments
-    
-    
-    
 };
 
 /////////////////////////////////////// Proc  Signature //////////////////////////////////////////// 
@@ -1350,7 +1357,7 @@ void
 JA_InitDecoderWAV(const P16 wav_path, struct ja_WaveDecoderDescriptor * wav_desc, struct ja_Decoder* decoder);
 
 void 
-JA_InitDecoderOGG(const P16 vorbis_path, struct ja_OggDecoderDescriptor * ogg_desc, struct ja_Decoder* decoder);
+JA_InitDecoderVorbis(const P16 vorbis_path, struct ja_VorbisDecoderDescriptor * ogg_desc, struct ja_Decoder* decoder);
 ////////////////////////////////////// Callback Events /////////////////////////////////////////////
 
 JA_LOCAL DWORD JA_WINAPI 
@@ -1857,46 +1864,42 @@ void
 JA_InitDecoderWAV(const P16 wav_path, struct ja_WaveDecoderDescriptor * wav_desc, struct ja_Decoder* decoder){
     ja_HandleO decoder_handle;
     ja_HandleO async_io_handle;
-    DWORD* file_data;
-    
-    file_data = (DWORD *)JA_PushAllocate(wav_desc->allocator, 48);
+    DWORD file_data[8];
     
     {
         ja_Overlapped  overlapped;
         
         JA_MemorySet(&overlapped,0, sizeof(ja_Overlapped));
         
-        async_io_handle = CreateEventExW(NULL, NULL, JA_EVENT_MANUAL_RESET, JA_SYNCHRONIZE | JA_EVENT_MODIFY_STATE );
+        async_io_handle = CreateEventExW(NULL, NULL, JA_EVENT_MANUAL_RESET, JA_SYNCHRONIZE | JA_EVENT_MODIFY_STATE);
         decoder_handle =  CreateFileW(wav_path, JA_GENERIC_READ, JA_FILE_SHARE_READ, NULL, JA_OPEN_EXISTING, (JA_FILE_ATTRIBUTE_NORMAL | JA_FILE_FLAG_SEQUENTIAL_SCAN) | (JA_FILE_ATTRIBUTE_READONLY | JA_FILE_FLAG_OVERLAPPED), 0);
         
+        overlapped.offset = JA_FMT_CK_SEEK;
         overlapped.h_event = async_io_handle;
         
         //Seem like passing overlapped will always make ReadFile async regardless if overlapped is passed.
-        ReadFile(decoder_handle, file_data, 48, NULL, &overlapped);
+        ReadFile(decoder_handle, file_data, 32, NULL, &overlapped);
     }
-    
-    //We use a full cache line for the decode, but not for the file_data.
     
     decoder->fhandle = decoder_handle;
     decoder->async_handle = async_io_handle;
     
     decoder->offset_frame = wav_desc->frame_offset;
-    decoder->frame_chunk_size = wav_desc->frame_size;
-    decoder->frame_count = wav_desc->frame_count;
     
     WaitForSingleObject(async_io_handle, JA_INFINITE);
     ResetEvent(async_io_handle);
     
     {
-        decoder->format_tag = file_data[5] & 0x7F;
-        decoder->channel = (file_data[5] >> 0x10) & 0x7F;
+        decoder->format_tag = file_data[2] & 0x7F;
+        decoder->channel = (file_data[2] >> 0x10) & 0x7F;
+        decoder->samples_per_sec = file_data[3];
+        decoder->avg_bytes_per_sec = file_data[4];
         
-        decoder->samples_per_sec = file_data[6];
-        decoder->avg_bytes_per_sec = file_data[7];
+        //block align and bit per sample.
+        decoder->param_0 = file_data[5] & 0x7F; 
+        decoder->param_1 = (file_data[5] >> 0x10) & 0x7F; 
         
-        decoder->block_align = file_data[8] & 0x7F;
-        decoder->bits_per_sample = (file_data[8] >> 0x10) & 0x7F;
-        decoder->sample_byte_size = file_data[10];
+        decoder->sample_byte_size = file_data[7];
     }
 }
 
@@ -1951,14 +1954,145 @@ In the Init header (first page) the packet will determine if it is a continuous 
 
 */
 
-
 //In ogg there is no container feature which requires nonlinear access of the bitstream.
 
 void 
-JA_InitDecoderOGG(const P16 vorbis_path, struct ja_OggDecoderDescriptor * ogg_desc, struct ja_Decoder* decoder){
+JA_InitDecoderVorbis(const P16 vorbis_path, struct ja_VorbisDecoderDescriptor * vorbis_desc, struct ja_Decoder* decoder){
+    ja_HandleO decoder_handle;
+    ja_HandleO async_io_handle;
+    QWORD comment_page_index;
+    ja_Overlapped overlapped;
+    DWORD* vorbis_memory_block;
+    DWORD block_log_0;
+    DWORD block_log_1;
+    DWORD page_segment_count;
+    DWORD comment_segment_count;
+    DWORD page_segment_shift;
     
-    //TODO:Khal implement me
+    
+    JA_MemorySet(&overlapped, 0, sizeof(ja_Overlapped));
+    
+    //Hopefully a Page size can hold the 3 header needed for decoding :p.
+    vorbis_memory_block = (DWORD*)VirtualAlloc(NULL, JA_PAGESIZE, JA_MEM_RESERVE | JA_MEM_COMMIT, JA_PAGE_READWRITE);
+    
+    {
+        async_io_handle = CreateEventExW(NULL, NULL, JA_EVENT_MANUAL_RESET, JA_SYNCHRONIZE | JA_EVENT_MODIFY_STATE);
+        
+        decoder_handle =  CreateFileW(vorbis_path, JA_GENERIC_READ, JA_FILE_SHARE_READ, NULL, JA_OPEN_EXISTING, JA_FILE_ATTRIBUTE_NORMAL | JA_FILE_ATTRIBUTE_READONLY | JA_FILE_FLAG_OVERLAPPED, 0);
+        
+        overlapped.offset = JA_INFORMATION_SEEK;
+        overlapped.h_event = async_io_handle;
+        
+        ReadFile(decoder_handle, vorbis_memory_block, JA_PAGESIZE, NULL, &overlapped);
+    }
+    
+    decoder->fhandle = decoder_handle;
+    decoder->async_handle = async_io_handle;
+    
+    decoder->offset_frame = vorbis_desc->frame_offset;
+    //decoder->frame_chunk_count = vorbis_desc->frame_chunk_count;
+    
+    WaitForSingleObject(async_io_handle, JA_INFINITE);
+    ResetEvent(async_io_handle);
+    
+    //Information Header (Vorbis)
+    
+    decoder->channel = vorbis_memory_block[2] >> 0x18;
+    decoder->samples_per_sec = vorbis_memory_block[3];
+    
+    //4 bits block 0, 4 bits block 1
+    block_log_0 = vorbis_memory_block[7] & 0xF;
+    block_log_1 = (vorbis_memory_block[7] >> 0x4) & 0xF;
+    
+    decoder->param_0 = 1 << block_log_0;
+    decoder->param_1 = 1 << block_log_1;
+    
+    //So the Information page is 58 byte this is consistent.
+    //and to get the page segement length from a page we will have to offset it by 26 bytes.
+    //Total byte to skip is 84
+    //But we skip the first header (28 bytes) when we do a read.
+    //So we have to skip 58 - 28 + 26 bytes 
+    
+    
+    //We want to skip the Comment Header
+    //So we got to offset it by the  bitstream header size + information size to get the next page
+    //Once we get the page we need to check the Page segements (byte).
+    //We need to iterate over the Page segment count
+    //We need to keep skipping over all the 255 in the segment list till (comment) till we find one that is below 255.
+    //We need to add the skipped over bytes plus the byte below 255 and offset it in the array.
+    //We can check the packet type if it is 5 then it works.
+    
+    comment_page_index = 14;
+    
+    page_segment_count = vorbis_memory_block[comment_page_index] & 0xFF;
+    comment_segment_count = 0;
+    page_segment_shift = 8;
+    
+    //We will do a do while to check if the page segment table are all 255 otherwise we will break.
+    //Within each loop we will have to have a accumulator to store how much bytes the comment header is.
+    //Note inside the do while loop we will have to do a bit of loop unrolling because the segement table list are in bytes, but the buffer is in DWORD size, thus we have to unroll 4.
+    
+    //Get the comment segment_count so we can skip the comment packet/s
+    for(QWORD i = 0; i < page_segment_count; i++){
+        DWORD current_segment_size;
+        
+        current_segment_size = 0;
+        
+        if (i & 3){
+            page_segment_shift = 0;
+            comment_page_index += 1;
+        }
+        
+        current_segment_size = (vorbis_memory_block[comment_page_index] >> page_segment_shift) & 0xFF;
+        comment_segment_count += current_segment_size;
+        
+        page_segment_shift += 8;
+        
+        if (current_segment_size < 255){
+            break;
+        }
+    }
+    
+    
+    //Now we want the rest of the segment table list (these belong to the setup header)
+    //We will fetch the current offset of the table by doing (comment_segment_count >> 0x08) + 1
+    
+    
+    //skip 3 dword, 4, 5, 6,
+    
+    
+    //Do we need the nominal bitrate Maybe we can convert it to bytes per second.
+    
+    
+    //TODO:Khal it seem like to get the number of sample_byte_size we need to traverse the ogg container to the last page.
+    //We know that the Page header is a constant size of 28 bytes but the vorbis is a Variable bit rate codec so the segment count and size is variable thus we need to fetch the PageSegement then Sum up the Segment table and skip 28 + (sum of Segment table in bytes). We need to do this for each Page till we reach the last (Header of 4).
+    //From the last page we need the granule position. The granule position of pages containing Vorbis audio is in units of PCM audio samples (per channel; a stereo stream’s granule position does not increment at twice the speed of a mono stream).
+    //Refer to the vorbis specs.
+    
+    
+    
+    
+    
+    //
+    //VirtualAlloc(NULL, vorbis_desc->setup_allocation_size);
+    
+    //We don't want it to be a sequential_scan because it is jumping to the packets and we don't need the header.
+    
+    
+    //1 byte (packet type), 6 bytes (vorbis character), DWORD (vorbis version), BYTE audio channel, DWORD (audio sample rate), SIGNED DWORD (bitrate maximum), SIGNED DWORD (bitrate nominal), SIGNED DWORD (bitrate maximum), NYBBLE (blocksize 0), NYBBLE (blocksize 1), 1 bit (framing flag)
+    
+    //We can use a DWORD* (we can skip 2) 
+    //We can assume that the vorbis version will always be 0x0 thus we skip 2 DWORD (8 bytes) and we will read the next dword for the channel count (This will 3 bytes from vorbis version and 1 byte from the audio channel, but the vorbis version is assumed to always be zero so it is ok)
+    
+    
+    //Do we want the file accesses for Vorbis to be blocking or non blocking. Why?
+    
+    
+    
+    
+    
 }
+
 
 
 
@@ -1967,6 +2101,8 @@ JA_InitDecoderOGG(const P16 vorbis_path, struct ja_OggDecoderDescriptor * ogg_de
 //This will be SIMD heavy, due to high computation requirement. Also I will try to make it multithreaded. (DSP permutations, eg. lowpass, reverb, mixing, etc....)
 
 
+
+//TODO: We need to add a fast PCM multiplixer.
 
 ///////////////////////////// Audio Engine /////////////////////////////
 
